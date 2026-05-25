@@ -45,6 +45,8 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	godot::RID font_rid = ts->create_font();
 	ts->font_set_data(font_rid, data);
+	ts->font_set_hinting(font_rid, godot::TextServer::HINTING_NORMAL);
+	ts->font_set_antialiasing(font_rid, godot::TextServer::FONT_ANTIALIASING_GRAY);
 
 	Rml::String family(ts->font_get_name(font_rid).utf8().get_data());
 
@@ -66,6 +68,8 @@ bool GodotFontInterface::LoadFontFace(Rml::Span<const Rml::byte> data, int /*fac
 	bytes.resize(static_cast<int64_t>(data.size()));
 	memcpy(bytes.ptrw(), data.data(), data.size());
 	ts->font_set_data(font_rid, bytes);
+	ts->font_set_hinting(font_rid, godot::TextServer::HINTING_NORMAL);
+	ts->font_set_antialiasing(font_rid, godot::TextServer::FONT_ANTIALIASING_GRAY);
 
 	return _register_font(font_rid, family, style, weight, fallback_face);
 }
