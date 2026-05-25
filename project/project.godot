@@ -1,0 +1,12 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; but it can also be edited just fine using a text editor.
+
+[application]
+
+config/name="RmlUI Godot Demo"
+config/features=PackedStringArray("4.5")
+
+[autoload]
+
+RmlManager="*res://addons/rmlui-godot/rmlui_godot.gdextension"
