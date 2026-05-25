@@ -168,8 +168,6 @@ void RmlContext::_draw() {
 	using CmdType = RmlGodot::GodotRenderInterface::CommandType;
 
 	godot::Vector2 ctrl_size = get_size();
-	static int _diag_frame = 0;
-	int _drawn = 0, _culled = 0;
 
 	godot::RID root_draw = rs->canvas_item_create();
 	rs->canvas_item_set_parent(root_draw, get_canvas_item());
@@ -297,15 +295,6 @@ void RmlContext::_draw() {
 				mesh_left   >= clip_rect.position.x + clip_rect.size.x ||
 				mesh_bottom <= clip_rect.position.y ||
 				mesh_top    >= clip_rect.position.y + clip_rect.size.y) {
-				_culled++;
-				if (_diag_frame < 3 && _culled <= 5) {
-					godot::UtilityFunctions::print(
-						godot::String("[RmlUi DIAG] CULLED cmd=") + godot::String::num_int64(ci) +
-						godot::String(" mesh_y=") + godot::String::num(mesh_top) +
-						godot::String("..") + godot::String::num(mesh_bottom) +
-						godot::String(" clip_y=") + godot::String::num(clip_rect.position.y) +
-						godot::String("..") + godot::String::num(clip_rect.position.y + clip_rect.size.y));
-				}
 				continue;
 			}
 
@@ -330,32 +319,11 @@ void RmlContext::_draw() {
 			godot::RID tex_rid = draw_tex.is_valid() ? draw_tex->get_rid() : godot::RID();
 			rs->canvas_item_add_mesh(draw_target, mesh->get_rid(), xform,
 				godot::Color(1, 1, 1, 1), tex_rid);
-			_drawn++;
-			if (_diag_frame < 3 && _drawn <= 10) {
-				godot::UtilityFunctions::print(
-					godot::String("[RmlUi DIAG] DRAWN cmd=") + godot::String::num_int64(ci) +
-					godot::String(" pos=") + godot::String::num(origin.x) + godot::String(",") + godot::String::num(origin.y) +
-					godot::String(" aabb=") + godot::String::num(static_cast<float>(aabb3.position.x)) +
-					godot::String(",") + godot::String::num(static_cast<float>(aabb3.position.y)) +
-					godot::String(" sz=") + godot::String::num(static_cast<float>(aabb3.size.x)) +
-					godot::String("x") + godot::String::num(static_cast<float>(aabb3.size.y)) +
-					godot::String(" scissor=") + godot::String(cmd.scissor_enabled ? "true" : "false"));
-			}
 			break;
 		}
 
 		} // switch
 	}
-
-	if (_diag_frame < 5) {
-		godot::UtilityFunctions::print(
-			godot::String("[RmlUi DIAG] frame=") + godot::String::num_int64(_diag_frame) +
-			godot::String(" ctrl=") + godot::String::num(ctrl_size.x) + godot::String("x") + godot::String::num(ctrl_size.y) +
-			godot::String(" cmds=") + godot::String::num_int64(commands.size()) +
-			godot::String(" drawn=") + godot::String::num_int64(_drawn) +
-			godot::String(" culled=") + godot::String::num_int64(_culled));
-	}
-	_diag_frame++;
 }
 
 void RmlContext::_notification(int p_what) {
