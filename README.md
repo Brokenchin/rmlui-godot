@@ -1,7 +1,7 @@
 # rmlui-godot
 
 [![Godot 4.2+](https://img.shields.io/badge/Godot-4.2%2B-478cbf?logo=godotengine&logoColor=white)](https://godotengine.org/)
-[![RmlUi](https://img.shields.io/badge/RmlUi-5.1-orange)](https://github.com/mikke89/RmlUi)
+[![RmlUi](https://img.shields.io/badge/RmlUi-6.3-orange)](https://github.com/mikke89/RmlUi)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![AI: Claude Opus 4.6](https://img.shields.io/badge/AI-Claude_Opus_4.6-cc785c?logo=anthropic&logoColor=white)](https://anthropic.com)
 
@@ -42,10 +42,12 @@ A GDExtension plugin that integrates [RmlUi](https://github.com/mikke89/RmlUi) i
 - `register_custom_element(tag, on_create, on_attribute_change)` — extend RML with custom tags backed by GDScript callables
 
 ### Drag & Drop
-- `register_drag_source(element_id, payload_builder, ghost_builder)`
-- `register_drop_target(element_id, drop_handler)`
+Bridges RML elements to Godot's native drag system (`_get_drag_data` / `_can_drop_data` / `_drop_data`). Sources and targets must be registered from GDScript — they cannot be defined in RML/RCSS alone.
+- `register_drag_source(element_id, payload_builder, ghost_builder)` — `payload_builder` returns the drag data, optional `ghost_builder` returns custom ghost RML (auto-generated from computed styles if omitted)
+- `register_drop_target(element_id, drop_handler)` — `drop_handler` receives the element id and drag data on drop
 - Signals: `rml_drag_started`, `rml_drop_received`
-- Visual ghost rendering during drag
+- Ghost is a real transient `RmlContext` used as Godot's `drag_preview`
+- **Cross-system interop:** because it bridges to Godot's native drag, items can be dragged between RmlUI contexts and native Godot Controls seamlessly — drag from a Godot node into an RML panel or vice versa
 
 ### Rendering
 - Premultiplied alpha pipeline — correct blending for fonts, sprites, and textures
@@ -178,13 +180,21 @@ rmlui-godot/
 | Multiple contexts | Safe — targeted cleanup via [fork API](https://github.com/Brokenchin/RmlUi-multicontext) |
 | Data binding | Scalars, arrays, events, batch dict setup |
 | Custom elements | GDScript callables for create + attribute change |
-| Drag & drop | Source/target registration, ghost rendering, signals |
+| Drag & drop | Bridges to Godot's native drag — GDScript registration, auto-ghost, cross-system interop |
 | DOM manipulation | Get/set properties, classes, attributes, inner RML |
 | Texture registry | Global (RmlManager) + per-context |
 | Hot reload | Per-document and all-documents |
 | Stylesheet injection | Runtime RCSS injection |
 | Font handling | Global + per-context, premultiplied alpha |
-| Inline GDScript in RML | Planned |
+
+## Planned
+
+| Feature | Notes |
+|---------|-------|
+| Inline GDScript in RML | Execute GDScript blocks embedded directly in `.rml` files |
+| Editor integration | Live preview of RML documents in the Godot editor — interactive, clickable, draggable |
+| Gamepad / input actions | Better input handling — register Godot input actions to forward to RmlUi instead of raw key events |
+| Documentation & wiki | Usage guides, API reference, and example walkthroughs |
 
 ## License
 
