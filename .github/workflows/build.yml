@@ -85,12 +85,6 @@ jobs:
           -G "${{ matrix.cmake_generator }}" ${{ matrix.cmake_arch }}
           -DCMAKE_BUILD_TYPE=Debug
           -DRMLUI_GODOT_STANDALONE=ON
-          -DRMLUI_SAMPLES=OFF
-          -DRMLUI_FONT_ENGINE=none
-          -DRMLUI_LUA_BINDINGS=OFF
-          -DRMLUI_LOTTIE_PLUGIN=OFF
-          -DRMLUI_SVG_PLUGIN=OFF
-          -DRMLUI_CUSTOM_RTTI=ON
           ${{ runner.os != 'Windows' && '-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache' || '' }}
 
       - name: Build (Debug)
@@ -103,12 +97,6 @@ jobs:
           -G "${{ matrix.cmake_generator }}" ${{ matrix.cmake_arch }}
           -DCMAKE_BUILD_TYPE=Release
           -DRMLUI_GODOT_STANDALONE=ON
-          -DRMLUI_SAMPLES=OFF
-          -DRMLUI_FONT_ENGINE=none
-          -DRMLUI_LUA_BINDINGS=OFF
-          -DRMLUI_LOTTIE_PLUGIN=OFF
-          -DRMLUI_SVG_PLUGIN=OFF
-          -DRMLUI_CUSTOM_RTTI=ON
           ${{ runner.os != 'Windows' && '-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache' || '' }}
 
       - name: Build (Release)

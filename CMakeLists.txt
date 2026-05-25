@@ -25,7 +25,16 @@ if(NOT TARGET godot-cpp)
 endif()
 
 # RmlUi: set RMLUI_DIR or add as subdirectory
+# Force static so RmlUi gets linked into our shared lib (no separate DLLs to ship).
 if(NOT TARGET rmlui_core)
+    set(_PREV_BUILD_SHARED ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
+    set(RMLUI_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(RMLUI_FONT_ENGINE "none" CACHE STRING "" FORCE)
+    set(RMLUI_LUA_BINDINGS OFF CACHE BOOL "" FORCE)
+    set(RMLUI_LOTTIE_PLUGIN OFF CACHE BOOL "" FORCE)
+    set(RMLUI_SVG_PLUGIN OFF CACHE BOOL "" FORCE)
+    set(RMLUI_CUSTOM_RTTI ON CACHE BOOL "" FORCE)
     if(DEFINED RMLUI_DIR)
         add_subdirectory(${RMLUI_DIR} rmlui)
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/RmlUi/CMakeLists.txt")
@@ -37,6 +46,7 @@ if(NOT TARGET rmlui_core)
             "  - Clone RmlUi into dependencies/RmlUi\n"
             "  - Use CPM/FetchContent to pull it")
     endif()
+    set(BUILD_SHARED_LIBS ${_PREV_BUILD_SHARED})
 endif()
 
 # --- Collect sources ---
@@ -61,26 +71,50 @@ target_include_directories(rmlui_godot PUBLIC
 )
 
 target_link_libraries(rmlui_godot
-    PUBLIC godot-cpp rmlui_core
+    PUBLIC godot-cpp rmlui_core rmlui_debugger
 )
 
 # --- Output naming ---
-# Produces: rmlui_godot.debug.dll / rmlui_godot.release.dll (etc.)
-# Override with -DRMLUI_OUTPUT_SUFFIX=".custom" for non-standard names.
-if(NOT DEFINED RMLUI_OUTPUT_SUFFIX)
-    string(TOLOWER "${CMAKE_BUILD_TYPE}" _build_lower)
-    if(_build_lower STREQUAL "debug" OR _build_lower STREQUAL "relwithdebinfo")
-        set(RMLUI_OUTPUT_SUFFIX ".debug")
-    else()
-        set(RMLUI_OUTPUT_SUFFIX ".release")
-    endif()
-endif()
-
+# Single-config generators (Ninja, Make): uses CMAKE_BUILD_TYPE to pick suffix.
+# Multi-config generators (MSVC): uses per-config OUTPUT_NAME via generator expressions.
+# Override with -DRMLUI_OUTPUT_SUFFIX=".custom" to force a specific suffix.
 if(RMLUI_GODOT_STANDALONE)
-    set_target_properties(rmlui_godot PROPERTIES
-        PREFIX ""
-        OUTPUT_NAME "rmlui_godot${RMLUI_OUTPUT_SUFFIX}"
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/project/addons/rmlui-godot/bin"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/project/addons/rmlui-godot/bin"
-    )
+    set(_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/project/addons/rmlui-godot/bin")
+
+    get_property(_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+
+    if(_is_multi_config)
+        set_target_properties(rmlui_godot PROPERTIES
+            PREFIX ""
+            OUTPUT_NAME_DEBUG "rmlui_godot.debug"
+            OUTPUT_NAME_RELEASE "rmlui_godot.release"
+            OUTPUT_NAME_RELWITHDEBINFO "rmlui_godot.debug"
+            OUTPUT_NAME_MINSIZEREL "rmlui_godot.release"
+            RUNTIME_OUTPUT_DIRECTORY "${_BIN_DIR}"
+            LIBRARY_OUTPUT_DIRECTORY "${_BIN_DIR}"
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG "${_BIN_DIR}"
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${_BIN_DIR}"
+            RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_BIN_DIR}"
+            RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${_BIN_DIR}"
+            LIBRARY_OUTPUT_DIRECTORY_DEBUG "${_BIN_DIR}"
+            LIBRARY_OUTPUT_DIRECTORY_RELEASE "${_BIN_DIR}"
+            LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_BIN_DIR}"
+            LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${_BIN_DIR}"
+        )
+    else()
+        if(NOT DEFINED RMLUI_OUTPUT_SUFFIX)
+            string(TOLOWER "${CMAKE_BUILD_TYPE}" _build_lower)
+            if(_build_lower STREQUAL "debug" OR _build_lower STREQUAL "relwithdebinfo")
+                set(RMLUI_OUTPUT_SUFFIX ".debug")
+            else()
+                set(RMLUI_OUTPUT_SUFFIX ".release")
+            endif()
+        endif()
+        set_target_properties(rmlui_godot PROPERTIES
+            PREFIX ""
+            OUTPUT_NAME "rmlui_godot${RMLUI_OUTPUT_SUFFIX}"
+            RUNTIME_OUTPUT_DIRECTORY "${_BIN_DIR}"
+            LIBRARY_OUTPUT_DIRECTORY "${_BIN_DIR}"
+        )
+    endif()
 endif()
