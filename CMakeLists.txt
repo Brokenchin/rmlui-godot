@@ -74,12 +74,10 @@ target_link_libraries(rmlui_godot
     PUBLIC godot-cpp rmlui_core rmlui_debugger
 )
 
-# godot-cpp propagates -fno-exceptions. macOS Clang hard-errors on throw
-# in RmlUi's itlib/flat_map.hpp (GCC/MSVC tolerate it). Re-enable for our
-# TUs only — we never throw, but the header's inline at() needs to compile.
-if(APPLE)
-    target_compile_options(rmlui_godot PRIVATE -fexceptions)
-endif()
+# godot-cpp propagates -fno-exceptions. RmlUi's itlib/flat_map.hpp uses
+# throw in at() — macOS Clang hard-errors on throw with exceptions disabled.
+# We never call at(), so switch itlib to assert-based error handling.
+target_compile_definitions(rmlui_godot PRIVATE ITLIB_FLAT_MAP_NO_THROW)
 
 # --- Output naming ---
 # Single-config generators (Ninja, Make): uses CMAKE_BUILD_TYPE to pick suffix.
