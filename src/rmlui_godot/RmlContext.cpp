@@ -125,10 +125,9 @@ void RmlContext::_ready() {
 		return;
 	}
 
-	godot::Ref<godot::CanvasItemMaterial> mat;
-	mat.instantiate();
-	mat->set_blend_mode(godot::CanvasItemMaterial::BLEND_MODE_PREMULT_ALPHA);
-	set_material(mat);
+	_premul_material.instantiate();
+	_premul_material->set_blend_mode(godot::CanvasItemMaterial::BLEND_MODE_PREMULT_ALPHA);
+	set_material(_premul_material);
 
 	manager->ensure_initialized();
 	_create_context();
@@ -162,14 +161,11 @@ void RmlContext::_draw() {
 	const auto& commands = _render_interface.get_draw_commands();
 
 	auto* rs = godot::RenderingServer::get_singleton();
+	if (rs == nullptr) return;
 	_free_scissor_items();
 	_free_layer_items();
 
-	if (!_premul_material.is_valid()) {
-		_premul_material.instantiate();
-		_premul_material->set_blend_mode(godot::CanvasItemMaterial::BLEND_MODE_PREMULT_ALPHA);
-		set_material(_premul_material);
-	}
+	if (!_premul_material.is_valid()) return;
 	godot::RID mat_rid = _premul_material->get_rid();
 
 	using CmdType = RmlGodot::GodotRenderInterface::CommandType;
