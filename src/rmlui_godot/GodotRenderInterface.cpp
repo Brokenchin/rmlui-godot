@@ -334,6 +334,7 @@ void GodotRenderInterface::release_all_resources() {
 	_textures.clear();
 	_filters.clear();
 	_draw_commands.clear();
+	_registered_textures.clear();
 	_white_texture.unref();
 	_next_geo_handle = 1;
 	_next_tex_handle = 1;

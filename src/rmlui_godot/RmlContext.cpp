@@ -87,7 +87,10 @@ namespace RmlGodot {
 
 RmlContext::RmlContext() {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
-	if (manager) manager->on_context_created();
+	if (manager) {
+		manager->on_context_created();
+		_counted = true;
+	}
 }
 
 RmlContext::~RmlContext() {
@@ -107,7 +110,7 @@ RmlContext::~RmlContext() {
 		Rml::ReleaseRenderManager(&_render_interface);
 	}
 
-	if (manager) {
+	if (manager && _counted) {
 		manager->on_context_destroyed();
 	}
 }
@@ -116,17 +119,21 @@ void RmlContext::_ready() {
 	set_process(true);
 	set_clip_contents(true);
 
-	// Premultiplied alpha blend mode — matches RmlUI's color output.
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager == nullptr) {
+		godot::UtilityFunctions::push_error("[RmlUi] RmlManager singleton not available");
+		return;
+	}
+
 	godot::Ref<godot::CanvasItemMaterial> mat;
 	mat.instantiate();
 	mat->set_blend_mode(godot::CanvasItemMaterial::BLEND_MODE_PREMULT_ALPHA);
 	set_material(mat);
 
-	RmlGodot::RmlManager::get_singleton()->ensure_initialized();
+	manager->ensure_initialized();
 	_create_context();
 
-	auto& fi = RmlGodot::RmlManager::get_singleton()->get_font_interface();
-	fi.set_text_render_mode(
+	manager->get_font_interface().set_text_render_mode(
 		static_cast<RmlGodot::GodotFontInterface::TextRenderMode>(_text_render_mode));
 
 	for (int i = 0; i < _font_paths.size(); i++) {
@@ -485,7 +492,8 @@ godot::Array RmlContext::get_loaded_documents() const {
 }
 
 bool RmlContext::load_font_face(const godot::String& path) {
-	if (!RmlGodot::RmlManager::get_singleton()->is_initialized()) {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager == nullptr || !manager->is_initialized()) {
 		godot::UtilityFunctions::push_error("[RmlUi] Cannot load font — RmlUI not initialized");
 		return false;
 	}
@@ -508,7 +516,8 @@ bool RmlContext::load_font_face(const godot::String& path) {
 }
 
 bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
-	if (!RmlGodot::RmlManager::get_singleton()->is_initialized()) {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager == nullptr || !manager->is_initialized()) {
 		godot::UtilityFunctions::push_error("[RmlUi] Cannot load font — RmlUI not initialized");
 		return false;
 	}
@@ -517,7 +526,7 @@ bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 		return false;
 	}
 
-	auto& fi = RmlGodot::RmlManager::get_singleton()->get_font_interface();
+	auto& fi = manager->get_font_interface();
 	godot::TypedArray<godot::RID> rids = font->get_rids();
 
 	if (rids.is_empty()) {
@@ -544,7 +553,8 @@ bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 // --- Private: Context lifecycle ---
 
 void RmlContext::_create_context() {
-	if (!RmlGodot::RmlManager::get_singleton()->is_initialized()) return;
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager == nullptr || !manager->is_initialized()) return;
 	if (_rml_context != nullptr) return;
 
 	godot::Vector2 size = get_size();
@@ -788,7 +798,7 @@ bool RmlContext::bind_data_event(const godot::String& model_name,
 	it->second.event_callbacks[ename] = callable;
 
 	auto* callbacks = &it->second.event_callbacks;
-	std::string & captured_ename = ename;
+	std::string captured_ename = ename;
 
 	it->second.constructor.BindEventCallback(
 		Rml::String(ename),
@@ -1052,7 +1062,7 @@ bool RmlContext::register_custom_element(const godot::String& tag_name,
 	const godot::Callable& on_create, const godot::Callable& on_attribute_change) {
 
 	auto* manager = RmlGodot::RmlManager::get_singleton();
-	if (!manager->is_initialized()) {
+	if (manager == nullptr || !manager->is_initialized()) {
 		godot::UtilityFunctions::push_warning("[RmlUi] Cannot register custom element — RmlUI not initialized");
 		return false;
 	}
@@ -1122,6 +1132,7 @@ bool RmlContext::add_event_listener(const godot::String& element_id,
 	record.element = el;
 	record.listener = listener;
 	record.event_type = type_str;
+	record.in_capture_phase = in_capture_phase;
 	_listener_records.push_back(record);
 
 	return true;
@@ -1142,8 +1153,7 @@ void RmlContext::remove_event_listeners(const godot::String& element_id,
 	auto it = _listener_records.begin();
 	while (it != _listener_records.end()) {
 		if (it->element == el && it->event_type == type_str) {
-			el->RemoveEventListener(Rml::String(type_str), it->listener, false);
-			el->RemoveEventListener(Rml::String(type_str), it->listener, true);
+			el->RemoveEventListener(Rml::String(type_str), it->listener, it->in_capture_phase);
 			it = _listener_records.erase(it);
 		} else {
 			++it;
