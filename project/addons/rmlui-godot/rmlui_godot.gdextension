@@ -1,0 +1,11 @@
+[configuration]
+entry_symbol = "rmlui_godot_init"
+compatibility_minimum = 4.2
+
+[libraries]
+windows.debug.x86_64 = "res://addons/rmlui-godot/bin/rmlui_godot.dll"
+windows.release.x86_64 = "res://addons/rmlui-godot/bin/rmlui_godot.dll"
+linux.debug.x86_64 = "res://addons/rmlui-godot/bin/librmlui_godot.so"
+linux.release.x86_64 = "res://addons/rmlui-godot/bin/librmlui_godot.so"
+macos.debug = "res://addons/rmlui-godot/bin/librmlui_godot.dylib"
+macos.release = "res://addons/rmlui-godot/bin/librmlui_godot.dylib"
