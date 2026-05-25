@@ -46,7 +46,7 @@ func _on_edit_rcss(ctx: RmlContext) -> void:
 	var rml_path: String = ctx.get("document_path")
 	if rml_path.is_empty():
 		return
-	var rcss_paths := _extract_rcss_links(rml_path)
+	var rcss_paths := RmlPreviewPanel.extract_rcss_links(rml_path)
 	for rcss_path in rcss_paths:
 		_open_in_editor(rcss_path)
 
@@ -61,20 +61,3 @@ func _open_in_editor(path: String) -> void:
 	var res := load(path)
 	if res:
 		EditorInterface.edit_resource(res)
-
-func _extract_rcss_links(rml_path: String) -> PackedStringArray:
-	var result := PackedStringArray()
-	if not FileAccess.file_exists(rml_path):
-		return result
-	var content := FileAccess.get_file_as_string(rml_path)
-	var base_dir := rml_path.get_base_dir()
-	# Find <link type="text/rcss" href="..."/>
-	var regex := RegEx.new()
-	regex.compile('href="([^"]+\\.rcss)"')
-	for m in regex.search_all(content):
-		var href: String = m.get_string(1)
-		if href.begins_with("res://"):
-			result.append(href)
-		else:
-			result.append(base_dir.path_join(href))
-	return result
