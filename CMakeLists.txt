@@ -64,11 +64,22 @@ target_link_libraries(rmlui_godot
     PUBLIC godot-cpp rmlui_core
 )
 
-# --- Output ---
+# --- Output naming ---
+# Produces: rmlui_godot.debug.dll / rmlui_godot.release.dll (etc.)
+# Override with -DRMLUI_OUTPUT_SUFFIX=".custom" for non-standard names.
+if(NOT DEFINED RMLUI_OUTPUT_SUFFIX)
+    string(TOLOWER "${CMAKE_BUILD_TYPE}" _build_lower)
+    if(_build_lower STREQUAL "debug" OR _build_lower STREQUAL "relwithdebinfo")
+        set(RMLUI_OUTPUT_SUFFIX ".debug")
+    else()
+        set(RMLUI_OUTPUT_SUFFIX ".release")
+    endif()
+endif()
+
 if(RMLUI_GODOT_STANDALONE)
     set_target_properties(rmlui_godot PROPERTIES
         PREFIX ""
-        OUTPUT_NAME "rmlui_godot"
+        OUTPUT_NAME "rmlui_godot${RMLUI_OUTPUT_SUFFIX}"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/project/addons/rmlui-godot/bin"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/project/addons/rmlui-godot/bin"
     )
