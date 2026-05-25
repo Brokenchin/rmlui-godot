@@ -74,6 +74,13 @@ target_link_libraries(rmlui_godot
     PUBLIC godot-cpp rmlui_core rmlui_debugger
 )
 
+# godot-cpp propagates -fno-exceptions. macOS Clang hard-errors on throw
+# in RmlUi's itlib/flat_map.hpp (GCC/MSVC tolerate it). Re-enable for our
+# TUs only — we never throw, but the header's inline at() needs to compile.
+if(APPLE)
+    target_compile_options(rmlui_godot PRIVATE -fexceptions)
+endif()
+
 # --- Output naming ---
 # Single-config generators (Ninja, Make): uses CMAKE_BUILD_TYPE to pick suffix.
 # Multi-config generators (MSVC): uses per-config OUTPUT_NAME via generator expressions.
