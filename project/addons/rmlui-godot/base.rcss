@@ -1,0 +1,116 @@
+/* RmlUI-Godot — Base Stylesheet
+ * Include via: <link type="text/rcss" href="base.rcss" />
+ * Provides block-level defaults, scrollbar styling, and common resets.
+ */
+
+body {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+div, p, h1, h2, h3, h4, h5, h6, header, footer, section, nav {
+	display: block;
+}
+
+h1 { font-size: 2em; margin-top: 0.67em; margin-bottom: 0.67em; font-weight: bold; }
+h2 { font-size: 1.5em; margin-top: 0.83em; margin-bottom: 0.83em; font-weight: bold; }
+h3 { font-size: 1.17em; margin-top: 1em; margin-bottom: 1em; font-weight: bold; }
+h4 { margin-top: 1.33em; margin-bottom: 1.33em; font-weight: bold; }
+h5 { font-size: 0.83em; margin-top: 1.67em; margin-bottom: 1.67em; font-weight: bold; }
+h6 { font-size: 0.67em; margin-top: 2.33em; margin-bottom: 2.33em; font-weight: bold; }
+
+p {
+	margin-top: 1em;
+	margin-bottom: 1em;
+}
+
+em {
+	font-style: italic;
+}
+
+strong {
+	font-weight: bold;
+}
+
+/* --- Tables --- */
+
+table {
+	box-sizing: border-box;
+	display: table;
+}
+tr {
+	box-sizing: border-box;
+	display: table-row;
+}
+td {
+	box-sizing: border-box;
+	display: table-cell;
+}
+col {
+	box-sizing: border-box;
+	display: table-column;
+}
+colgroup {
+	display: table-column-group;
+}
+thead, tbody, tfoot {
+	display: table-row-group;
+}
+
+/* --- Form elements --- */
+
+select {
+	text-align: left;
+}
+
+tabset tabs {
+	display: block;
+}
+
+/* --- Scrollbars ---
+ * RmlUI scrollbar pseudo-elements default to large sizes that break layout.
+ * These rules keep scrollbars usable without consuming excessive space.
+ */
+
+scrollbarvertical {
+	width: 10px;
+	margin-left: 2px;
+}
+scrollbarvertical slidertrack {
+	background-color: #2a2a3a;
+}
+scrollbarvertical sliderbar {
+	width: 10px;
+	min-height: 20px;
+	background-color: #5a5a7a;
+}
+scrollbarvertical sliderbar:hover {
+	background-color: #7a7a9a;
+}
+scrollbarvertical sliderarrowdec,
+scrollbarvertical sliderarrowinc {
+	width: 0px;
+	height: 0px;
+}
+
+scrollbarhorizontal {
+	height: 10px;
+	margin-top: 2px;
+}
+scrollbarhorizontal slidertrack {
+	background-color: #2a2a3a;
+}
+scrollbarhorizontal sliderbar {
+	height: 10px;
+	min-width: 20px;
+	background-color: #5a5a7a;
+}
+scrollbarhorizontal sliderbar:hover {
+	background-color: #7a7a9a;
+}
+scrollbarhorizontal sliderarrowdec,
+scrollbarhorizontal sliderarrowinc {
+	width: 0px;
+	height: 0px;
+}
