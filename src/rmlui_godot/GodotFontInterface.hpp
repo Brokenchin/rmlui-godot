@@ -15,9 +15,20 @@ namespace RmlGodot {
 
 class GodotFontInterface final : public Rml::FontEngineInterface {
 public:
+	enum class TextRenderMode : int {
+		DEFAULT = 0,
+		SUBPIXEL = 1,
+		OVERSAMPLED = 2,
+		HIGH_QUALITY = 3,
+	};
+
+	void set_text_render_mode(TextRenderMode mode);
+	TextRenderMode get_text_render_mode() const { return _text_render_mode; }
+
 	bool LoadFontFace(const Rml::String& file_name, int face_index, bool fallback_face, Rml::Style::FontWeight weight) override;
 	bool LoadFontFace(Rml::Span<const Rml::byte> data, int face_index, const Rml::String& family,
 		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face) override;
+	bool LoadFontFromRID(godot::RID font_rid, bool fallback_face, Rml::Style::FontWeight weight);
 	Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle style,
 		Rml::Style::FontWeight weight, int size) override;
 	Rml::FontEffectsHandle PrepareFontEffects(Rml::FontFaceHandle handle, const Rml::FontEffectList& font_effects) override;
@@ -40,6 +51,7 @@ private:
 		Rml::Style::FontStyle style = Rml::Style::FontStyle::Normal;
 		Rml::Style::FontWeight weight = Rml::Style::FontWeight::Normal;
 		bool is_fallback = false;
+		bool externally_owned = false;
 	};
 
 	struct GlyphData {
@@ -65,12 +77,15 @@ private:
 	std::vector<LoadedFont> _loaded_fonts;
 	std::vector<std::unique_ptr<FontFace>> _faces;
 	int _fallback_font_index = -1;
+	TextRenderMode _text_render_mode = TextRenderMode::DEFAULT;
 
 	int _find_font(const Rml::String& family, Rml::Style::FontStyle style, Rml::Style::FontWeight weight) const;
 	bool _register_font(godot::RID font_rid, const Rml::String& family_override,
 		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face);
 	const GlyphData& _ensure_glyph(FontFace& face, uint32_t codepoint);
 	void _rebuild_dirty_atlases(FontFace& face);
+	void _apply_font_settings(godot::RID font_rid) const;
+	void _invalidate_all_caches();
 };
 
 } // namespace RmlGodot

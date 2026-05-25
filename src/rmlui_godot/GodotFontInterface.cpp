@@ -7,6 +7,7 @@
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/image.hpp>
+#include <godot_cpp/classes/resource_uid.hpp>
 #include <godot_cpp/classes/text_server.hpp>
 #include <godot_cpp/classes/text_server_manager.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
@@ -29,6 +30,12 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 	bool fallback_face, Rml::Style::FontWeight weight) {
 
 	godot::String path = godot::String(file_name.c_str());
+	if (path.begins_with("uid://")) {
+		auto* uid_mgr = godot::ResourceUID::get_singleton();
+		int64_t uid = uid_mgr->text_to_id(path);
+		if (uid_mgr->has_id(uid))
+			path = uid_mgr->get_id_path(uid);
+	}
 	if (!path.begins_with("res://") && !path.begins_with("user://"))
 		path = godot::String("res://") + path;
 
@@ -45,8 +52,7 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	godot::RID font_rid = ts->create_font();
 	ts->font_set_data(font_rid, data);
-	ts->font_set_hinting(font_rid, godot::TextServer::HINTING_NORMAL);
-	ts->font_set_antialiasing(font_rid, godot::TextServer::FONT_ANTIALIASING_GRAY);
+	_apply_font_settings(font_rid);
 
 	Rml::String family(ts->font_get_name(font_rid).utf8().get_data());
 
@@ -68,10 +74,29 @@ bool GodotFontInterface::LoadFontFace(Rml::Span<const Rml::byte> data, int /*fac
 	bytes.resize(static_cast<int64_t>(data.size()));
 	memcpy(bytes.ptrw(), data.data(), data.size());
 	ts->font_set_data(font_rid, bytes);
-	ts->font_set_hinting(font_rid, godot::TextServer::HINTING_NORMAL);
-	ts->font_set_antialiasing(font_rid, godot::TextServer::FONT_ANTIALIASING_GRAY);
+	_apply_font_settings(font_rid);
 
 	return _register_font(font_rid, family, style, weight, fallback_face);
+}
+
+bool GodotFontInterface::LoadFontFromRID(godot::RID font_rid, bool fallback_face,
+	Rml::Style::FontWeight weight) {
+
+	if (!font_rid.is_valid()) return false;
+
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	_apply_font_settings(font_rid);
+
+	Rml::String family(ts->font_get_name(font_rid).utf8().get_data());
+
+	Rml::Style::FontStyle style = Rml::Style::FontStyle::Normal;
+	if (static_cast<int64_t>(ts->font_get_style(font_rid)) & godot::TextServer::FONT_ITALIC)
+		style = Rml::Style::FontStyle::Italic;
+
+	if (!_register_font(font_rid, family, style, weight, fallback_face))
+		return false;
+	_loaded_fonts.back().externally_owned = true;
+	return true;
 }
 
 bool GodotFontInterface::_register_font(godot::RID font_rid, const Rml::String& family_override,
@@ -366,28 +391,36 @@ void GodotFontInterface::_rebuild_dirty_atlases(FontFace& face) {
 				return false;
 			}
 
+			int w = atlas->get_width();
+			int h = atlas->get_height();
+			auto orig_format = atlas->get_format();
+
+			if (orig_format == godot::Image::FORMAT_L8) {
+				// Coverage stored as luminance — move to alpha, set RGB=white.
+				godot::PackedByteArray src_data = atlas->get_data();
+				godot::PackedByteArray data;
+				data.resize(w * h * 4);
+				uint8_t* dst = data.ptrw();
+				const uint8_t* src = src_data.ptr();
+				for (int i = 0; i < w * h; i++) {
+					dst[i * 4 + 0] = 255;
+					dst[i * 4 + 1] = 255;
+					dst[i * 4 + 2] = 255;
+					dst[i * 4 + 3] = src[i];
+				}
+				return tex_interface.GenerateTexture(
+					Rml::Span<const Rml::byte>(data.ptr(), data.size()),
+					Rml::Vector2i(w, h));
+			}
+
+			// LA8/RGBA8: coverage already in alpha — just ensure RGBA8.
+			// Don't premultiply here; GenerateTexture handles it.
 			godot::Ref<godot::Image> img = godot::Image::create_from_data(
-				atlas->get_width(), atlas->get_height(), false, atlas->get_format(), atlas->get_data());
+				w, h, false, orig_format, atlas->get_data());
 			if (img->get_format() != godot::Image::FORMAT_RGBA8)
 				img->convert(godot::Image::FORMAT_RGBA8);
 
-			int w = img->get_width();
-			int h = img->get_height();
 			godot::PackedByteArray data = img->get_data();
-
-			// Premultiply alpha
-			uint8_t* px = data.ptrw();
-			int count = w * h;
-			for (int i = 0; i < count; i++) {
-				uint8_t r = px[i * 4 + 0];
-				uint8_t g = px[i * 4 + 1];
-				uint8_t b = px[i * 4 + 2];
-				uint8_t a = px[i * 4 + 3];
-				px[i * 4 + 0] = static_cast<uint8_t>((r * a) / 255);
-				px[i * 4 + 1] = static_cast<uint8_t>((g * a) / 255);
-				px[i * 4 + 2] = static_cast<uint8_t>((b * a) / 255);
-			}
-
 			return tex_interface.GenerateTexture(
 				Rml::Span<const Rml::byte>(data.ptr(), data.size()),
 				Rml::Vector2i(w, h));
@@ -412,12 +445,54 @@ void GodotFontInterface::ReleaseTexturesForRenderManager(Rml::RenderManager* rm)
 void GodotFontInterface::ReleaseFontResources() {
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	for (auto& font : _loaded_fonts) {
-		if (font.font_rid.is_valid())
+		if (font.font_rid.is_valid() && !font.externally_owned)
 			ts->free_rid(font.font_rid);
 	}
 	_loaded_fonts.clear();
 	_faces.clear();
 	_fallback_font_index = -1;
+}
+
+void GodotFontInterface::_apply_font_settings(godot::RID font_rid) const {
+	godot::Ref<godot::TextServer> ts = get_text_server();
+
+	ts->font_set_hinting(font_rid, godot::TextServer::HINTING_NORMAL);
+	ts->font_set_antialiasing(font_rid, godot::TextServer::FONT_ANTIALIASING_GRAY);
+
+	bool subpixel = (_text_render_mode == TextRenderMode::SUBPIXEL ||
+	                 _text_render_mode == TextRenderMode::HIGH_QUALITY);
+	bool oversampled = (_text_render_mode == TextRenderMode::OVERSAMPLED ||
+	                    _text_render_mode == TextRenderMode::HIGH_QUALITY);
+
+	ts->font_set_subpixel_positioning(font_rid,
+		subpixel ? godot::TextServer::SUBPIXEL_POSITIONING_ONE_QUARTER
+		         : godot::TextServer::SUBPIXEL_POSITIONING_DISABLED);
+
+	ts->font_set_oversampling(font_rid, oversampled ? 2.0 : 0.0);
+}
+
+void GodotFontInterface::_invalidate_all_caches() {
+	for (auto& face : _faces) {
+		face->glyph_cache.clear();
+		face->atlas_textures.clear();
+		face->dirty_pages.clear();
+		face->version++;
+	}
+}
+
+void GodotFontInterface::set_text_render_mode(TextRenderMode mode) {
+	if (_text_render_mode == mode) return;
+	_text_render_mode = mode;
+
+	for (auto& font : _loaded_fonts) {
+		_apply_font_settings(font.font_rid);
+	}
+	_invalidate_all_caches();
+
+	const char* mode_names[] = {"Default", "Subpixel", "Oversampled", "High Quality"};
+	godot::UtilityFunctions::print(
+		godot::String("[RmlUi Font] Text render mode: ") +
+		godot::String(mode_names[static_cast<int>(mode)]));
 }
 
 } // namespace RmlGodot

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "RmlGD.hpp"
+#include <godot_cpp/classes/canvas_item_material.hpp>
 #include <godot_cpp/classes/control.hpp>
+#include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
@@ -35,6 +37,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("reload_all_documents"), &RmlContext::reload_all_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_loaded_documents"), &RmlContext::get_loaded_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("load_font_face", "path"), &RmlContext::load_font_face);
+	godot::ClassDB::bind_method(godot::D_METHOD("load_font_resource", "font"), &RmlContext::load_font_resource);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_rml_context_name"), &RmlContext::get_rml_context_name);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_rml_context_name", "name"), &RmlContext::set_rml_context_name);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_dp_ratio"), &RmlContext::get_dp_ratio);
@@ -98,6 +101,8 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_document_path", "path"), &RmlContext::set_document_path);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_font_paths"), &RmlContext::get_font_paths);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_font_paths", "paths"), &RmlContext::set_font_paths);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_text_render_mode"), &RmlContext::get_text_render_mode);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_text_render_mode", "mode"), &RmlContext::set_text_render_mode);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "rml_context_name"), "set_rml_context_name", "get_rml_context_name");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "dp_ratio", godot::PROPERTY_HINT_RANGE, "0.25,4.0,0.25"), "set_dp_ratio", "get_dp_ratio");
@@ -105,6 +110,9 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_GROUP("Auto-Configuration", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "document_path", godot::PROPERTY_HINT_FILE, "*.rml"), "set_document_path", "get_document_path");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::PACKED_STRING_ARRAY, "font_paths"), "set_font_paths", "get_font_paths");
+
+	ADD_GROUP("Font Settings", "");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "Default,Subpixel,Oversampled,High Quality"), "set_text_render_mode", "get_text_render_mode");
 
 });
 
@@ -123,6 +131,7 @@ public:
 	void reload_all_documents();
 	godot::Array get_loaded_documents() const;
 	bool load_font_face(const godot::String& path);
+	bool load_font_resource(const godot::Ref<godot::Font>& font);
 
 	godot::String get_rml_context_name() const { return _context_name; }
 	void set_rml_context_name(const godot::String& name) { _context_name = name; }
@@ -134,6 +143,9 @@ public:
 	void set_document_path(const godot::String& path) { _document_path = path; }
 	godot::PackedStringArray get_font_paths() const { return _font_paths; }
 	void set_font_paths(const godot::PackedStringArray& paths) { _font_paths = paths; }
+
+	int get_text_render_mode() const { return _text_render_mode; }
+	void set_text_render_mode(int mode);
 
 	bool create_data_model(const godot::String& model_name);
 	bool bind_data_variable(const godot::String& model_name, const godot::String& variable_name, const godot::Variant& initial_value);
@@ -194,6 +206,7 @@ private:
 	float _dp_ratio = 1.0f;
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
+	int _text_render_mode = 0;
 
 	struct LoadedDocument {
 		std::string path;
@@ -202,6 +215,7 @@ private:
 	std::vector<LoadedDocument> _loaded_documents;
 	std::vector<godot::RID> _scissor_items;
 	std::vector<godot::RID> _layer_items;
+	godot::Ref<godot::CanvasItemMaterial> _premul_material;
 
 	struct ListenerRecord {
 		Rml::Element* element = nullptr;

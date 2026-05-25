@@ -10,6 +10,7 @@
 #include <RmlUi/Core/StyleSheetContainer.h>
 #include <RmlUi/Debugger.h>
 #include <godot_cpp/classes/canvas_item_material.hpp>
+#include <godot_cpp/classes/font_file.hpp>
 #include <godot_cpp/classes/input_event_key.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
@@ -124,6 +125,10 @@ void RmlContext::_ready() {
 	RmlGodot::RmlManager::get_singleton()->ensure_initialized();
 	_create_context();
 
+	auto& fi = RmlGodot::RmlManager::get_singleton()->get_font_interface();
+	fi.set_text_render_mode(
+		static_cast<RmlGodot::GodotFontInterface::TextRenderMode>(_text_render_mode));
+
 	for (int i = 0; i < _font_paths.size(); i++) {
 		load_font_face(_font_paths[i]);
 	}
@@ -153,15 +158,31 @@ void RmlContext::_draw() {
 	_free_scissor_items();
 	_free_layer_items();
 
+	if (!_premul_material.is_valid()) {
+		_premul_material.instantiate();
+		_premul_material->set_blend_mode(godot::CanvasItemMaterial::BLEND_MODE_PREMULT_ALPHA);
+		set_material(_premul_material);
+	}
+	godot::RID mat_rid = _premul_material->get_rid();
+
 	using CmdType = RmlGodot::GodotRenderInterface::CommandType;
+
+	godot::Vector2 ctrl_size = get_size();
+	static int _diag_frame = 0;
+	int _drawn = 0, _culled = 0;
+
+	godot::RID root_draw = rs->canvas_item_create();
+	rs->canvas_item_set_parent(root_draw, get_canvas_item());
+	rs->canvas_item_set_material(root_draw, mat_rid);
+	_scissor_items.push_back(root_draw);
 
 	struct LayerState {
 		godot::RID canvas_item;
 	};
 	std::vector<LayerState> layer_stack;
-	layer_stack.push_back({get_canvas_item()});
+	layer_stack.push_back({root_draw});
 
-	godot::RID draw_target = get_canvas_item();
+	godot::RID draw_target = root_draw;
 	bool active_scissor = false;
 	godot::Rect2i active_scissor_rect;
 
@@ -173,6 +194,7 @@ void RmlContext::_draw() {
 		case CmdType::PUSH_LAYER: {
 			godot::RID group_item = rs->canvas_item_create();
 			rs->canvas_item_set_parent(group_item, layer_stack.back().canvas_item);
+			rs->canvas_item_set_material(group_item, mat_rid);
 			rs->canvas_item_set_canvas_group_mode(group_item,
 				godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT);
 			_layer_items.push_back(group_item);
@@ -248,25 +270,6 @@ void RmlContext::_draw() {
 			godot::Ref<godot::ArrayMesh> mesh = _render_interface.get_mesh(cmd.geometry);
 			if (!mesh.is_valid()) continue;
 
-			if (cmd.scissor_enabled != active_scissor ||
-				(cmd.scissor_enabled && cmd.scissor_rect != active_scissor_rect)) {
-
-				active_scissor = cmd.scissor_enabled;
-				active_scissor_rect = cmd.scissor_rect;
-
-				if (cmd.scissor_enabled) {
-					godot::RID sub = rs->canvas_item_create();
-					rs->canvas_item_set_parent(sub, layer_stack.back().canvas_item);
-					rs->canvas_item_set_custom_rect(sub, true,
-						godot::Rect2(active_scissor_rect));
-					rs->canvas_item_set_clip(sub, true);
-					_scissor_items.push_back(sub);
-					draw_target = sub;
-				} else {
-					draw_target = layer_stack.back().canvas_item;
-				}
-			}
-
 			godot::Transform2D xform;
 			if (cmd.has_transform) {
 				xform = cmd.transform;
@@ -276,15 +279,83 @@ void RmlContext::_draw() {
 				xform.set_origin(cmd.translation);
 			}
 
+			// CPU-side scissor cull — canvas_item_set_clip doesn't clip RS-created mesh items.
+			godot::AABB aabb3 = mesh->get_aabb();
+			godot::Vector2 origin = xform.get_origin();
+			float mesh_left   = origin.x + static_cast<float>(aabb3.position.x);
+			float mesh_top    = origin.y + static_cast<float>(aabb3.position.y);
+			float mesh_right  = mesh_left + static_cast<float>(aabb3.size.x);
+			float mesh_bottom = mesh_top + static_cast<float>(aabb3.size.y);
+
+			godot::Rect2 clip_rect(0, 0, ctrl_size.x, ctrl_size.y);
+			if (cmd.scissor_enabled) {
+				clip_rect = clip_rect.intersection(godot::Rect2(cmd.scissor_rect));
+			}
+			if (clip_rect.size.x <= 0 || clip_rect.size.y <= 0) continue;
+
+			if (mesh_right  <= clip_rect.position.x ||
+				mesh_left   >= clip_rect.position.x + clip_rect.size.x ||
+				mesh_bottom <= clip_rect.position.y ||
+				mesh_top    >= clip_rect.position.y + clip_rect.size.y) {
+				_culled++;
+				if (_diag_frame < 3 && _culled <= 5) {
+					godot::UtilityFunctions::print(
+						godot::String("[RmlUi DIAG] CULLED cmd=") + godot::String::num_int64(ci) +
+						godot::String(" mesh_y=") + godot::String::num(mesh_top) +
+						godot::String("..") + godot::String::num(mesh_bottom) +
+						godot::String(" clip_y=") + godot::String::num(clip_rect.position.y) +
+						godot::String("..") + godot::String::num(clip_rect.position.y + clip_rect.size.y));
+				}
+				continue;
+			}
+
+			if (cmd.scissor_enabled != active_scissor ||
+				(cmd.scissor_enabled && cmd.scissor_rect != active_scissor_rect)) {
+
+				active_scissor = cmd.scissor_enabled;
+				active_scissor_rect = cmd.scissor_rect;
+
+				if (cmd.scissor_enabled) {
+					godot::RID sub = rs->canvas_item_create();
+					rs->canvas_item_set_parent(sub, layer_stack.back().canvas_item);
+					rs->canvas_item_set_material(sub, mat_rid);
+					_scissor_items.push_back(sub);
+					draw_target = sub;
+				} else {
+					draw_target = layer_stack.back().canvas_item;
+				}
+			}
+
 			godot::Ref<godot::Texture2D> draw_tex = _render_interface.get_texture_or_white(cmd.texture);
 			godot::RID tex_rid = draw_tex.is_valid() ? draw_tex->get_rid() : godot::RID();
 			rs->canvas_item_add_mesh(draw_target, mesh->get_rid(), xform,
 				godot::Color(1, 1, 1, 1), tex_rid);
+			_drawn++;
+			if (_diag_frame < 3 && _drawn <= 10) {
+				godot::UtilityFunctions::print(
+					godot::String("[RmlUi DIAG] DRAWN cmd=") + godot::String::num_int64(ci) +
+					godot::String(" pos=") + godot::String::num(origin.x) + godot::String(",") + godot::String::num(origin.y) +
+					godot::String(" aabb=") + godot::String::num(static_cast<float>(aabb3.position.x)) +
+					godot::String(",") + godot::String::num(static_cast<float>(aabb3.position.y)) +
+					godot::String(" sz=") + godot::String::num(static_cast<float>(aabb3.size.x)) +
+					godot::String("x") + godot::String::num(static_cast<float>(aabb3.size.y)) +
+					godot::String(" scissor=") + godot::String(cmd.scissor_enabled ? "true" : "false"));
+			}
 			break;
 		}
 
 		} // switch
 	}
+
+	if (_diag_frame < 5) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi DIAG] frame=") + godot::String::num_int64(_diag_frame) +
+			godot::String(" ctrl=") + godot::String::num(ctrl_size.x) + godot::String("x") + godot::String::num(ctrl_size.y) +
+			godot::String(" cmds=") + godot::String::num_int64(commands.size()) +
+			godot::String(" drawn=") + godot::String::num_int64(_drawn) +
+			godot::String(" culled=") + godot::String::num_int64(_culled));
+	}
+	_diag_frame++;
 }
 
 void RmlContext::_notification(int p_what) {
@@ -468,6 +539,40 @@ bool RmlContext::load_font_face(const godot::String& path) {
 	return ok;
 }
 
+bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
+	if (!RmlGodot::RmlManager::get_singleton()->is_initialized()) {
+		godot::UtilityFunctions::push_error("[RmlUi] Cannot load font — RmlUI not initialized");
+		return false;
+	}
+	if (!font.is_valid()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] Cannot load font — null resource");
+		return false;
+	}
+
+	auto& fi = RmlGodot::RmlManager::get_singleton()->get_font_interface();
+	godot::TypedArray<godot::RID> rids = font->get_rids();
+
+	if (rids.is_empty()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] Font resource has no TextServer RIDs");
+		return false;
+	}
+
+	bool any_ok = false;
+	for (int i = 0; i < rids.size(); i++) {
+		godot::RID rid = rids[i];
+		if (fi.LoadFontFromRID(rid, false, Rml::Style::FontWeight::Normal))
+			any_ok = true;
+	}
+
+	if (any_ok) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Font resource loaded: ") + font->get_font_name());
+	} else {
+		godot::UtilityFunctions::push_error("[RmlUi] Failed to load font resource");
+	}
+	return any_ok;
+}
+
 // --- Private: Context lifecycle ---
 
 void RmlContext::_create_context() {
@@ -546,6 +651,18 @@ void RmlContext::set_dp_ratio(float ratio) {
 	_dp_ratio = ratio;
 	if (_rml_context != nullptr) {
 		_rml_context->SetDensityIndependentPixelRatio(ratio);
+	}
+}
+
+void RmlContext::set_text_render_mode(int mode) {
+	if (_text_render_mode == mode) return;
+	_text_render_mode = mode;
+
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		manager->get_font_interface().set_text_render_mode(
+			static_cast<RmlGodot::GodotFontInterface::TextRenderMode>(mode));
+		queue_redraw();
 	}
 }
 
