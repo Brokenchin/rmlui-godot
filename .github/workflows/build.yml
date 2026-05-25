@@ -8,10 +8,15 @@ on:
     branches: [master, dev-rmlui]
   workflow_dispatch:
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GODOT_CPP_VERSION: godot-4.5-stable
   RMLUI_REPO: Brokenchin/RmlUi-multicontext
   RMLUI_BRANCH: multicontext_experiment
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -27,29 +32,53 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             arch: x86_64
-            cmake_generator: "Unix Makefiles"
+            cmake_generator: Ninja
             cmake_arch: ""
           - os: macos-latest
             platform: macos
             arch: universal
-            cmake_generator: "Unix Makefiles"
+            cmake_generator: Ninja
             cmake_arch: '-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"'
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     name: ${{ matrix.platform }}-${{ matrix.arch }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Ninja
+        if: matrix.cmake_generator == 'Ninja'
+        uses: seanmiddleditch/gha-setup-ninja@master
+
+      - name: Setup ccache
+        if: runner.os != 'Windows'
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: dependencies/
+          key: deps-${{ matrix.platform }}-${{ env.GODOT_CPP_VERSION }}-${{ env.RMLUI_BRANCH }}
+
       - name: Clone godot-cpp
         run: |
-          git clone https://github.com/godotengine/godot-cpp.git -b ${{ env.GODOT_CPP_VERSION }} --depth 1 dependencies/godot-cpp
+          if [ ! -d "dependencies/godot-cpp" ]; then
+            git clone https://github.com/godotengine/godot-cpp.git -b ${{ env.GODOT_CPP_VERSION }} --depth 1 dependencies/godot-cpp
+          fi
+        shell: bash
 
       - name: Clone RmlUi
         run: |
-          git clone https://github.com/${{ env.RMLUI_REPO }}.git -b ${{ env.RMLUI_BRANCH }} --depth 1 dependencies/RmlUi
+          if [ ! -d "dependencies/RmlUi" ]; then
+            git clone https://github.com/${{ env.RMLUI_REPO }}.git -b ${{ env.RMLUI_BRANCH }} --depth 1 dependencies/RmlUi
+          fi
+        shell: bash
 
+      # --- Debug build ---
       - name: Configure (Debug)
         run: >
           cmake -B build-debug
@@ -62,10 +91,12 @@ jobs:
           -DRMLUI_LOTTIE_PLUGIN=OFF
           -DRMLUI_SVG_PLUGIN=OFF
           -DRMLUI_CUSTOM_RTTI=ON
+          ${{ runner.os != 'Windows' && '-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache' || '' }}
 
       - name: Build (Debug)
         run: cmake --build build-debug --config Debug --parallel
 
+      # --- Release build ---
       - name: Configure (Release)
         run: >
           cmake -B build-release
@@ -78,6 +109,7 @@ jobs:
           -DRMLUI_LOTTIE_PLUGIN=OFF
           -DRMLUI_SVG_PLUGIN=OFF
           -DRMLUI_CUSTOM_RTTI=ON
+          ${{ runner.os != 'Windows' && '-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache' || '' }}
 
       - name: Build (Release)
         run: cmake --build build-release --config Release --parallel
@@ -114,12 +146,12 @@ jobs:
           cp project/addons/rmlui-godot/plugin.cfg dist/addons/rmlui-godot/
           cp project/addons/rmlui-godot/base.rcss dist/addons/rmlui-godot/
 
-          # Copy all platform binaries into single bin/ folder
           for dir in artifacts/rmlui-godot-*/; do
             cp -v "$dir"/* dist/addons/rmlui-godot/bin/ 2>/dev/null || true
           done
 
-          ls -la dist/addons/rmlui-godot/bin/
+          echo "=== Assembled addon ==="
+          find dist/ -type f | sort
 
       - name: Upload addon package
         uses: actions/upload-artifact@v4
