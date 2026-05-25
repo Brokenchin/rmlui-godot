@@ -1,0 +1,52 @@
+<rml>
+<head>
+	<title>Hello RmlUI-Godot</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1e1e2e;
+			font-family: "Inter";
+			font-size: 16dp;
+			color: #cdd6f4;
+		}
+		.panel {
+			margin: 40dp auto;
+			width: 480dp;
+			padding: 30dp;
+			background-color: #313244;
+			border: 2dp #585b70;
+		}
+		h1 {
+			font-size: 28dp;
+			color: #89b4fa;
+			margin-bottom: 16dp;
+		}
+		p {
+			margin-bottom: 12dp;
+			line-height: 1.5;
+		}
+		.highlight {
+			color: #f9e2af;
+			font-weight: bold;
+		}
+		.badge {
+			display: inline-block;
+			padding: 4dp 12dp;
+			background-color: #89b4fa;
+			color: #1e1e2e;
+			font-size: 12dp;
+			font-weight: bold;
+			margin-top: 12dp;
+		}
+	</style>
+</head>
+<body>
+	<div class="panel">
+		<h1>Hello, RmlUI-Godot!</h1>
+		<p>This UI is rendered by <span class="highlight">RmlUI 6.3</span> inside Godot.</p>
+		<p>Style it with RCSS (a subset of CSS), structure it with RML (a subset of HTML).</p>
+		<p>Add an <span class="highlight">RmlContext</span> node to your scene, set <span class="highlight">document_path</span> to this file, and you're done.</p>
+		<span class="badge">RmlUI-Godot v0.1</span>
+	</div>
+</body>
+</rml>

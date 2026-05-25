@@ -1,0 +1,97 @@
+<rml>
+<head>
+	<title>Drag and Drop</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1e1e2e;
+			font-family: "Inter";
+			font-size: 16dp;
+			color: #cdd6f4;
+		}
+		h1 {
+			font-size: 24dp;
+			color: #89b4fa;
+			text-align: center;
+			margin: 20dp 0;
+		}
+		.description {
+			text-align: center;
+			color: #6c7086;
+			margin-bottom: 20dp;
+		}
+		.container {
+			display: flex;
+			flex-direction: row;
+			justify-content: center;
+			gap: 40dp;
+		}
+		.slot-grid {
+			display: flex;
+			flex-direction: row;
+			flex-wrap: wrap;
+			width: 220dp;
+			gap: 8dp;
+		}
+		.grid-label {
+			width: 100%;
+			font-size: 14dp;
+			color: #a6adc8;
+			text-align: center;
+			margin-bottom: 8dp;
+		}
+		.slot {
+			width: 64dp;
+			height: 64dp;
+			background-color: #45475a;
+			border: 2dp #585b70;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			font-size: 28dp;
+		}
+		.slot:hover {
+			border-color: #89b4fa;
+		}
+		.slot.filled {
+			background-color: #313244;
+			border-color: #f9e2af;
+		}
+		.slot:drag {
+			visibility: hidden;
+		}
+		.slot.drop-target {
+			border-color: #a6e3a1;
+			background-color: #31324488;
+		}
+	</style>
+</head>
+<body>
+	<h1>Drag and Drop</h1>
+	<p class="description">Drag items between grids. Works across RmlContexts and Godot Controls.</p>
+	<div class="container">
+		<div>
+			<div class="slot-grid" id="inventory">
+				<div class="grid-label">Inventory</div>
+				<div class="slot filled" id="slot_0" drag="clone" data-item="sword">&#x2694;</div>
+				<div class="slot filled" id="slot_1" drag="clone" data-item="shield">&#x1F6E1;</div>
+				<div class="slot filled" id="slot_2" drag="clone" data-item="potion">&#x2697;</div>
+				<div class="slot" id="slot_3"></div>
+				<div class="slot" id="slot_4"></div>
+				<div class="slot" id="slot_5"></div>
+			</div>
+		</div>
+		<div>
+			<div class="slot-grid" id="equipment">
+				<div class="grid-label">Equipment</div>
+				<div class="slot" id="equip_0"></div>
+				<div class="slot" id="equip_1"></div>
+				<div class="slot" id="equip_2"></div>
+				<div class="slot" id="equip_3"></div>
+				<div class="slot" id="equip_4"></div>
+				<div class="slot" id="equip_5"></div>
+			</div>
+		</div>
+	</div>
+</body>
+</rml>
