@@ -1,0 +1,4 @@
+[submodule "examples"]
+	path = examples
+	url = https://github.com/Brokenchin/rmlui-godot-examples.git
+	update = none

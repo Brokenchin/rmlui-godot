@@ -8,6 +8,50 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # --- Options ---
 option(RMLUI_GODOT_STANDALONE "Build as standalone shared library (.dll/.so/.dylib)" ON)
 
+# --- Godot project root & addon install paths ---
+# User sets GODOT_PROJECT_ROOT to wherever project.godot lives.
+# All addon paths are derived from it following Godot conventions.
+set(GODOT_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/project" CACHE PATH
+    "Godot project directory (where project.godot lives)")
+set(RMLUI_GODOT_ADDON_NAME "rmlui-godot" CACHE STRING
+    "Plugin folder name under addons/")
+
+if(RMLUI_GODOT_STANDALONE)
+    option(RMLUI_GODOT_INSTALL_EXAMPLES "Fetch and install examples into addon directory" ON)
+else()
+    option(RMLUI_GODOT_INSTALL_EXAMPLES "Fetch and install examples into addon directory" OFF)
+endif()
+
+set(RMLUI_ADDON_INSTALL_DIR "${GODOT_PROJECT_ROOT}/addons/${RMLUI_GODOT_ADDON_NAME}")
+set(RMLUI_ADDON_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/project/addons/${RMLUI_GODOT_ADDON_NAME}")
+
+# --- Examples submodule (opt-in) ---
+if(RMLUI_GODOT_INSTALL_EXAMPLES)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/CMakeLists.txt"
+       AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/README.md")
+        find_package(Git QUIET)
+        if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.gitmodules")
+            message(STATUS "Fetching rmlui-godot-examples submodule...")
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} submodule update --init examples
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                RESULT_VARIABLE _examples_result
+            )
+            if(NOT _examples_result EQUAL 0)
+                message(WARNING
+                    "Failed to fetch examples submodule. Examples will not be installed.\n"
+                    "  Run manually: git submodule update --init examples")
+                set(RMLUI_GODOT_INSTALL_EXAMPLES OFF)
+            endif()
+        else()
+            message(WARNING
+                "Examples submodule not found and git not available. Examples will not be installed.\n"
+                "  Clone https://github.com/Brokenchin/rmlui-godot-examples into examples/")
+            set(RMLUI_GODOT_INSTALL_EXAMPLES OFF)
+        endif()
+    endif()
+endif()
+
 # --- Dependencies ---
 # godot-cpp: set GODOT_CPP_DIR or add as subdirectory
 if(NOT TARGET godot-cpp)
@@ -84,7 +128,7 @@ target_compile_definitions(rmlui_godot PRIVATE ITLIB_FLAT_MAP_NO_THROW)
 # Multi-config generators (MSVC): uses per-config OUTPUT_NAME via generator expressions.
 # Override with -DRMLUI_OUTPUT_SUFFIX=".custom" to force a specific suffix.
 if(RMLUI_GODOT_STANDALONE)
-    set(_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/project/addons/rmlui-godot/bin")
+    set(_BIN_DIR "${RMLUI_ADDON_INSTALL_DIR}/bin")
 
     get_property(_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 
@@ -121,5 +165,90 @@ if(RMLUI_GODOT_STANDALONE)
             RUNTIME_OUTPUT_DIRECTORY "${_BIN_DIR}"
             LIBRARY_OUTPUT_DIRECTORY "${_BIN_DIR}"
         )
+    endif()
+endif()
+
+# --- Addon install ---
+# Standalone: copy addon files (plugin.cfg, base.rcss, .gdextension, editor/) to install dir.
+# When GODOT_PROJECT_ROOT differs from the in-repo project/, files are synced post-build.
+# When they're the same path, the copy is skipped (already in place).
+if(RMLUI_GODOT_STANDALONE)
+    cmake_path(ABSOLUTE_PATH RMLUI_ADDON_INSTALL_DIR NORMALIZE OUTPUT_VARIABLE _install_norm)
+    cmake_path(ABSOLUTE_PATH RMLUI_ADDON_SOURCE_DIR  NORMALIZE OUTPUT_VARIABLE _source_norm)
+
+    if(NOT _install_norm STREQUAL _source_norm)
+        set(_ADDON_FILES
+            plugin.cfg
+            base.rcss
+            rmlui_godot.gdextension
+        )
+        foreach(_file IN LISTS _ADDON_FILES)
+            if(EXISTS "${RMLUI_ADDON_SOURCE_DIR}/${_file}")
+                add_custom_command(TARGET rmlui_godot POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${RMLUI_ADDON_SOURCE_DIR}/${_file}"
+                        "${RMLUI_ADDON_INSTALL_DIR}/${_file}"
+                    COMMENT "Installing ${_file} → ${RMLUI_ADDON_INSTALL_DIR}"
+                )
+            endif()
+        endforeach()
+
+        if(EXISTS "${RMLUI_ADDON_SOURCE_DIR}/editor")
+            add_custom_command(TARGET rmlui_godot POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${RMLUI_ADDON_SOURCE_DIR}/editor"
+                    "${RMLUI_ADDON_INSTALL_DIR}/editor"
+                COMMENT "Installing editor/ → ${RMLUI_ADDON_INSTALL_DIR}/editor"
+            )
+        endif()
+    endif()
+
+    if(RMLUI_GODOT_INSTALL_EXAMPLES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples")
+        add_custom_command(TARGET rmlui_godot POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/examples"
+                "${RMLUI_ADDON_INSTALL_DIR}/examples"
+            COMMENT "Installing examples → ${RMLUI_ADDON_INSTALL_DIR}/examples"
+        )
+    endif()
+endif()
+
+# --- Embedded addon junction ---
+# When building as static lib for a host project, create a junction/symlink so
+# Godot discovers the GDScript editor plugins from the host's addons/ folder.
+if(NOT RMLUI_GODOT_STANDALONE)
+    cmake_path(ABSOLUTE_PATH RMLUI_ADDON_INSTALL_DIR NORMALIZE OUTPUT_VARIABLE _install_norm)
+    cmake_path(ABSOLUTE_PATH RMLUI_ADDON_SOURCE_DIR  NORMALIZE OUTPUT_VARIABLE _source_norm)
+
+    if(NOT _install_norm STREQUAL _source_norm AND NOT EXISTS "${RMLUI_ADDON_INSTALL_DIR}")
+        if(WIN32)
+            # NTFS junction — no admin rights needed, works on all modern Windows
+            file(TO_NATIVE_PATH "${RMLUI_ADDON_INSTALL_DIR}" _junction_target)
+            file(TO_NATIVE_PATH "${RMLUI_ADDON_SOURCE_DIR}" _junction_source)
+            execute_process(
+                COMMAND cmd /c mklink /J "${_junction_target}" "${_junction_source}"
+                RESULT_VARIABLE _junction_result
+            )
+        else()
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E create_symlink
+                    "${RMLUI_ADDON_SOURCE_DIR}" "${RMLUI_ADDON_INSTALL_DIR}"
+                RESULT_VARIABLE _junction_result
+            )
+        endif()
+
+        if(_junction_result EQUAL 0)
+            message(STATUS "Created addon junction: ${RMLUI_ADDON_INSTALL_DIR} → ${RMLUI_ADDON_SOURCE_DIR}")
+        else()
+            message(WARNING
+                "Failed to create addon junction. Create manually:\n"
+                "  ${RMLUI_ADDON_INSTALL_DIR} → ${RMLUI_ADDON_SOURCE_DIR}")
+        endif()
+    endif()
+
+    # Suppress Godot warnings about missing standalone binaries
+    if(EXISTS "${RMLUI_ADDON_INSTALL_DIR}/bin" AND NOT EXISTS "${RMLUI_ADDON_INSTALL_DIR}/bin/.gdignore")
+        file(WRITE "${RMLUI_ADDON_INSTALL_DIR}/bin/.gdignore" "")
+        message(STATUS "Added .gdignore to ${RMLUI_ADDON_INSTALL_DIR}/bin/")
     endif()
 endif()
