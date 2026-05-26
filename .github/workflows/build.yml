@@ -133,6 +133,7 @@ jobs:
           cp project/addons/rmlui-godot/rmlui_godot.gdextension dist/addons/rmlui-godot/
           cp project/addons/rmlui-godot/plugin.cfg dist/addons/rmlui-godot/
           cp project/addons/rmlui-godot/base.rcss dist/addons/rmlui-godot/
+          cp -r project/addons/rmlui-godot/editor dist/addons/rmlui-godot/editor
 
           for dir in artifacts/rmlui-godot-*/; do
             cp -v "$dir"/* dist/addons/rmlui-godot/bin/ 2>/dev/null || true
