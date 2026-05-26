@@ -2,3 +2,11 @@
 	path = examples
 	url = https://github.com/Brokenchin/rmlui-godot-examples.git
 	update = none
+[submodule "dependencies/godot-cpp"]
+	path = dependencies/godot-cpp
+	url = https://github.com/godotengine/godot-cpp.git
+	branch = 4.5
+[submodule "dependencies/RmlUi"]
+	path = dependencies/RmlUi
+	url = https://github.com/Brokenchin/RmlUi-multicontext.git
+	branch = multicontext_experiment

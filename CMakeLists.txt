@@ -22,6 +22,12 @@ else()
     option(RMLUI_GODOT_INSTALL_EXAMPLES "Fetch and install examples into addon directory" OFF)
 endif()
 
+if(NOT EXISTS "${GODOT_PROJECT_ROOT}")
+    message(FATAL_ERROR
+        "GODOT_PROJECT_ROOT does not exist: ${GODOT_PROJECT_ROOT}\n"
+        "  Set -DGODOT_PROJECT_ROOT=<path> to the directory containing project.godot")
+endif()
+
 set(RMLUI_ADDON_INSTALL_DIR "${GODOT_PROJECT_ROOT}/addons/${RMLUI_GODOT_ADDON_NAME}")
 set(RMLUI_ADDON_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/project/addons/${RMLUI_GODOT_ADDON_NAME}")
 
@@ -53,22 +59,42 @@ if(RMLUI_GODOT_INSTALL_EXAMPLES)
 endif()
 
 # --- Dependencies ---
-# godot-cpp: set GODOT_CPP_DIR or add as subdirectory
+# Both godot-cpp and RmlUi are available as submodules under dependencies/.
+# When embedded in a host project (e.g. CaveCrawler), the host provides these
+# targets already — the NOT TARGET check skips everything in that case.
+# Priority: existing target → explicit *_DIR → submodule → error with fetch hint.
+
+# godot-cpp
 if(NOT TARGET godot-cpp)
     if(DEFINED GODOT_CPP_DIR)
         add_subdirectory(${GODOT_CPP_DIR} godot-cpp)
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/godot-cpp/CMakeLists.txt")
         add_subdirectory(dependencies/godot-cpp)
     else()
-        message(FATAL_ERROR
-            "godot-cpp not found. Either:\n"
-            "  - Set GODOT_CPP_DIR to your godot-cpp checkout\n"
-            "  - Clone godot-cpp into dependencies/godot-cpp\n"
-            "  - Use CPM/FetchContent to pull it")
+        find_package(Git QUIET)
+        if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.gitmodules")
+            message(STATUS "Fetching godot-cpp submodule...")
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} submodule update --init dependencies/godot-cpp
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                RESULT_VARIABLE _godot_cpp_result
+            )
+            if(_godot_cpp_result EQUAL 0 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/godot-cpp/CMakeLists.txt")
+                add_subdirectory(dependencies/godot-cpp)
+            else()
+                message(FATAL_ERROR "Failed to fetch godot-cpp submodule. Run manually:\n"
+                    "  git submodule update --init dependencies/godot-cpp")
+            endif()
+        else()
+            message(FATAL_ERROR
+                "godot-cpp not found. Either:\n"
+                "  - Run: git submodule update --init dependencies/godot-cpp\n"
+                "  - Set GODOT_CPP_DIR to your godot-cpp checkout")
+        endif()
     endif()
 endif()
 
-# RmlUi: set RMLUI_DIR or add as subdirectory
+# RmlUi (Brokenchin/RmlUi-multicontext fork — adds ReleaseRenderManager API)
 # Force static so RmlUi gets linked into our shared lib (no separate DLLs to ship).
 if(NOT TARGET rmlui_core)
     set(_PREV_BUILD_SHARED ${BUILD_SHARED_LIBS})
@@ -84,11 +110,26 @@ if(NOT TARGET rmlui_core)
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/RmlUi/CMakeLists.txt")
         add_subdirectory(dependencies/RmlUi)
     else()
-        message(FATAL_ERROR
-            "RmlUi not found. Either:\n"
-            "  - Set RMLUI_DIR to your RmlUi checkout\n"
-            "  - Clone RmlUi into dependencies/RmlUi\n"
-            "  - Use CPM/FetchContent to pull it")
+        find_package(Git QUIET)
+        if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.gitmodules")
+            message(STATUS "Fetching RmlUi submodule...")
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} submodule update --init dependencies/RmlUi
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                RESULT_VARIABLE _rmlui_result
+            )
+            if(_rmlui_result EQUAL 0 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/RmlUi/CMakeLists.txt")
+                add_subdirectory(dependencies/RmlUi)
+            else()
+                message(FATAL_ERROR "Failed to fetch RmlUi submodule. Run manually:\n"
+                    "  git submodule update --init dependencies/RmlUi")
+            endif()
+        else()
+            message(FATAL_ERROR
+                "RmlUi not found. Either:\n"
+                "  - Run: git submodule update --init dependencies/RmlUi\n"
+                "  - Set RMLUI_DIR to your RmlUi checkout")
+        endif()
     endif()
     set(BUILD_SHARED_LIBS ${_PREV_BUILD_SHARED})
 endif()
@@ -221,6 +262,9 @@ if(NOT RMLUI_GODOT_STANDALONE)
     cmake_path(ABSOLUTE_PATH RMLUI_ADDON_SOURCE_DIR  NORMALIZE OUTPUT_VARIABLE _source_norm)
 
     if(NOT _install_norm STREQUAL _source_norm AND NOT EXISTS "${RMLUI_ADDON_INSTALL_DIR}")
+        cmake_path(GET RMLUI_ADDON_INSTALL_DIR PARENT_PATH _addon_parent)
+        file(MAKE_DIRECTORY "${_addon_parent}")
+
         if(WIN32)
             # NTFS junction — no admin rights needed, works on all modern Windows
             file(TO_NATIVE_PATH "${RMLUI_ADDON_INSTALL_DIR}" _junction_target)

@@ -32,8 +32,11 @@ Bin/
 Thumbs.db
 desktop.ini
 
-# Dependencies (fetch or clone locally)
-dependencies/
+# Dependencies are submodules — don't ignore the directory itself
+# but ignore any loose files dropped in by manual cloning
+dependencies/*
+!dependencies/godot-cpp
+!dependencies/RmlUi
 
 .mcp.json
 
