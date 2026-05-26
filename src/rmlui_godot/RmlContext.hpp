@@ -207,6 +207,7 @@ private:
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
 	int _text_render_mode = 0;
+	bool _counted = false;
 
 	struct LoadedDocument {
 		std::string path;
@@ -221,6 +222,7 @@ private:
 		Rml::Element* element = nullptr;
 		Rml::EventListener* listener = nullptr;
 		std::string event_type;
+		bool in_capture_phase = false;
 	};
 	std::vector<ListenerRecord> _listener_records;
 

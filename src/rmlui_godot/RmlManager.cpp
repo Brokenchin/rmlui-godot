@@ -146,6 +146,7 @@ void RmlManager::_initialize_rmlui() {
 void RmlManager::_shutdown_rmlui() {
 	if (!_rmlui_initialized) return;
 
+	_font_interface.ReleaseFontResources();
 	_global_textures.clear();
 	_loaded_fonts.clear();
 	_registered_tags.clear();

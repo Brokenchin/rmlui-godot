@@ -7,7 +7,9 @@
 namespace RmlGodot {
 
 double GodotSystemInterface::GetElapsedTime() {
-	return godot::Time::get_singleton()->get_ticks_msec() / 1000.0;
+	auto* time = godot::Time::get_singleton();
+	if (time == nullptr) return 0.0;
+	return time->get_ticks_msec() / 1000.0;
 }
 
 bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& message) {
@@ -28,11 +30,15 @@ bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& me
 }
 
 void GodotSystemInterface::SetClipboardText(const Rml::String& text) {
-	godot::DisplayServer::get_singleton()->clipboard_set(godot::String(text.c_str()));
+	auto* ds = godot::DisplayServer::get_singleton();
+	if (ds == nullptr) return;
+	ds->clipboard_set(godot::String(text.c_str()));
 }
 
 void GodotSystemInterface::GetClipboardText(Rml::String& text) {
-	godot::String clip = godot::DisplayServer::get_singleton()->clipboard_get();
+	auto* ds = godot::DisplayServer::get_singleton();
+	if (ds == nullptr) { text.clear(); return; }
+	godot::String clip = ds->clipboard_get();
 	text = Rml::String(clip.utf8().get_data());
 }
 

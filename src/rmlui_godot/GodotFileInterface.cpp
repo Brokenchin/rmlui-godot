@@ -48,17 +48,18 @@ bool GodotFileInterface::Seek(Rml::FileHandle file, long offset, int origin) {
 	if (it == _open_files.end()) return false;
 
 	auto& fa = it->second;
-	uint64_t length = fa->get_length();
+	int64_t length = static_cast<int64_t>(fa->get_length());
 
-	uint64_t target = 0;
+	int64_t target = 0;
 	switch (origin) {
-		case SEEK_SET: target = static_cast<uint64_t>(offset); break;
-		case SEEK_CUR: target = fa->get_position() + static_cast<uint64_t>(offset); break;
-		case SEEK_END: target = length + static_cast<uint64_t>(offset); break;
+		case SEEK_SET: target = static_cast<int64_t>(offset); break;
+		case SEEK_CUR: target = static_cast<int64_t>(fa->get_position()) + offset; break;
+		case SEEK_END: target = length + offset; break;
 		default: return false;
 	}
 
-	fa->seek(target);
+	if (target < 0) return false;
+	fa->seek(static_cast<uint64_t>(target));
 	return true;
 }
 
