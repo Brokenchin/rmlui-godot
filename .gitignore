@@ -38,3 +38,5 @@ dependencies/
 .mcp.json
 
 CLAUDE.md
+
+.contextstream/
