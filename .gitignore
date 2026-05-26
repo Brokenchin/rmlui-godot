@@ -34,3 +34,9 @@ desktop.ini
 
 # Dependencies (fetch or clone locally)
 dependencies/
+
+.mcp.json
+
+CLAUDE.md
+
+.contextstream/

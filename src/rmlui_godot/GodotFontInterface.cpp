@@ -192,15 +192,23 @@ Rml::FontEffectsHandle GodotFontInterface::PrepareFontEffects(Rml::FontFaceHandl
 }
 
 const Rml::FontMetrics& GodotFontInterface::GetFontMetrics(Rml::FontFaceHandle handle) {
+	static const Rml::FontMetrics s_empty{};
+	if (handle == 0 || handle > static_cast<Rml::FontFaceHandle>(_faces.size()))
+		return s_empty;
 	return _faces[handle - 1]->metrics;
 }
 
 int GodotFontInterface::GetStringWidth(Rml::FontFaceHandle handle, Rml::StringView string,
 	const Rml::TextShapingContext& text_shaping_context, Rml::Character prior_character) {
 
+	if (handle == 0 || handle > static_cast<Rml::FontFaceHandle>(_faces.size()))
+		return 0;
 	FontFace& face = *_faces[handle - 1];
+	if (face.loaded_font_index < 0 || face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return 0;
 	const auto& font = _loaded_fonts[face.loaded_font_index];
 	godot::Ref<godot::TextServer> ts = get_text_server();
+	if (ts.is_null()) return 0;
 
 	float width = 0;
 	bool use_kerning = (text_shaping_context.font_kerning != Rml::Style::FontKerning::None);
@@ -231,9 +239,14 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 	float /*opacity*/, const Rml::TextShapingContext& text_shaping_context,
 	Rml::TexturedMeshList& mesh_list) {
 
+	if (face_handle == 0 || face_handle > static_cast<Rml::FontFaceHandle>(_faces.size()))
+		return 0;
 	FontFace& face = *_faces[face_handle - 1];
+	if (face.loaded_font_index < 0 || face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return 0;
 	const auto& font = _loaded_fonts[face.loaded_font_index];
 	godot::Ref<godot::TextServer> ts = get_text_server();
+	if (ts.is_null()) return 0;
 
 	bool use_kerning = (text_shaping_context.font_kerning != Rml::Style::FontKerning::None);
 
@@ -317,6 +330,8 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 }
 
 int GodotFontInterface::GetVersion(Rml::FontFaceHandle handle) {
+	if (handle == 0 || handle > static_cast<Rml::FontFaceHandle>(_faces.size()))
+		return 0;
 	return _faces[handle - 1]->version;
 }
 
@@ -328,6 +343,11 @@ const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph(FontFace&
 		return it->second;
 
 	godot::Ref<godot::TextServer> ts = get_text_server();
+	if (ts.is_null() || face.loaded_font_index < 0 ||
+		face.loaded_font_index >= static_cast<int>(_loaded_fonts.size())) {
+		static const GlyphData s_empty{};
+		return s_empty;
+	}
 	const auto& font = _loaded_fonts[face.loaded_font_index];
 	godot::Vector2i size_v(face.size, 0);
 
@@ -444,9 +464,11 @@ void GodotFontInterface::ReleaseTexturesForRenderManager(Rml::RenderManager* rm)
 
 void GodotFontInterface::ReleaseFontResources() {
 	godot::Ref<godot::TextServer> ts = get_text_server();
-	for (auto& font : _loaded_fonts) {
-		if (font.font_rid.is_valid() && !font.externally_owned)
-			ts->free_rid(font.font_rid);
+	if (ts.is_valid()) {
+		for (auto& font : _loaded_fonts) {
+			if (font.font_rid.is_valid() && !font.externally_owned)
+				ts->free_rid(font.font_rid);
+		}
 	}
 	_loaded_fonts.clear();
 	_faces.clear();

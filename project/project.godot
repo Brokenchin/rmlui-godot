@@ -4,9 +4,9 @@
 
 [application]
 
-config/name="RmlUI Godot Demo"
+config/name="RmlUI-Godot Demo"
 config/features=PackedStringArray("4.5")
 
-[autoload]
+[editor_plugins]
 
-RmlManager="*res://addons/rmlui-godot/rmlui_godot.gdextension"
+enabled=PackedStringArray("res://addons/rmlui-godot/plugin.cfg")

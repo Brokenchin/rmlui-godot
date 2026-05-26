@@ -22,8 +22,8 @@ void GodotEventListener::ProcessEvent(Rml::Event& event) {
 }
 
 void GodotEventListener::OnDetach(Rml::Element* /*element*/) {
-	// Prevent stale callable dispatch after element removal.
 	_callable = godot::Callable();
+	delete this;
 }
 
 godot::Dictionary GodotEventListener::_build_event_dict(Rml::Event& event) {
