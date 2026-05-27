@@ -255,45 +255,33 @@ if(RMLUI_GODOT_STANDALONE)
     endif()
 endif()
 
-# --- Embedded addon junction ---
-# When building as static lib for a host project, create a junction/symlink so
-# Godot discovers the GDScript editor plugins from the host's addons/ folder.
+# --- Embedded addon install ---
+# When building as static lib for a host project, copy only the files Godot needs
+# to discover the editor plugin: plugin.cfg, base.rcss, editor/*.gd.
+# Deliberately skip .gdextension and bin/ — the C++ is statically linked by the
+# host, so Godot must not try to load a standalone GDExtension binary.
 if(NOT RMLUI_GODOT_STANDALONE)
     cmake_path(ABSOLUTE_PATH RMLUI_ADDON_INSTALL_DIR NORMALIZE OUTPUT_VARIABLE _install_norm)
     cmake_path(ABSOLUTE_PATH RMLUI_ADDON_SOURCE_DIR  NORMALIZE OUTPUT_VARIABLE _source_norm)
 
-    if(NOT _install_norm STREQUAL _source_norm AND NOT EXISTS "${RMLUI_ADDON_INSTALL_DIR}")
-        cmake_path(GET RMLUI_ADDON_INSTALL_DIR PARENT_PATH _addon_parent)
-        file(MAKE_DIRECTORY "${_addon_parent}")
+    if(NOT _install_norm STREQUAL _source_norm)
+        file(MAKE_DIRECTORY "${RMLUI_ADDON_INSTALL_DIR}")
 
-        if(WIN32)
-            # NTFS junction — no admin rights needed, works on all modern Windows
-            file(TO_NATIVE_PATH "${RMLUI_ADDON_INSTALL_DIR}" _junction_target)
-            file(TO_NATIVE_PATH "${RMLUI_ADDON_SOURCE_DIR}" _junction_source)
-            execute_process(
-                COMMAND cmd /c mklink /J "${_junction_target}" "${_junction_source}"
-                RESULT_VARIABLE _junction_result
-            )
-        else()
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    "${RMLUI_ADDON_SOURCE_DIR}" "${RMLUI_ADDON_INSTALL_DIR}"
-                RESULT_VARIABLE _junction_result
-            )
+        set(_EMBEDDED_ADDON_FILES plugin.cfg base.rcss)
+        foreach(_file IN LISTS _EMBEDDED_ADDON_FILES)
+            if(EXISTS "${RMLUI_ADDON_SOURCE_DIR}/${_file}")
+                file(COPY_FILE
+                    "${RMLUI_ADDON_SOURCE_DIR}/${_file}"
+                    "${RMLUI_ADDON_INSTALL_DIR}/${_file}"
+                    ONLY_IF_DIFFERENT)
+            endif()
+        endforeach()
+
+        if(EXISTS "${RMLUI_ADDON_SOURCE_DIR}/editor")
+            file(COPY "${RMLUI_ADDON_SOURCE_DIR}/editor"
+                DESTINATION "${RMLUI_ADDON_INSTALL_DIR}")
         endif()
 
-        if(_junction_result EQUAL 0)
-            message(STATUS "Created addon junction: ${RMLUI_ADDON_INSTALL_DIR} → ${RMLUI_ADDON_SOURCE_DIR}")
-        else()
-            message(WARNING
-                "Failed to create addon junction. Create manually:\n"
-                "  ${RMLUI_ADDON_INSTALL_DIR} → ${RMLUI_ADDON_SOURCE_DIR}")
-        endif()
-    endif()
-
-    # Suppress Godot warnings about missing standalone binaries
-    if(EXISTS "${RMLUI_ADDON_INSTALL_DIR}/bin" AND NOT EXISTS "${RMLUI_ADDON_INSTALL_DIR}/bin/.gdignore")
-        file(WRITE "${RMLUI_ADDON_INSTALL_DIR}/bin/.gdignore" "")
-        message(STATUS "Added .gdignore to ${RMLUI_ADDON_INSTALL_DIR}/bin/")
+        message(STATUS "Installed embedded addon files → ${RMLUI_ADDON_INSTALL_DIR} (no .gdextension)")
     endif()
 endif()
