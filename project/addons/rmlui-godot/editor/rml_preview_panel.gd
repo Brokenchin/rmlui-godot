@@ -157,7 +157,7 @@ func _load_from_context() -> void:
 	_preview_context.call("load_document", doc_path)
 
 	_watch_file(doc_path)
-	for rcss in _extract_rcss_links(doc_path):
+	for rcss in extract_rcss_links(doc_path):
 		_watch_file(rcss)
 	_watch_timer.start()
 
