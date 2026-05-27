@@ -143,6 +143,7 @@ file(GLOB_RECURSE RMLUI_GODOT_HEADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rmlui_godot/*.h"
 )
 
+
 # --- Library target ---
 if(RMLUI_GODOT_STANDALONE)
     add_library(rmlui_godot SHARED ${RMLUI_GODOT_SOURCES} ${RMLUI_GODOT_HEADERS})

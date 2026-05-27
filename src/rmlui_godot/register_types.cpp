@@ -10,12 +10,13 @@
 #include "RmlContext.hpp"
 #include "RmlElementHandle.hpp"
 
+
 void initialize_rmlui_godot(ModuleInitializationLevel p_level) {
 
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
-		GDREGISTER_CLASS(RmlGodot::RmlManager)
-		GDREGISTER_CLASS(RmlGodot::RmlContext)
-		GDREGISTER_CLASS(RmlGodot::RmlElementHandle)
+		GDREGISTER_CLASS(RmlGodot::RmlManager);
+		GDREGISTER_CLASS(RmlGodot::RmlContext);
+		GDREGISTER_CLASS(RmlGodot::RmlElementHandle);
 
 		auto* rml_manager = memnew(RmlGodot::RmlManager);
 		godot::Engine::get_singleton()->register_singleton("RmlManager", rml_manager);
@@ -31,6 +32,7 @@ void uninitialize_rmlui_godot(ModuleInitializationLevel p_level) {
 	memdelete(RmlGodot::RmlManager::get_singleton());
 }
 
+#ifdef RMLUI_GODOT_STANDALONE
 extern "C" {
 
 GDExtensionBool GDE_EXPORT rmlui_godot_init(
@@ -48,3 +50,4 @@ GDExtensionBool GDE_EXPORT rmlui_godot_init(
 }
 
 }
+#endif
