@@ -43,3 +43,11 @@ dependencies/*
 CLAUDE.md
 
 .contextstream/
+
+build-test/
+
+godot/addons/rmlui-godot/editor/
+
+godot/addons/rmlui-godot/
+
+godot/
