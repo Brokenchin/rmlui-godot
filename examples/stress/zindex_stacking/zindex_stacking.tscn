@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://drag_drop_example"]
+[gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://examples/drag_and_drop/drag_and_drop.gd" id="1"]
+[ext_resource type="Script" path="res://addons/rmlui-godot/examples/stress/zindex_stacking/zindex_stacking.gd" id="1"]
 
-[node name="DragAndDrop" type="Control"]
+[node name="ZIndexStacking" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -12,6 +12,8 @@ grow_vertical = 2
 script = ExtResource("1")
 
 [node name="RmlContext" type="RmlContext" parent="."]
+rml_context_name = "zindex_test"
+clip_contents = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0

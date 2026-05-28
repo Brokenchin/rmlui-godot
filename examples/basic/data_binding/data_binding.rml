@@ -1,0 +1,69 @@
+<rml>
+<head>
+	<title>Data Binding</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 18px;
+			color: #ffffff;
+		}
+		#panel {
+			position: absolute;
+			left: 50px;
+			top: 50px;
+			width: 400px;
+			padding: 20px;
+			background-color: #16213e;
+		}
+		h1 {
+			font-size: 24px;
+			margin-bottom: 12px;
+			color: #e94560;
+		}
+		.row {
+			margin-bottom: 8px;
+		}
+		.label {
+			color: #a0a0c0;
+		}
+		.value {
+			color: #00ff88;
+		}
+		#counter-box {
+			margin-top: 16px;
+			padding: 12px;
+			background-color: #0f3460;
+		}
+		button {
+			display: inline-block;
+			padding: 6px 16px;
+			background-color: #e94560;
+			color: #ffffff;
+			margin-top: 8px;
+			cursor: pointer;
+		}
+		button:hover {
+			background-color: #ff6b81;
+		}
+	</style>
+</head>
+<body data-model="test">
+	<div id="panel">
+		<h1>Data Binding Demo</h1>
+		<div class="row">
+			<span class="label">Title: </span>
+			<span class="value">{{ title }}</span>
+		</div>
+		<div class="row">
+			<span class="label">Score: </span>
+			<span class="value">{{ score }}</span>
+		</div>
+		<div id="counter-box">
+			<p>Click the button to increment:</p>
+			<button data-event-click="on_increment">Increment</button>
+		</div>
+	</div>
+</body>
+</rml>

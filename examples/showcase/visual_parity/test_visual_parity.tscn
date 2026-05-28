@@ -1,0 +1,363 @@
+[gd_scene load_steps=3 format=3 uid="uid://gbkn5ks88cwa"]
+
+[ext_resource type="Script" uid="uid://3q7kib14ulow" path="res://addons/rmlui-godot/examples/showcase/visual_parity/test_visual_parity.gd" id="1"]
+[ext_resource type="Script" uid="uid://bvituknd10jk" path="res://addons/rmlui-godot/examples/showcase/visual_parity/parity_godot_slot.gd" id="2"]
+
+[node name="TestVisualParity" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="TitleBar" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 28.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.63, 0.77, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "Visual Parity: Godot vs RmlUI"
+horizontal_alignment = 1
+
+[node name="Columns" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 32.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="GodotSide" type="PanelContainer" parent="Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="GodotVBox" type="VBoxContainer" parent="Columns/GodotSide"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="GodotLabel" type="Label" parent="Columns/GodotSide/GodotVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.63, 0.77, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "Godot Native"
+horizontal_alignment = 1
+
+[node name="EquipSection" type="PanelContainer" parent="Columns/GodotSide/GodotVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="EquipMargin" type="MarginContainer" parent="Columns/GodotSide/GodotVBox/EquipSection"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 4
+
+[node name="EquipVBox" type="VBoxContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 4
+
+[node name="EquipTitle" type="Label" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.53, 0.6, 0.73, 1)
+theme_override_font_sizes/font_size = 12
+text = "Equipment"
+horizontal_alignment = 1
+
+[node name="HeadRow" type="HBoxContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox"]
+layout_mode = 2
+alignment = 1
+
+[node name="EqHead" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/HeadRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="EqHeadIcon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/HeadRow/EqHead"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="MidRow" type="HBoxContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+alignment = 1
+
+[node name="EqWeapon" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/MidRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="EqWeaponIcon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/MidRow/EqWeapon"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="EqChest" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/MidRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="EqChestIcon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/MidRow/EqChest"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="EqShield" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/MidRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="EqShieldIcon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/MidRow/EqShield"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="LegsRow" type="HBoxContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox"]
+layout_mode = 2
+alignment = 1
+
+[node name="EqLegs" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/LegsRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="EqLegsIcon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/LegsRow/EqLegs"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="FeetRow" type="HBoxContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox"]
+layout_mode = 2
+alignment = 1
+
+[node name="EqFeet" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/FeetRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="EqFeetIcon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/EquipSection/EquipMargin/EquipVBox/FeetRow/EqFeet"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="HSeparator" type="HSeparator" parent="Columns/GodotSide/GodotVBox"]
+layout_mode = 2
+
+[node name="InvSection" type="PanelContainer" parent="Columns/GodotSide/GodotVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="InvMargin" type="MarginContainer" parent="Columns/GodotSide/GodotVBox/InvSection"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 4
+
+[node name="InvVBox" type="VBoxContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="InvTitle" type="Label" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.53, 0.6, 0.73, 1)
+theme_override_font_sizes/font_size = 12
+text = "Inventory"
+horizontal_alignment = 1
+
+[node name="InvGrid" type="GridContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 4
+
+[node name="Inv0" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv0Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv0"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv1" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv1Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv1"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv2" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv2Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv2"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv3" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv3Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv3"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv4" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv4Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv4"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv5" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv5Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv5"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv6" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv6Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv6"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv7" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv7Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv7"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv8" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv8Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv8"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv9" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv9Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv9"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv10" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv10Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv10"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv11" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv11Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv11"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv12" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv12Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv12"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv13" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv13Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv13"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv14" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv14Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv14"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Inv15" type="PanelContainer" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Inv15Icon" type="TextureRect" parent="Columns/GodotSide/GodotVBox/InvSection/InvMargin/InvVBox/InvGrid/Inv15"]
+layout_mode = 2
+expand_mode = 3
+stretch_mode = 5
+
+[node name="GodotStatus" type="Label" parent="Columns/GodotSide/GodotVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.27, 1, 0.27, 1)
+theme_override_font_sizes/font_size = 10
+text = "Ready"
+
+[node name="RmlSide" type="Control" parent="Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RmlContext" type="RmlContext" parent="Columns/RmlSide"]
+rml_context_name = "parity_rml"
+text_render_mode = 3
+clip_contents = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2

@@ -1,0 +1,26 @@
+<rml>
+<head>
+	<title>Context Churn</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			font-family: "Noto Sans";
+			font-size: 16px;
+			color: #e0e0e0;
+			background-color: #1a1a2e;
+			padding: 12px;
+		}
+		h2 { font-size: 20px; color: #ffffff; margin-bottom: 8px; }
+		#canary {
+			font-size: 14px;
+			color: #44ff44;
+			margin-top: 8px;
+		}
+	</style>
+</head>
+<body>
+	<h2 id="title">Context Churn</h2>
+	<p id="canary">CANARY — if you can read this, fonts survived</p>
+	<p id="status">Waiting...</p>
+</body>
+</rml>

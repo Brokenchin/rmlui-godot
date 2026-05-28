@@ -1,0 +1,67 @@
+<rml>
+<head>
+	<title>List Binding Demo</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 18px;
+			color: #ffffff;
+		}
+		#panel {
+			position: absolute;
+			left: 50px;
+			top: 50px;
+			width: 400px;
+			padding: 20px;
+			background-color: #16213e;
+		}
+		h1 {
+			font-size: 24px;
+			margin-bottom: 12px;
+			color: #e94560;
+		}
+		.item-row {
+			padding: 4px 8px;
+			margin-bottom: 4px;
+			background-color: #0f3460;
+		}
+		#status {
+			margin-top: 12px;
+			color: #00ff88;
+		}
+		.controls {
+			margin-top: 12px;
+		}
+		button {
+			display: inline-block;
+			padding: 6px 16px;
+			background-color: #e94560;
+			color: #ffffff;
+			margin: 4px;
+			cursor: pointer;
+		}
+		button:hover {
+			background-color: #ff6b81;
+		}
+	</style>
+</head>
+<body data-model="inventory">
+	<div id="panel">
+		<h1>Array Binding Demo</h1>
+		<div id="item-list" data-for="item : items">
+			<div class="item-row">
+				<span>{{ item }}</span>
+			</div>
+		</div>
+		<div id="status">Count: {{ item_count }}</div>
+		<div class="controls">
+			<button data-event-click="on_add">Add Item</button>
+			<button data-event-click="on_remove_last">Remove Last</button>
+			<button data-event-click="on_clear">Clear All</button>
+			<button data-event-click="on_shuffle">Shuffle</button>
+		</div>
+	</div>
+</body>
+</rml>

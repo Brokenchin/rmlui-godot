@@ -1,0 +1,135 @@
+<rml>
+<head>
+	<title>Events &amp; DOM Demo</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 16px;
+			color: #ffffff;
+		}
+		#panel {
+			position: absolute;
+			left: 40px;
+			top: 40px;
+			width: 500px;
+			padding: 20px;
+			background-color: #16213e;
+		}
+		h1 {
+			font-size: 22px;
+			margin-bottom: 16px;
+			color: #e94560;
+		}
+		h2 {
+			font-size: 18px;
+			margin-top: 16px;
+			margin-bottom: 8px;
+			color: #a0c4ff;
+		}
+		.section {
+			margin-bottom: 12px;
+			padding: 10px;
+			background-color: #0f3460;
+		}
+		.label {
+			color: #a0a0c0;
+		}
+		.value {
+			color: #00ff88;
+		}
+		button {
+			display: inline-block;
+			padding: 6px 16px;
+			background-color: #e94560;
+			color: #ffffff;
+			margin: 4px;
+			cursor: pointer;
+		}
+		button:hover {
+			background-color: #ff6b81;
+		}
+		#hover-box {
+			margin-top: 8px;
+			padding: 16px;
+			background-color: #1a1a4e;
+			transition: background-color 0.2s;
+		}
+		#hover-box.hovered {
+			background-color: #3a3a6e;
+		}
+		#status-text {
+			margin-top: 8px;
+			color: #ffd700;
+		}
+		.toggle-target {
+			padding: 8px;
+			background-color: #222244;
+			margin-top: 4px;
+		}
+		.toggle-target.highlighted {
+			background-color: #444488;
+			color: #ffcc00;
+		}
+		.toggle-target.active {
+			background-color: #226622;
+			color: #88ff88;
+		}
+		#log-output {
+			margin-top: 8px;
+			padding: 8px;
+			background-color: #111122;
+			color: #aaaacc;
+			min-height: 60px;
+			max-height: 120px;
+			overflow: auto;
+			font-size: 13px;
+		}
+	</style>
+</head>
+<body>
+	<div id="panel">
+		<h1>Events &amp; DOM Access</h1>
+
+		<h2>Click Events</h2>
+		<div class="section">
+			<button id="btn-a">Button A</button>
+			<button id="btn-b">Button B</button>
+			<button id="btn-c">Button C</button>
+			<div id="status-text">Click a button...</div>
+		</div>
+
+		<h2>Hover Events</h2>
+		<div class="section">
+			<div id="hover-box">Hover over me</div>
+		</div>
+
+		<h2>Class Toggle</h2>
+		<div class="section">
+			<button id="btn-toggle-hl">Toggle Highlighted</button>
+			<button id="btn-toggle-active">Toggle Active</button>
+			<div id="toggle-target" class="toggle-target">Toggle classes on me</div>
+		</div>
+
+		<h2>Property Modification</h2>
+		<div class="section">
+			<button id="btn-color-red">Red</button>
+			<button id="btn-color-green">Green</button>
+			<button id="btn-color-blue">Blue</button>
+			<button id="btn-color-reset">Reset</button>
+			<div id="color-target" style="padding: 8px; margin-top: 4px; background-color: #333355;">Color target</div>
+		</div>
+
+		<h2>Inner RML</h2>
+		<div class="section">
+			<button id="btn-set-rml">Set Inner RML</button>
+			<button id="btn-clear-rml">Clear</button>
+			<div id="rml-target" style="padding: 8px; margin-top: 4px; background-color: #333355; min-height: 20px;"></div>
+		</div>
+
+		<h2>Event Log</h2>
+		<div id="log-output"></div>
+	</div>
+</body>
+</rml>

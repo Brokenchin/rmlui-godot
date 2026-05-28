@@ -1,0 +1,176 @@
+<rml>
+<head>
+	<title>Visual Parity - RmlUI</title>
+	<style>
+		div, p, h1, h2, h3 {
+			display: block;
+		}
+
+		body {
+			display: flex;
+			flex-direction: column;
+			width: 100%;
+			height: 100%;
+			background-color: #1a1a2ecc;
+			font-family: "Noto Sans";
+			font-size: 13px;
+			color: #e0e0e0;
+			padding: 0;
+		}
+
+		.header {
+			font-size: 16px;
+			color: #a0c4ff;
+			margin-bottom: 4px;
+			text-align: center;
+		}
+
+		.equip-section {
+			flex-grow: 1;
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			margin-bottom: 4px;
+			padding: 8px;
+			background-color: #16213e;
+			border: 1px #0f3460;
+		}
+
+		.section-title {
+			font-size: 12px;
+			color: #8899bb;
+			text-align: center;
+			margin-bottom: 6px;
+		}
+
+		.equip-row {
+			text-align: center;
+			margin: 2px 0;
+		}
+
+		.equip-slot {
+			display: inline-block;
+			width: 50px;
+			height: 50px;
+			margin: 2px;
+			background-color: #0f1a2e;
+			border: 1px #0f3460;
+			cursor: pointer;
+			vertical-align: top;
+			overflow: hidden;
+			text-align: center;
+			position: relative;
+		}
+
+		.equip-slot:hover {
+			border-color: #e94560;
+			background-color: #1a2a4a;
+		}
+
+		.slot-cell {
+			width: 48px;
+			height: 48px;
+			position: relative;
+		}
+
+		.slot-icon {
+			width: 48px;
+			height: 48px;
+		}
+
+		.slot-name {
+			display: block;
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			width: 48px;
+			font-size: 8px;
+			color: #ffffff;
+			background-color: #000000aa;
+			text-align: center;
+			padding: 1px 0;
+		}
+
+		.inv-section {
+			flex-grow: 1;
+			padding: 8px;
+			background-color: #16213e;
+			border: 1px #0f3460;
+		}
+
+		.inv-grid {
+			width: 224px;
+			margin: 0 auto;
+		}
+
+		.inv-slot {
+			display: inline-block;
+			width: 50px;
+			height: 50px;
+			margin: 2px;
+			background-color: #0f1a2e;
+			border: 1px #0f3460;
+			cursor: pointer;
+			vertical-align: top;
+			overflow: hidden;
+			text-align: center;
+			position: relative;
+		}
+
+		.inv-slot:hover {
+			border-color: #e94560;
+			background-color: #1a2a4a;
+		}
+
+		.equip-slot:drag-over, .inv-slot:drag-over {
+			background-color: #1a5a3a;
+			border-color: #44ff88;
+		}
+
+		.status {
+			font-size: 10px;
+			color: #44ff44;
+			margin-top: 2px;
+		}
+
+	</style>
+</head>
+<body>
+	<div class="header">RmlUI</div>
+
+	<div class="equip-section">
+		<div class="equip-content">
+			<div class="section-title">Equipment</div>
+			<div class="equip-row">
+				<div class="equip-slot" id="rml-eq-head">
+				</div>
+			</div>
+			<div class="equip-row">
+				<div class="equip-slot" id="rml-eq-weapon">
+				</div>
+				<div class="equip-slot" id="rml-eq-chest">
+				</div>
+				<div class="equip-slot" id="rml-eq-shield">
+				</div>
+			</div>
+			<div class="equip-row">
+				<div class="equip-slot" id="rml-eq-legs">
+				</div>
+			</div>
+			<div class="equip-row">
+				<div class="equip-slot" id="rml-eq-feet">
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="inv-section">
+		<div class="section-title">Inventory</div>
+		<div class="inv-grid" id="rml-inv-grid">
+		</div>
+	</div>
+
+	<div class="status" id="rml-status">Ready</div>
+</body>
+</rml>

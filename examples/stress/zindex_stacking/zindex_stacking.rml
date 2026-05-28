@@ -1,0 +1,799 @@
+<rml>
+<head>
+	<title>Z-Index &amp; Stacking Context Tests</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 13px;
+			color: #e0e0e0;
+			overflow: auto;
+		}
+
+		h2 {
+			font-size: 16px;
+			color: #a0c4ff;
+			margin: 8px 0 4px 0;
+		}
+
+		.section {
+			margin: 8px 12px;
+			padding: 8px;
+			background-color: #16213e;
+			border: 1px #0f3460;
+		}
+
+		.label {
+			font-size: 10px;
+			color: #8888aa;
+			margin-bottom: 4px;
+		}
+
+		.result {
+			font-size: 10px;
+			color: #44ff44;
+			margin-top: 4px;
+		}
+
+		.fail {
+			color: #ff4444;
+		}
+
+		/* ---- Shared test-box styles ---- */
+		.test-row {
+			display: flex;
+			flex-direction: row;
+			gap: 16px;
+			margin-top: 6px;
+		}
+
+		.box-container {
+			width: 120px;
+			height: 80px;
+			position: relative;
+			background-color: #0a0a1a;
+			border: 1px #333355;
+		}
+
+		/* ==== T1: Basic z-index on positioned divs ==== */
+		.t1-back {
+			position: absolute;
+			top: 10px;
+			left: 10px;
+			width: 60px;
+			height: 60px;
+			background-color: #e94560;
+			z-index: 1;
+		}
+
+		.t1-front {
+			position: absolute;
+			top: 20px;
+			left: 30px;
+			width: 60px;
+			height: 60px;
+			background-color: #533483;
+			z-index: 5;
+		}
+
+		/* ==== T2: img over div — the original bug ==== */
+		.t2-img {
+			width: 80px;
+			height: 80px;
+		}
+
+		.t2-text {
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			width: 120px;
+			font-size: 11px;
+			color: #ffffff;
+			background-color: #000000cc;
+			text-align: center;
+			padding: 2px 0;
+			z-index: 10;
+		}
+
+		/* ==== T3: decorator image + text (the workaround) ==== */
+		.t3-cell {
+			width: 120px;
+			height: 80px;
+			position: relative;
+		}
+
+		.t3-text {
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			width: 120px;
+			font-size: 11px;
+			color: #ffffff;
+			background-color: #000000cc;
+			text-align: center;
+			padding: 2px 0;
+		}
+
+		/* ==== T4: DOM order — no z-index ==== */
+		.t4-first {
+			position: absolute;
+			top: 10px;
+			left: 10px;
+			width: 60px;
+			height: 60px;
+			background-color: #e94560;
+		}
+
+		.t4-second {
+			position: absolute;
+			top: 20px;
+			left: 30px;
+			width: 60px;
+			height: 60px;
+			background-color: #533483;
+		}
+
+		/* ==== T5: z-index reverses DOM order ==== */
+		.t5-first {
+			position: absolute;
+			top: 10px;
+			left: 10px;
+			width: 60px;
+			height: 60px;
+			background-color: #e94560;
+			z-index: 10;
+		}
+
+		.t5-second {
+			position: absolute;
+			top: 20px;
+			left: 30px;
+			width: 60px;
+			height: 60px;
+			background-color: #533483;
+			z-index: 1;
+		}
+
+		/* ==== T6: img z-index vs div z-index ==== */
+		.t6-img {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 80px;
+			height: 80px;
+			z-index: 1;
+		}
+
+		.t6-div {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 120px;
+			height: 30px;
+			background-color: #00ff88cc;
+			color: #000000;
+			font-size: 11px;
+			text-align: center;
+			z-index: 100;
+		}
+
+		/* ==== T7: Nested stacking contexts ==== */
+		.t7-outer {
+			position: relative;
+			width: 120px;
+			height: 80px;
+			z-index: 0;
+			background-color: #0a0a1a;
+			border: 1px #333355;
+		}
+
+		.t7-inner-back {
+			position: absolute;
+			top: 5px;
+			left: 5px;
+			width: 50px;
+			height: 70px;
+			background-color: #e94560;
+			z-index: 1;
+		}
+
+		.t7-inner-front {
+			position: absolute;
+			top: 5px;
+			left: 30px;
+			width: 50px;
+			height: 70px;
+			background-color: #533483;
+			z-index: 2;
+		}
+
+		.t7-inner-text {
+			position: absolute;
+			top: 5px;
+			left: 55px;
+			width: 60px;
+			height: 70px;
+			color: #ffffff;
+			font-size: 9px;
+			background-color: #0088ffcc;
+			z-index: 3;
+			text-align: center;
+			line-height: 70px;
+		}
+
+		/* ==== T8: position static vs relative vs absolute ==== */
+		.t8-static {
+			width: 60px;
+			height: 30px;
+			background-color: #e94560;
+			z-index: 10;
+		}
+
+		.t8-relative {
+			position: relative;
+			top: -15px;
+			left: 20px;
+			width: 60px;
+			height: 30px;
+			background-color: #533483;
+			z-index: 5;
+		}
+
+		.t8-absolute {
+			position: absolute;
+			top: 40px;
+			left: 10px;
+			width: 80px;
+			height: 30px;
+			background-color: #0088ffcc;
+			z-index: 1;
+		}
+
+		/* ==== T9: img with position:relative vs text with position:absolute ==== */
+		.t9-img {
+			position: relative;
+			width: 80px;
+			height: 80px;
+			z-index: 1;
+		}
+
+		.t9-text {
+			position: absolute;
+			top: 30px;
+			left: 0;
+			width: 120px;
+			font-size: 11px;
+			color: #ffffff;
+			background-color: #ff0000cc;
+			text-align: center;
+			padding: 4px 0;
+			z-index: 50;
+		}
+
+		/* ==== T10: Multiple overlapping imgs and divs ==== */
+		.t10-img1 {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 60px;
+			height: 60px;
+			z-index: 1;
+		}
+
+		.t10-img2 {
+			position: absolute;
+			top: 20px;
+			left: 20px;
+			width: 60px;
+			height: 60px;
+			z-index: 2;
+		}
+
+		.t10-label {
+			position: absolute;
+			top: 30px;
+			left: 0;
+			width: 120px;
+			font-size: 11px;
+			color: #ffffff;
+			background-color: #000000cc;
+			text-align: center;
+			padding: 2px 0;
+			z-index: 50;
+		}
+
+		/* ==== T11: decorator image stacking — two decorators + text ==== */
+		.t11-back {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 80px;
+			height: 80px;
+			z-index: 1;
+		}
+
+		.t11-front {
+			position: absolute;
+			top: 0;
+			left: 40px;
+			width: 80px;
+			height: 80px;
+			z-index: 2;
+		}
+
+		.t11-label {
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			width: 120px;
+			font-size: 11px;
+			color: #ffffff;
+			background-color: #000000cc;
+			text-align: center;
+			padding: 2px 0;
+			z-index: 3;
+		}
+
+		/* ==== T12: text inside img parent — child text on top of background ==== */
+		.t12-cell {
+			width: 120px;
+			height: 80px;
+			position: relative;
+			background-color: #0a0a1a;
+			border: 1px #333355;
+		}
+
+		.t12-inner {
+			width: 120px;
+			height: 80px;
+			color: #ffffff;
+			font-size: 14px;
+			text-align: center;
+			line-height: 80px;
+		}
+
+		/* ==== T13: overflow:hidden + img + text ==== */
+		.t13-slot {
+			display: inline-block;
+			width: 50px;
+			height: 50px;
+			background-color: #0f1a2e;
+			border: 1px #0f3460;
+			overflow: hidden;
+			text-align: center;
+			position: relative;
+			margin: 2px;
+		}
+
+		.t13-img {
+			width: 48px;
+			height: 48px;
+		}
+
+		.t13-text {
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			width: 48px;
+			font-size: 8px;
+			color: #ffffff;
+			background-color: #000000cc;
+			text-align: center;
+			z-index: 10;
+		}
+
+		/* ==== T14: overflow:hidden + decorator + text ==== */
+		.t14-slot {
+			display: inline-block;
+			width: 50px;
+			height: 50px;
+			background-color: #0f1a2e;
+			border: 1px #0f3460;
+			overflow: hidden;
+			text-align: center;
+			position: relative;
+			margin: 2px;
+		}
+
+		.t14-cell {
+			width: 48px;
+			height: 48px;
+			position: relative;
+		}
+
+		.t14-text {
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			width: 48px;
+			font-size: 8px;
+			color: #ffffff;
+			background-color: #000000cc;
+			text-align: center;
+		}
+
+		/* ==== T15: inline-block + img + z-index (no overflow) ==== */
+		.t15-slot {
+			display: inline-block;
+			width: 50px;
+			height: 50px;
+			background-color: #0f1a2e;
+			border: 1px #0f3460;
+			text-align: center;
+			position: relative;
+			margin: 2px;
+		}
+
+		.t15-img {
+			width: 48px;
+			height: 48px;
+		}
+
+		.t15-text {
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			width: 48px;
+			font-size: 8px;
+			color: #ffffff;
+			background-color: #000000cc;
+			text-align: center;
+			z-index: 10;
+		}
+
+		/* ==== T16: dynamic inner RML — filled by GDScript ==== */
+		.t16-slot {
+			display: inline-block;
+			width: 50px;
+			height: 50px;
+			background-color: #0f1a2e;
+			border: 1px #0f3460;
+			overflow: hidden;
+			text-align: center;
+			position: relative;
+			margin: 2px;
+		}
+
+		/* ==== T17: Parity structure repro — per-slot injection ==== */
+		/* Exact copy of parity scene's outer slot CSS */
+		.t17-slot {
+			display: inline-block;
+			width: 50px;
+			height: 50px;
+			margin: 2px;
+			background-color: #0f1a2e;
+			border: 1px #0f3460;
+			cursor: pointer;
+			vertical-align: top;
+			overflow: hidden;
+			text-align: center;
+			position: relative;
+		}
+
+		/* Exact copy of parity scene's inner cell + name CSS */
+		.t17-cell {
+			width: 48px;
+			height: 48px;
+			position: relative;
+		}
+
+		.t17-icon {
+			width: 48px;
+			height: 48px;
+		}
+
+		.t17-name {
+			display: block;
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			width: 48px;
+			font-size: 8px;
+			color: #ffffff;
+			background-color: #000000aa;
+			text-align: center;
+			padding: 1px 0;
+		}
+
+		/* ==== T18: Dynamic grid injection (exact parity inv-slot flow) ==== */
+		.t18-grid {
+			width: 224px;
+		}
+
+	</style>
+</head>
+<body>
+
+	<!-- T1: Basic z-index on positioned divs -->
+	<div class="section">
+		<h2>T1: z-index on positioned divs</h2>
+		<div class="label">Purple (z:5) should overlap red (z:1). Both position:absolute.</div>
+		<div class="test-row">
+			<div class="box-container">
+				<div class="t1-back">z:1</div>
+				<div class="t1-front">z:5</div>
+			</div>
+		</div>
+		<div class="result" id="t1-result">Visual check</div>
+	</div>
+
+	<!-- T2: img element vs text with z-index (THE BUG) -->
+	<div class="section">
+		<h2>T2: img element vs z-indexed text overlay</h2>
+		<div class="label">White text "OVER IMG" with z:10 should appear over the image. img has no z-index.</div>
+		<div class="test-row">
+			<div class="box-container">
+				<img class="t2-img" id="t2-img" />
+				<div class="t2-text">OVER IMG (z:10)</div>
+			</div>
+			<div class="box-container">
+				<img class="t2-img" id="t2-img-rel" style="position: relative; z-index: 0;" />
+				<div class="t2-text">OVER IMG (img z:0, text z:10)</div>
+			</div>
+		</div>
+		<div class="result" id="t2-result">Visual check — if text hidden, img always paints on top</div>
+	</div>
+
+	<!-- T3: decorator image + text (the workaround) -->
+	<div class="section">
+		<h2>T3: decorator: image() + child text</h2>
+		<div class="label">Text should appear over the decorator background image. No z-index needed.</div>
+		<div class="test-row">
+			<div class="t3-cell" id="t3-deco">
+				<div class="t3-text">OVER DECORATOR</div>
+			</div>
+		</div>
+		<div class="result" id="t3-result">Visual check — decorator is background, text is foreground</div>
+	</div>
+
+	<!-- T4: DOM order — no z-index -->
+	<div class="section">
+		<h2>T4: DOM order (no z-index)</h2>
+		<div class="label">Purple (2nd in DOM) should overlap red (1st). Both position:absolute, no z-index.</div>
+		<div class="test-row">
+			<div class="box-container">
+				<div class="t4-first">1st</div>
+				<div class="t4-second">2nd</div>
+			</div>
+		</div>
+		<div class="result" id="t4-result">Visual check</div>
+	</div>
+
+	<!-- T5: z-index reverses DOM order -->
+	<div class="section">
+		<h2>T5: z-index reverses DOM order</h2>
+		<div class="label">Red (1st, z:10) should overlap purple (2nd, z:1) — z-index overrides DOM order.</div>
+		<div class="test-row">
+			<div class="box-container">
+				<div class="t5-first">1st z:10</div>
+				<div class="t5-second">2nd z:1</div>
+			</div>
+		</div>
+		<div class="result" id="t5-result">Visual check</div>
+	</div>
+
+	<!-- T6: img z-index vs div z-index (both positioned) -->
+	<div class="section">
+		<h2>T6: img (z:1) vs div (z:100) — both positioned absolute</h2>
+		<div class="label">Green div "z:100" should appear over image. Tests if img always wins.</div>
+		<div class="test-row">
+			<div class="box-container">
+				<img class="t6-img" id="t6-img" />
+				<div class="t6-div">DIV z:100</div>
+			</div>
+		</div>
+		<div class="result" id="t6-result">Visual check — if div hidden, img ignores z-index</div>
+	</div>
+
+	<!-- T7: Nested stacking contexts -->
+	<div class="section">
+		<h2>T7: Nested stacking contexts</h2>
+		<div class="label">Inside outer z:0 — red z:1, purple z:2, blue text z:3. Blue should be on top.</div>
+		<div class="test-row">
+			<div class="t7-outer">
+				<div class="t7-inner-back">z:1</div>
+				<div class="t7-inner-front">z:2</div>
+				<div class="t7-inner-text">z:3 TEXT</div>
+			</div>
+		</div>
+		<div class="result" id="t7-result">Visual check</div>
+	</div>
+
+	<!-- T8: static vs relative vs absolute with z-index -->
+	<div class="section">
+		<h2>T8: static (z:10) vs relative (z:5) vs absolute (z:1)</h2>
+		<div class="label">Static elements ignore z-index in CSS. Does RmlUI respect this?</div>
+		<div class="test-row">
+			<div class="box-container">
+				<div class="t8-static">static z:10</div>
+				<div class="t8-relative">rel z:5</div>
+				<div class="t8-absolute">abs z:1</div>
+			</div>
+		</div>
+		<div class="result" id="t8-result">Visual check — static should NOT use z-index (CSS spec)</div>
+	</div>
+
+	<!-- T9: img position:relative vs text position:absolute -->
+	<div class="section">
+		<h2>T9: img (pos:relative, z:1) vs text (pos:absolute, z:50)</h2>
+		<div class="label">Red text bar should appear over the image. Both positioned.</div>
+		<div class="test-row">
+			<div class="box-container">
+				<img class="t9-img" id="t9-img" />
+				<div class="t9-text">TEXT z:50</div>
+			</div>
+		</div>
+		<div class="result" id="t9-result">Visual check — critical img-vs-text test</div>
+	</div>
+
+	<!-- T10: Multiple imgs + text overlay -->
+	<div class="section">
+		<h2>T10: Two imgs (z:1, z:2) + text overlay (z:50)</h2>
+		<div class="label">Text label should be on top of both images.</div>
+		<div class="test-row">
+			<div class="box-container">
+				<img class="t10-img1" id="t10-img1" />
+				<img class="t10-img2" id="t10-img2" />
+				<div class="t10-label">TEXT z:50</div>
+			</div>
+		</div>
+		<div class="result" id="t10-result">Visual check</div>
+	</div>
+
+	<!-- T11: Decorator divs stacking + text -->
+	<div class="section">
+		<h2>T11: Two decorator divs (z:1, z:2) + text (z:3)</h2>
+		<div class="label">Decorator images as div backgrounds — text should be on top.</div>
+		<div class="test-row">
+			<div class="box-container">
+				<div class="t11-back" id="t11-back"></div>
+				<div class="t11-front" id="t11-front"></div>
+				<div class="t11-label">TEXT z:3</div>
+			</div>
+		</div>
+		<div class="result" id="t11-result">Visual check — decorator-based alternative to img</div>
+	</div>
+
+	<!-- T12: Text as child of decorator div (simplest workaround) -->
+	<div class="section">
+		<h2>T12: Text inside decorator div (no z-index needed)</h2>
+		<div class="label">Child text renders over parent's decorator background. Simplest pattern.</div>
+		<div class="test-row">
+			<div class="t12-cell" id="t12-cell">
+				<div class="t12-inner">TEXT OVER BG</div>
+			</div>
+		</div>
+		<div class="result" id="t12-result">Visual check — this is the recommended pattern</div>
+	</div>
+
+	<!-- T13: overflow:hidden + img + text (exact parity scene conditions) -->
+	<div class="section">
+		<h2>T13: overflow:hidden + img + text (parity repro)</h2>
+		<div class="label">50x50 inline-block slot, overflow:hidden, position:relative. img 48x48 + text at bottom z:10.</div>
+		<div class="test-row">
+			<div class="t13-slot">
+				<img class="t13-img" id="t13-img1" />
+				<div class="t13-text">Label</div>
+			</div>
+			<div class="t13-slot">
+				<img class="t13-img" id="t13-img2" style="position: relative; z-index: 0;" />
+				<div class="t13-text">Label</div>
+			</div>
+			<div class="t13-slot" style="overflow: visible;">
+				<img class="t13-img" id="t13-img3" />
+				<div class="t13-text">NoClip</div>
+			</div>
+		</div>
+		<div class="result" id="t13-result">Compare: overflow:hidden vs overflow:visible — does clipping hide the text?</div>
+	</div>
+
+	<!-- T14: overflow:hidden + decorator + text -->
+	<div class="section">
+		<h2>T14: overflow:hidden + decorator cell + text</h2>
+		<div class="label">Same slot setup but using decorator:image() instead of img tag.</div>
+		<div class="test-row">
+			<div class="t14-slot">
+				<div class="t14-cell" id="t14-cell1">
+					<div class="t14-text">Label</div>
+				</div>
+			</div>
+			<div class="t14-slot" style="overflow: visible;">
+				<div class="t14-cell" id="t14-cell2">
+					<div class="t14-text">NoClip</div>
+				</div>
+			</div>
+		</div>
+		<div class="result" id="t14-result">Decorator approach inside overflow:hidden container</div>
+	</div>
+
+	<!-- T15: inline-block + img + z-index (NO overflow:hidden) -->
+	<div class="section">
+		<h2>T15: inline-block + img + text (NO overflow:hidden)</h2>
+		<div class="label">Same as T13 but without overflow:hidden. Isolates whether overflow is the culprit.</div>
+		<div class="test-row">
+			<div class="t15-slot">
+				<img class="t15-img" id="t15-img1" />
+				<div class="t15-text">Label</div>
+			</div>
+			<div class="t15-slot">
+				<img class="t15-img" id="t15-img2" />
+				<div class="t15-text">Label</div>
+			</div>
+		</div>
+		<div class="result" id="t15-result">If labels show here but not in T13, overflow:hidden is the cause</div>
+	</div>
+
+	<!-- T16: dynamic set_element_inner_rml (exact parity scene flow) -->
+	<div class="section">
+		<h2>T16: Dynamic inner RML (set_element_inner_rml)</h2>
+		<div class="label">Content injected by GDScript after load. Tests if dynamic content respects z-index.</div>
+		<div class="test-row">
+			<div class="t16-slot" id="t16-static-img">
+				<img class="t13-img" id="t16-s-img" />
+				<div class="t13-text">Static</div>
+			</div>
+			<div class="t16-slot" id="t16-dynamic-img">
+			</div>
+			<div class="t16-slot" id="t16-dynamic-deco">
+			</div>
+		</div>
+		<div class="result" id="t16-result">Compare static HTML vs dynamic inner RML — img and decorator variants</div>
+	</div>
+
+	<!-- T17: Parity structure repro — per-slot dynamic injection -->
+	<!-- Hypothesis: the intermediate slot-cell div creates a stacking context issue with <img> -->
+	<div class="section">
+		<h2>T17: Parity slot structure — flat vs nested, img vs decorator</h2>
+		<div class="label">Each slot injected via set_element_inner_rml(). Parity uses nested slot-cell + decorator (T17c). If T17b fails but T17a passes, the slot-cell nesting + img is the cause.</div>
+		<div class="test-row">
+			<!-- T17a: FLAT — img + text directly in slot (like T13, but dynamically injected) -->
+			<div>
+				<div class="label">a: flat img</div>
+				<div class="t17-slot" id="t17a">
+				</div>
+			</div>
+			<!-- T17b: NESTED — slot-cell → img + text (EXACT parity failing structure) -->
+			<div>
+				<div class="label">b: nested img</div>
+				<div class="t17-slot" id="t17b">
+				</div>
+			</div>
+			<!-- T17c: NESTED — slot-cell + decorator (EXACT parity working structure) -->
+			<div>
+				<div class="label">c: nested deco</div>
+				<div class="t17-slot" id="t17c">
+				</div>
+			</div>
+			<!-- T17d: FLAT — decorator + text directly in slot (decorator without slot-cell) -->
+			<div>
+				<div class="label">d: flat deco</div>
+				<div class="t17-slot" id="t17d">
+				</div>
+			</div>
+		</div>
+		<div class="result" id="t17-result">If b fails → slot-cell nesting + img is the root cause. If a also fails → dynamic injection + img.</div>
+	</div>
+
+	<!-- T18: Full grid injection — exact parity inventory flow -->
+	<!-- Parity injects the ENTIRE grid of inv-slot divs in one set_element_inner_rml call -->
+	<div class="section">
+		<h2>T18: Grid injection — entire grid via set_element_inner_rml</h2>
+		<div class="label">Reproduces exact parity inv-slot flow: all slot divs injected at once into the grid container.</div>
+		<div class="test-row">
+			<div>
+				<div class="label">img grid</div>
+				<div class="t18-grid" id="t18-img-grid">
+				</div>
+			</div>
+			<div>
+				<div class="label">deco grid</div>
+				<div class="t18-grid" id="t18-deco-grid">
+				</div>
+			</div>
+		</div>
+		<div class="result" id="t18-result">Compare img vs decorator when entire grid is injected dynamically.</div>
+	</div>
+
+</body>
+</rml>

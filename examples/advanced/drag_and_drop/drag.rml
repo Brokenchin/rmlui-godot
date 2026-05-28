@@ -1,0 +1,78 @@
+<rml>
+<head>
+	<title>Drag Demo</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 16px;
+			color: #ffffff;
+		}
+		h2 {
+			font-size: 18px;
+			margin-bottom: 8px;
+			color: #a0c4ff;
+		}
+		.drag-source {
+			display: inline-block;
+			width: 60px;
+			height: 60px;
+			margin: 6px;
+			background-color: #e94560;
+			color: #ffffff;
+			text-align: center;
+			padding-top: 20px;
+			drag: clone;
+			cursor: pointer;
+		}
+		.drag-source:drag {
+			visibility: hidden;
+		}
+		.drop-zone {
+			width: 200px;
+			min-height: 80px;
+			margin-top: 8px;
+			padding: 10px;
+			background-color: #0f3460;
+			border: 2px #333366;
+		}
+		.drop-zone:drag-over {
+			background-color: #1a4a7a;
+			border: 2px #5588bb;
+		}
+		#panel {
+			position: absolute;
+			left: 20px;
+			top: 20px;
+			width: 300px;
+			padding: 16px;
+			background-color: #16213e;
+		}
+		#status {
+			margin-top: 8px;
+			color: #00ff88;
+			font-size: 13px;
+			min-height: 40px;
+		}
+	</style>
+</head>
+<body>
+	<div id="panel">
+		<h2>Drag Sources</h2>
+		<div>
+			<div class="drag-source" id="item-1">A</div>
+			<div class="drag-source" id="item-2">B</div>
+			<div class="drag-source" id="item-3">C</div>
+		</div>
+
+		<h2>Drop Zone</h2>
+		<div class="drop-zone" id="drop-zone">
+			Drop items here
+		</div>
+
+		<h2>Events</h2>
+		<div id="status">Waiting...</div>
+	</div>
+</body>
+</rml>

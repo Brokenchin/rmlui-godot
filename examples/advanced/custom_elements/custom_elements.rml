@@ -1,0 +1,91 @@
+<rml>
+<head>
+	<title>Custom Elements Demo</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 16px;
+			color: #ffffff;
+		}
+		#panel {
+			position: absolute;
+			left: 40px;
+			top: 40px;
+			width: 500px;
+			padding: 20px;
+			background-color: #16213e;
+		}
+		h1 {
+			font-size: 22px;
+			margin-bottom: 16px;
+			color: #e94560;
+		}
+		h2 {
+			font-size: 18px;
+			margin-top: 16px;
+			margin-bottom: 8px;
+			color: #a0c4ff;
+		}
+		.section {
+			margin-bottom: 12px;
+			padding: 10px;
+			background-color: #0f3460;
+		}
+		test-widget {
+			display: block;
+			padding: 8px;
+			margin: 4px;
+			background-color: #333355;
+		}
+		stat-bar {
+			display: block;
+			padding: 6px;
+			margin: 4px;
+			background-color: #222244;
+		}
+		#log-output {
+			margin-top: 8px;
+			padding: 8px;
+			background-color: #111122;
+			color: #aaaacc;
+			min-height: 60px;
+			max-height: 120px;
+			overflow: auto;
+			font-size: 13px;
+		}
+	</style>
+</head>
+<body>
+	<div id="panel">
+		<h1>Custom Element Instancers</h1>
+
+		<h2>Custom &lt;test-widget&gt;</h2>
+		<div class="section">
+			<test-widget id="widget-a" label="Alpha" value="100">
+				<p>Child content A</p>
+			</test-widget>
+			<test-widget id="widget-b" label="Beta" value="200">
+				<p>Child content B</p>
+			</test-widget>
+		</div>
+
+		<h2>Custom &lt;stat-bar&gt;</h2>
+		<div class="section">
+			<stat-bar id="bar-hp" stat="HP" current="75" max="100"></stat-bar>
+			<stat-bar id="bar-mp" stat="MP" current="30" max="50"></stat-bar>
+		</div>
+
+		<h2>Dynamic Attribute Change</h2>
+		<div class="section">
+			<test-widget id="widget-dynamic" label="Dynamic" value="0">
+				<p>Attribute changes will be tracked</p>
+			</test-widget>
+		</div>
+
+		<h2>Event Log</h2>
+		<div id="log-output"></div>
+	</div>
+</body>
+</rml>
