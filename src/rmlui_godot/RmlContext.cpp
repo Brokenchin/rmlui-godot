@@ -184,8 +184,6 @@ void RmlContext::_draw() {
 	layer_stack.push_back({root_draw});
 
 	godot::RID draw_target = root_draw;
-	bool active_scissor = false;
-	godot::Rect2i active_scissor_rect;
 
 	for (int ci = 0; ci < static_cast<int>(commands.size()); ci++) {
 		const auto& cmd = commands[ci];
@@ -201,7 +199,6 @@ void RmlContext::_draw() {
 			_layer_items.push_back(group_item);
 			layer_stack.push_back({group_item});
 			draw_target = group_item;
-			active_scissor = false;
 			break;
 		}
 
@@ -229,7 +226,6 @@ void RmlContext::_draw() {
 			if (layer_stack.size() > 1) {
 				layer_stack.pop_back();
 				draw_target = layer_stack.back().canvas_item;
-				active_scissor = false;
 			}
 			break;
 		}
@@ -280,7 +276,7 @@ void RmlContext::_draw() {
 				xform.set_origin(cmd.translation);
 			}
 
-			// CPU-side scissor cull — canvas_item_set_clip doesn't clip RS-created mesh items.
+			// CPU-side viewport cull (performance only — does not affect canvas structure)
 			godot::AABB aabb3 = mesh->get_aabb();
 			godot::Vector2 origin = xform.get_origin();
 			float mesh_left   = origin.x + static_cast<float>(aabb3.position.x);
@@ -301,22 +297,7 @@ void RmlContext::_draw() {
 				continue;
 			}
 
-			if (cmd.scissor_enabled != active_scissor ||
-				(cmd.scissor_enabled && cmd.scissor_rect != active_scissor_rect)) {
-
-				active_scissor = cmd.scissor_enabled;
-				active_scissor_rect = cmd.scissor_rect;
-
-				if (cmd.scissor_enabled) {
-					godot::RID sub = rs->canvas_item_create();
-					rs->canvas_item_set_parent(sub, layer_stack.back().canvas_item);
-					rs->canvas_item_set_material(sub, mat_rid);
-					_scissor_items.push_back(sub);
-					draw_target = sub;
-				} else {
-					draw_target = layer_stack.back().canvas_item;
-				}
-			}
+			draw_target = layer_stack.back().canvas_item;
 
 			godot::Ref<godot::Texture2D> draw_tex = _render_interface.get_texture_or_white(cmd.texture);
 			godot::RID tex_rid = draw_tex.is_valid() ? draw_tex->get_rid() : godot::RID();
