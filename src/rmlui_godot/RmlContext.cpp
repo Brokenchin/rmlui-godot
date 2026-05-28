@@ -276,7 +276,6 @@ void RmlContext::_draw() {
 				xform.set_origin(cmd.translation);
 			}
 
-			// CPU-side viewport cull (performance only — does not affect canvas structure)
 			godot::AABB aabb3 = mesh->get_aabb();
 			godot::Vector2 origin = xform.get_origin();
 			float mesh_left   = origin.x + static_cast<float>(aabb3.position.x);

@@ -1,12 +1,23 @@
 ; Engine configuration file.
 ; It's best edited using the editor UI and not directly,
-; but it can also be edited just fine using a text editor.
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
 
 [application]
 
 config/name="RmlUI-Godot Demo"
+run/main_scene="res://addons/rmlui-godot/examples/stress/zindex_stacking/zindex_stacking.tscn"
 config/features=PackedStringArray("4.5")
 
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/rmlui-godot/plugin.cfg")
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
