@@ -7,7 +7,7 @@
 
 A GDExtension plugin that integrates [RmlUi](https://github.com/mikke89/RmlUi) into [Godot 4.2+](https://godotengine.org/), giving you CSS/HTML-style UI with full GDScript interop.
 
-> **Status:** Active development. The plugin powers production game UI in [CaveCrawler](https://github.com/Brokenchin) and is being extracted into this standalone repository.
+> **Status:** Active development. Core API is stable.
 
 ## Features
 
@@ -75,19 +75,18 @@ Bridges RML elements to Godot's native drag system (`_get_drag_data` / `_can_dro
 
 ### 1. Clone with dependencies
 
+Dependencies (godot-cpp and RmlUi) are included as git submodules.
+
 ```bash
-git clone https://github.com/Brokenchin/rmlui-godot.git
+git clone --recursive https://github.com/Brokenchin/rmlui-godot.git
 cd rmlui-godot
-mkdir dependencies
-cd dependencies
-git clone https://github.com/godotengine/godot-cpp.git -b godot-4.5-stable
-git clone https://github.com/Brokenchin/RmlUi-multicontext.git -b multicontext_experiment RmlUi
 ```
+
+Or if already cloned: `git submodule update --init`
 
 ### 2. Configure and build
 
 ```bash
-cd ..
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
@@ -102,9 +101,25 @@ Copy the `project/addons/rmlui-godot/` folder into your Godot project's `addons/
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `RMLUI_GODOT_STANDALONE` | `ON` | `ON` = shared library for GDExtension, `OFF` = static lib for embedding in a larger build |
-| `GODOT_CPP_DIR` | — | Path to godot-cpp (auto-detects `dependencies/godot-cpp`) |
-| `RMLUI_DIR` | — | Path to RmlUi (auto-detects `dependencies/RmlUi`) |
+| `RMLUI_GODOT_STANDALONE` | `ON` | `ON` = shared library for GDExtension, `OFF` = static lib for embedding |
+| `GODOT_PROJECT_ROOT` | `project/` | Path to Godot project directory (where project.godot lives). Addon files are installed to `<root>/addons/rmlui-godot/` |
+| `RMLUI_GODOT_ADDON_NAME` | `rmlui-godot` | Plugin folder name under addons/ |
+| `RMLUI_GODOT_INSTALL_EXAMPLES` | `ON` (standalone) / `OFF` (embedded) | Fetch and install examples submodule |
+| `GODOT_CPP_DIR` | — | Override path to godot-cpp (auto-detects submodule) |
+| `RMLUI_DIR` | — | Override path to RmlUi (auto-detects submodule) |
+
+### Embedded builds
+
+For projects that compile RmlUI-Godot as a static library (e.g. as part of a larger GDExtension):
+
+```cmake
+set(RMLUI_GODOT_STANDALONE OFF)
+set(GODOT_PROJECT_ROOT "${CMAKE_SOURCE_DIR}/path/to/your/godot/project")
+add_subdirectory(path/to/rmlui-godot)
+target_link_libraries(your_target PRIVATE rmlui_godot)
+```
+
+CMake will copy only the editor plugin files (GDScript, plugin.cfg, base.rcss) to your Godot project — no .gdextension or binaries, since C++ is statically linked by the host.
 
 ## Quick Start
 
@@ -146,28 +161,58 @@ func _on_start_clicked(event: Dictionary):
 </rml>
 ```
 
+## Examples
+
+Example scenes are available in a [separate repository](https://github.com/Brokenchin/rmlui-godot-examples). When building standalone, pass `-DRMLUI_GODOT_INSTALL_EXAMPLES=ON` (default) to fetch and install them to `examples/` in your Godot project root.
+
+### basic/ — Getting Started
+| Example | Demonstrates |
+|---------|-------------|
+| `hello_world` | Document loading and font setup |
+| `data_binding` | Data models, variable binding, data events |
+| `events` | Click, hover, class toggle, DOM manipulation |
+| `list_binding` | Array binding with data-for loops |
+
+### advanced/ — Deeper Features
+| Example | Demonstrates |
+|---------|-------------|
+| `custom_elements` | Custom RML tags backed by GDScript callables |
+| `textures` | Spritesheets, decorators, CSS animations, transitions |
+| `drag_and_drop` | Cross-context drag using native C++ drag API |
+
+### showcase/ — Unique Selling Points
+| Example | Demonstrates |
+|---------|-------------|
+| `visual_parity` | Side-by-side Godot native vs RmlUI + native drag interop |
+
+### stress/ — Stability Proof
+| Example | Demonstrates |
+|---------|-------------|
+| `context_churn` | Create/destroy contexts rapidly — proves cleanup works |
+| `multi_context` | 4 simultaneous contexts with heavy DOM content |
+| `error_recovery` | Malformed RML, missing resources, graceful degradation |
+
 ## Architecture
 
 ```
 rmlui-godot/
 ├── src/rmlui_godot/          # C++ plugin source
-│   ├── register_types.*      # GDExtension entry point
-│   ├── RmlManager.*          # Singleton: fonts, textures, lifecycle
-│   ├── RmlContext.*           # Per-instance Control node
-│   ├── RmlElementHandle.*    # Type-safe element wrapper
-│   ├── RmlGD.hpp             # GD class macros (zero dependencies)
-│   ├── GodotRenderInterface.*    # CanvasItem renderer
-│   ├── GodotSystemInterface.*    # Time, logging
-│   ├── GodotFileInterface.*      # res:// filesystem bridge
-│   ├── GodotFontInterface.*      # FreeType font loading
-│   ├── GodotEventListener.*      # Event → Callable routing
-│   ├── GodotEventListenerInstancer.*
-│   └── GodotElementInstancer.*   # Custom element factory
-├── project/                  # Example Godot project
-│   ├── addons/rmlui-godot/   # Plugin (bin + .gdextension)
+├── project/                  # Standalone Godot project
+│   ├── addons/rmlui-godot/   # Plugin (bin + .gdextension + editor)
+│   ├── examples/             # Examples (submodule, opt-in)
+│   │   ├── basic/            # Getting started examples
+│   │   ├── advanced/         # Deeper feature examples
+│   │   ├── showcase/         # Unique selling points
+│   │   ├── stress/           # Stability proof / CI tests
+│   │   ├── fonts/            # Shared fonts
+│   │   └── assets/           # Shared assets
 │   └── project.godot
+├── dependencies/             # Git submodules
+│   ├── godot-cpp/            # Godot C++ bindings
+│   └── RmlUi/                # RmlUi multicontext fork
+├── .github/workflows/        # CI: build + release
 ├── CMakeLists.txt
-├── LICENSE                   # MIT
+├── LICENSE
 └── README.md
 ```
 

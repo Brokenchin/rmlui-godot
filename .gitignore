@@ -26,6 +26,7 @@ Bin/
 # Godot
 .godot/
 *.import
+*.uid
 
 # OS
 .DS_Store
@@ -51,3 +52,9 @@ godot/addons/rmlui-godot/editor/
 godot/addons/rmlui-godot/
 
 godot/
+
+# CMake-installed examples copy (source of truth is examples/ submodule)
+project/addons/rmlui-godot/examples/
+
+# Dev-only test scenes (not shipped)
+project/tests/

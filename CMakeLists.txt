@@ -247,12 +247,13 @@ if(RMLUI_GODOT_STANDALONE)
 
     if(RMLUI_GODOT_INSTALL_EXAMPLES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples")
         add_custom_command(TARGET rmlui_godot POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/examples"
-                "${RMLUI_ADDON_INSTALL_DIR}/examples"
-            COMMENT "Installing examples → ${RMLUI_ADDON_INSTALL_DIR}/examples"
+            COMMAND ${CMAKE_COMMAND}
+                -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/examples
+                -DDST_DIR=${RMLUI_ADDON_INSTALL_DIR}/examples
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/sync_examples.cmake
+            COMMENT "Syncing examples → ${RMLUI_ADDON_INSTALL_DIR}/examples"
         )
-    endif()
+endif()
 endif()
 
 # --- Embedded addon install ---
