@@ -2,10 +2,10 @@ name: Build
 
 on:
   push:
-    branches: [master, dev, dev-rmlui]
+    branches: [master, dev-rmlui]
     tags: ['v*']
   pull_request:
-    branches: [master, dev, dev-rmlui]
+    branches: [master, dev-rmlui]
   workflow_dispatch:
 
 concurrency:
