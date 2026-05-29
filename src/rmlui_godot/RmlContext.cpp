@@ -252,8 +252,16 @@ void RmlContext::_ready() {
 	manager->ensure_initialized();
 	_create_context();
 
-	manager->get_font_interface().set_text_render_mode(
-		static_cast<RmlGodot::GodotFontInterface::TextRenderMode>(_text_render_mode));
+	// Push granular font settings before loading faces so the first glyph
+	// rasterization already uses them. These are authoritative; text_render_mode
+	// remains a convenience preset that maps onto the same interface fields.
+	auto& font_iface = manager->get_font_interface();
+	font_iface.set_hinting(_font_hinting);
+	font_iface.set_font_antialiasing(_font_antialiasing);
+	font_iface.set_subpixel_positioning(_font_subpixel);
+	font_iface.set_font_oversampling(_font_oversampling);
+	font_iface.set_pixel_snap(_font_pixel_snap);
+	font_iface.set_layout_mode(_font_layout_mode);
 
 	for (int i = 0; i < _font_paths.size(); i++) {
 		load_font_face(_font_paths[i]);
@@ -834,6 +842,61 @@ void RmlContext::set_text_render_mode(int mode) {
 	if (manager && manager->is_initialized()) {
 		manager->get_font_interface().set_text_render_mode(
 			static_cast<RmlGodot::GodotFontInterface::TextRenderMode>(mode));
+		queue_redraw();
+	}
+}
+
+void RmlContext::set_font_hinting(int hinting) {
+	_font_hinting = hinting;
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		manager->get_font_interface().set_hinting(hinting);
+		queue_redraw();
+	}
+}
+
+void RmlContext::set_font_antialiasing(int antialiasing) {
+	_font_antialiasing = antialiasing;
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		manager->get_font_interface().set_font_antialiasing(antialiasing);
+		queue_redraw();
+	}
+}
+
+void RmlContext::set_font_subpixel(int subpixel) {
+	_font_subpixel = subpixel;
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		manager->get_font_interface().set_subpixel_positioning(subpixel);
+		queue_redraw();
+	}
+}
+
+void RmlContext::set_font_oversampling(float oversampling) {
+	_font_oversampling = oversampling;
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		manager->get_font_interface().set_font_oversampling(oversampling);
+		queue_redraw();
+	}
+}
+
+void RmlContext::set_font_pixel_snap(bool snap) {
+	_font_pixel_snap = snap;
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		manager->get_font_interface().set_pixel_snap(snap);
+		queue_redraw();
+	}
+}
+
+void RmlContext::set_font_layout_mode(int mode) {
+	_font_layout_mode = mode;
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		manager->get_font_interface().set_layout_mode(mode);
+		reload_all_documents();
 		queue_redraw();
 	}
 }

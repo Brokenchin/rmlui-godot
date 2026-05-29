@@ -10,7 +10,10 @@
 #include <godot_cpp/classes/resource_uid.hpp>
 #include <godot_cpp/classes/text_server.hpp>
 #include <godot_cpp/classes/text_server_manager.hpp>
+#include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/typed_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 namespace RmlGodot {
@@ -210,6 +213,20 @@ int GodotFontInterface::GetStringWidth(Rml::FontFaceHandle handle, Rml::StringVi
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	if (ts.is_null()) return 0;
 
+	const float os = _oversample_factor();
+
+	if (_layout_mode == LayoutMode::SHAPED) {
+		// Advances, kerning and ligatures all come from Godot's shaper. Width
+		// must match GenerateString, which adds letter_spacing per glyph.
+		godot::RID shaped = _shape_string(face, string);
+		if (!shaped.is_valid()) return 0;
+		float width = static_cast<float>(ts->shaped_text_get_width(shaped)) / os;
+		width += text_shaping_context.letter_spacing *
+			static_cast<float>(ts->shaped_text_get_glyph_count(shaped));
+		ts->free_rid(shaped);
+		return Rml::Math::Max(static_cast<int>(width), 0);
+	}
+
 	float width = 0;
 	bool use_kerning = (text_shaping_context.font_kerning != Rml::Style::FontKerning::None);
 	uint32_t prev_codepoint = static_cast<uint32_t>(prior_character);
@@ -223,10 +240,12 @@ int GodotFontInterface::GetStringWidth(Rml::FontFaceHandle handle, Rml::StringVi
 			int64_t curr_glyph = ts->font_get_glyph_index(font.font_rid, face.size, codepoint, 0);
 			godot::Vector2 kern = ts->font_get_kerning(font.font_rid, face.size,
 				godot::Vector2i(static_cast<int>(prev_glyph), static_cast<int>(curr_glyph)));
-			width += static_cast<float>(kern.x);
+			float k = static_cast<float>(kern.x);
+			width += (_layout_mode == LayoutMode::INTEGER_ADVANCE) ? Rml::Math::Round(k) : k;
 		}
 
-		width += glyph.advance + text_shaping_context.letter_spacing;
+		float adv = (_layout_mode == LayoutMode::INTEGER_ADVANCE) ? Rml::Math::Round(glyph.advance) : glyph.advance;
+		width += adv + text_shaping_context.letter_spacing;
 		prev_codepoint = codepoint;
 	}
 
@@ -248,6 +267,10 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	if (ts.is_null()) return 0;
 
+	if (_layout_mode == LayoutMode::SHAPED)
+		return _generate_shaped(render_manager, face, string, position, colour, text_shaping_context, mesh_list);
+
+	const bool integer_advance = (_layout_mode == LayoutMode::INTEGER_ADVANCE);
 	bool use_kerning = (text_shaping_context.font_kerning != Rml::Style::FontKerning::None);
 
 	// Phase 1: ensure all glyphs are cached
@@ -305,28 +328,132 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 		const GlyphData& glyph = face.glyph_cache[codepoint];
 
 		if (use_kerning && prev_codepoint != 0) {
-			int64_t prev_gi = ts->font_get_glyph_index(font.font_rid, face.size, prev_codepoint, 0);
-			int64_t curr_gi = ts->font_get_glyph_index(font.font_rid, face.size, codepoint, 0);
-			godot::Vector2 kern = ts->font_get_kerning(font.font_rid, face.size,
+			// Kerning is size-dependent: query at the oversampled size and scale
+			// back to logical units to stay consistent with the glyph metrics.
+			const float os = _oversample_factor();
+			const int rsize = _render_size(face.size);
+			int64_t prev_gi = ts->font_get_glyph_index(font.font_rid, rsize, prev_codepoint, 0);
+			int64_t curr_gi = ts->font_get_glyph_index(font.font_rid, rsize, codepoint, 0);
+			godot::Vector2 kern = ts->font_get_kerning(font.font_rid, rsize,
 				godot::Vector2i(static_cast<int>(prev_gi), static_cast<int>(curr_gi)));
-			cursor_x += static_cast<float>(kern.x);
+			float k = static_cast<float>(kern.x) / os;
+			cursor_x += integer_advance ? Rml::Math::Round(k) : k;
 		}
 
 		if (glyph.has_geometry) {
 			int mi = page_to_mesh[glyph.texture_page];
-			Rml::Vector2f glyph_pos(
-				position.x + cursor_x + glyph.origin.x,
-				position.y + glyph.origin.y);
+			// Pixel-snap the quad top-left to integer pixels, matching Godot's
+			// TextServer::font_draw_glyph (which floors the pen position at
+			// scale 1.0). A 1:1 atlas placed at a fractional position is blended
+			// with its neighbour by LINEAR filtering, turning full-coverage
+			// (white) texels grey — the "mushy" text. Flooring restores a
+			// 1 texel : 1 pixel mapping. Integer-advance mode always snaps.
+			float gx = position.x + cursor_x + glyph.origin.x;
+			float gy = position.y + glyph.origin.y;
+			if (_pixel_snap || integer_advance) {
+				gx = Rml::Math::RoundDown(gx);
+				gy = Rml::Math::RoundDown(gy);
+			}
+			Rml::Vector2f glyph_pos(gx, gy);
 			Rml::MeshUtilities::GenerateQuad(
 				mesh_list[mi].mesh, glyph_pos, glyph.dimensions,
 				colour, glyph.uv_min, glyph.uv_max);
 		}
 
-		cursor_x += glyph.advance + text_shaping_context.letter_spacing;
+		float adv = integer_advance ? Rml::Math::Round(glyph.advance) : glyph.advance;
+		cursor_x += adv + text_shaping_context.letter_spacing;
 		prev_codepoint = codepoint;
 	}
 
 	return Rml::Math::Max(static_cast<int>(cursor_x), 0);
+}
+
+// Lay out + emit geometry using Godot's TextServer shaped-text pipeline. Glyph
+// indices, advances and per-glyph offsets come straight from the shaper, so
+// kerning/ligatures match Godot exactly. Glyphs are rendered from the same
+// oversampled atlas as the other modes (cached by glyph index).
+int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, FontFace& face,
+	Rml::StringView string, Rml::Vector2f position, Rml::ColourbPremultiplied colour,
+	const Rml::TextShapingContext& text_shaping_context, Rml::TexturedMeshList& mesh_list) {
+
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	const float os = _oversample_factor();
+
+	godot::RID shaped = _shape_string(face, string);
+	if (!shaped.is_valid()) return 0;
+
+	godot::Array glyphs = ts->shaped_text_get_glyphs(shaped);
+	const int glyph_count = static_cast<int>(glyphs.size());
+
+	// Phase 1: ensure all glyph indices are rasterized into the atlas.
+	for (int i = 0; i < glyph_count; i++) {
+		godot::Dictionary g = glyphs[i];
+		_ensure_glyph_index(face, static_cast<int64_t>(g["index"]));
+	}
+	_rebuild_dirty_atlases(face);
+
+	// Phase 2: collect unique texture pages.
+	std::set<int> used_pages;
+	for (int i = 0; i < glyph_count; i++) {
+		godot::Dictionary g = glyphs[i];
+		const GlyphData& gd = _ensure_glyph_index(face, static_cast<int64_t>(g["index"]));
+		if (gd.has_geometry)
+			used_pages.insert(gd.texture_page);
+	}
+
+	float total_advance = 0;
+	if (used_pages.empty()) {
+		for (int i = 0; i < glyph_count; i++) {
+			godot::Dictionary g = glyphs[i];
+			total_advance += static_cast<float>(static_cast<double>(g["advance"])) / os +
+				text_shaping_context.letter_spacing;
+		}
+		ts->free_rid(shaped);
+		return Rml::Math::Max(static_cast<int>(total_advance), 0);
+	}
+
+	// Phase 3: assign mesh_list entries per page.
+	mesh_list.resize(static_cast<int>(used_pages.size()));
+	std::unordered_map<int, int> page_to_mesh;
+	int mesh_idx = 0;
+	for (int page : used_pages) {
+		page_to_mesh[page] = mesh_idx;
+		auto tex_it = face.atlas_textures.find(page);
+		if (tex_it != face.atlas_textures.end() && tex_it->second)
+			mesh_list[mesh_idx].texture = tex_it->second->GetTexture(render_manager);
+		mesh_idx++;
+	}
+	mesh_list[0].mesh.vertices.reserve(glyph_count * 4);
+	mesh_list[0].mesh.indices.reserve(glyph_count * 6);
+
+	// Phase 4: emit quads.
+	float pen_x = position.x;
+	for (int i = 0; i < glyph_count; i++) {
+		godot::Dictionary g = glyphs[i];
+		const GlyphData& gd = _ensure_glyph_index(face, static_cast<int64_t>(g["index"]));
+		float x_off = static_cast<float>(static_cast<double>(g["x_off"])) / os;
+		float y_off = static_cast<float>(static_cast<double>(g["y_off"])) / os;
+
+		if (gd.has_geometry) {
+			int mi = page_to_mesh[gd.texture_page];
+			float gx = pen_x + x_off + gd.origin.x;
+			float gy = position.y + y_off + gd.origin.y;
+			if (_pixel_snap) {
+				gx = Rml::Math::RoundDown(gx);
+				gy = Rml::Math::RoundDown(gy);
+			}
+			Rml::Vector2f glyph_pos(gx, gy);
+			Rml::MeshUtilities::GenerateQuad(
+				mesh_list[mi].mesh, glyph_pos, gd.dimensions,
+				colour, gd.uv_min, gd.uv_max);
+		}
+
+		pen_x += static_cast<float>(static_cast<double>(g["advance"])) / os +
+			text_shaping_context.letter_spacing;
+	}
+
+	ts->free_rid(shaped);
+	return Rml::Math::Max(static_cast<int>(pen_x - position.x), 0);
 }
 
 int GodotFontInterface::GetVersion(Rml::FontFaceHandle handle) {
@@ -336,6 +463,53 @@ int GodotFontInterface::GetVersion(Rml::FontFaceHandle handle) {
 }
 
 // --- Private: glyph caching ---
+
+// Rasterize one glyph (by glyph index) at the oversampled size and produce a
+// GlyphData with geometry divided back down to logical units, so layout is
+// unchanged but the quad is textured with a higher-res glyph (minified on draw
+// → crisp + bright, matching Godot's Label).
+GodotFontInterface::GlyphData GodotFontInterface::_build_glyph_data(FontFace& face, int64_t glyph_index) {
+	GlyphData glyph;
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	if (ts.is_null() || face.loaded_font_index < 0 ||
+		face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return glyph;
+
+	const auto& font = _loaded_fonts[face.loaded_font_index];
+	const float os = _oversample_factor();
+	const int rsize = _render_size(face.size);
+	godot::Vector2i size_v(rsize, 0);
+
+	glyph.advance = static_cast<float>(ts->font_get_glyph_advance(font.font_rid, rsize, glyph_index).x) / os;
+
+	godot::Vector2 glyph_size = ts->font_get_glyph_size(font.font_rid, size_v, glyph_index);
+	if (glyph_size.x < 1 || glyph_size.y < 1) {
+		glyph.has_geometry = false;
+		return glyph;
+	}
+
+	ts->font_render_glyph(font.font_rid, size_v, glyph_index);
+
+	godot::Vector2 offset = ts->font_get_glyph_offset(font.font_rid, size_v, glyph_index);
+	godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(font.font_rid, size_v, glyph_index);
+	godot::Vector2 tex_size = ts->font_get_glyph_texture_size(font.font_rid, size_v, glyph_index);
+	int64_t tex_idx = ts->font_get_glyph_texture_idx(font.font_rid, size_v, glyph_index);
+
+	glyph.texture_page = static_cast<int>(tex_idx);
+	glyph.origin = Rml::Vector2f(static_cast<float>(offset.x) / os, static_cast<float>(offset.y) / os);
+	glyph.dimensions = Rml::Vector2f(static_cast<float>(glyph_size.x) / os, static_cast<float>(glyph_size.y) / os);
+	glyph.has_geometry = true;
+
+	if (tex_size.x > 0 && tex_size.y > 0) {
+		glyph.uv_min.x = static_cast<float>(uv_rect.position.x / tex_size.x);
+		glyph.uv_min.y = static_cast<float>(uv_rect.position.y / tex_size.y);
+		glyph.uv_max.x = static_cast<float>((uv_rect.position.x + uv_rect.size.x) / tex_size.x);
+		glyph.uv_max.y = static_cast<float>((uv_rect.position.y + uv_rect.size.y) / tex_size.y);
+	}
+
+	face.dirty_pages.insert(glyph.texture_page);
+	return glyph;
+}
 
 const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph(FontFace& face, uint32_t codepoint) {
 	auto it = face.glyph_cache.find(codepoint);
@@ -349,42 +523,40 @@ const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph(FontFace&
 		return s_empty;
 	}
 	const auto& font = _loaded_fonts[face.loaded_font_index];
-	godot::Vector2i size_v(face.size, 0);
-
-	int64_t glyph_index = ts->font_get_glyph_index(font.font_rid, face.size, codepoint, 0);
-
-	GlyphData glyph;
-	glyph.advance = static_cast<float>(ts->font_get_glyph_advance(font.font_rid, face.size, glyph_index).x);
-
-	godot::Vector2 glyph_size = ts->font_get_glyph_size(font.font_rid, size_v, glyph_index);
-	if (glyph_size.x < 1 || glyph_size.y < 1) {
-		glyph.has_geometry = false;
-		auto [inserted, _] = face.glyph_cache.emplace(codepoint, glyph);
-		return inserted->second;
-	}
-
-	ts->font_render_glyph(font.font_rid, size_v, glyph_index);
-
-	godot::Vector2 offset = ts->font_get_glyph_offset(font.font_rid, size_v, glyph_index);
-	godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(font.font_rid, size_v, glyph_index);
-	godot::Vector2 tex_size = ts->font_get_glyph_texture_size(font.font_rid, size_v, glyph_index);
-	int64_t tex_idx = ts->font_get_glyph_texture_idx(font.font_rid, size_v, glyph_index);
-
-	glyph.texture_page = static_cast<int>(tex_idx);
-	glyph.origin = Rml::Vector2f(static_cast<float>(offset.x), static_cast<float>(offset.y));
-	glyph.dimensions = Rml::Vector2f(static_cast<float>(glyph_size.x), static_cast<float>(glyph_size.y));
-	glyph.has_geometry = true;
-
-	if (tex_size.x > 0 && tex_size.y > 0) {
-		glyph.uv_min.x = static_cast<float>(uv_rect.position.x / tex_size.x);
-		glyph.uv_min.y = static_cast<float>(uv_rect.position.y / tex_size.y);
-		glyph.uv_max.x = static_cast<float>((uv_rect.position.x + uv_rect.size.x) / tex_size.x);
-		glyph.uv_max.y = static_cast<float>((uv_rect.position.y + uv_rect.size.y) / tex_size.y);
-	}
-
-	face.dirty_pages.insert(glyph.texture_page);
+	int64_t glyph_index = ts->font_get_glyph_index(font.font_rid, _render_size(face.size), codepoint, 0);
+	GlyphData glyph = _build_glyph_data(face, glyph_index);
 	auto [inserted, _] = face.glyph_cache.emplace(codepoint, glyph);
 	return inserted->second;
+}
+
+const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph_index(FontFace& face, int64_t glyph_index) {
+	uint32_t key = static_cast<uint32_t>(glyph_index);
+	auto it = face.glyph_index_cache.find(key);
+	if (it != face.glyph_index_cache.end())
+		return it->second;
+	GlyphData glyph = _build_glyph_data(face, glyph_index);
+	auto [inserted, _] = face.glyph_index_cache.emplace(key, glyph);
+	return inserted->second;
+}
+
+godot::RID GodotFontInterface::_shape_string(const FontFace& face, Rml::StringView string) const {
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	if (ts.is_null() || face.loaded_font_index < 0 ||
+		face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return godot::RID();
+
+	const auto& font = _loaded_fonts[face.loaded_font_index];
+	godot::TypedArray<godot::RID> fonts;
+	fonts.push_back(font.font_rid);
+	if (_fallback_font_index >= 0 && _fallback_font_index < static_cast<int>(_loaded_fonts.size()) &&
+		_fallback_font_index != face.loaded_font_index)
+		fonts.push_back(_loaded_fonts[_fallback_font_index].font_rid);
+
+	godot::RID shaped = ts->create_shaped_text();
+	godot::String text = godot::String::utf8(Rml::String(string).c_str());
+	ts->shaped_text_add_string(shaped, text, fonts, _render_size(face.size));
+	ts->shaped_text_shape(shaped);
+	return shaped;
 }
 
 // --- Private: atlas texture rebuild ---
@@ -395,7 +567,9 @@ void GodotFontInterface::_rebuild_dirty_atlases(FontFace& face) {
 
 	const auto& font = _loaded_fonts[face.loaded_font_index];
 	godot::RID font_rid = font.font_rid;
-	godot::Vector2i size_v(face.size, 0);
+	// Must match the size used in _ensure_glyph so the atlas page indices and
+	// glyph UVs line up with the oversampled rasterization.
+	godot::Vector2i size_v(_render_size(face.size), 0);
 
 	for (int page : face.dirty_pages) {
 		int page_idx = page;
@@ -477,34 +651,83 @@ void GodotFontInterface::ReleaseFontResources() {
 
 void GodotFontInterface::_apply_font_settings(godot::RID font_rid) const {
 	godot::Ref<godot::TextServer> ts = get_text_server();
-
-	ts->font_set_hinting(font_rid, godot::TextServer::HINTING_NORMAL);
-	ts->font_set_antialiasing(font_rid, godot::TextServer::FONT_ANTIALIASING_GRAY);
-
-	bool subpixel = (_text_render_mode == TextRenderMode::SUBPIXEL ||
-	                 _text_render_mode == TextRenderMode::HIGH_QUALITY);
-	bool oversampled = (_text_render_mode == TextRenderMode::OVERSAMPLED ||
-	                    _text_render_mode == TextRenderMode::HIGH_QUALITY);
-
+	ts->font_set_hinting(font_rid, static_cast<godot::TextServer::Hinting>(_hinting));
+	ts->font_set_antialiasing(font_rid, static_cast<godot::TextServer::FontAntialiasing>(_antialiasing));
 	ts->font_set_subpixel_positioning(font_rid,
-		subpixel ? godot::TextServer::SUBPIXEL_POSITIONING_ONE_QUARTER
-		         : godot::TextServer::SUBPIXEL_POSITIONING_DISABLED);
+		static_cast<godot::TextServer::SubpixelPositioning>(_subpixel));
+	ts->font_set_oversampling(font_rid, _oversampling);
+}
 
-	ts->font_set_oversampling(font_rid, oversampled ? 2.0 : 0.0);
+void GodotFontInterface::set_hinting(int hinting) {
+	if (_hinting == hinting) return;
+	_hinting = hinting;
+	for (auto& font : _loaded_fonts) _apply_font_settings(font.font_rid);
+	_invalidate_all_caches();
+}
+
+void GodotFontInterface::set_font_antialiasing(int antialiasing) {
+	if (_antialiasing == antialiasing) return;
+	_antialiasing = antialiasing;
+	for (auto& font : _loaded_fonts) _apply_font_settings(font.font_rid);
+	_invalidate_all_caches();
+}
+
+void GodotFontInterface::set_subpixel_positioning(int subpixel) {
+	if (_subpixel == subpixel) return;
+	_subpixel = subpixel;
+	for (auto& font : _loaded_fonts) _apply_font_settings(font.font_rid);
+	_invalidate_all_caches();
+}
+
+void GodotFontInterface::set_font_oversampling(float oversampling) {
+	if (_oversampling == oversampling) return;
+	_oversampling = oversampling;
+	for (auto& font : _loaded_fonts) _apply_font_settings(font.font_rid);
+	_invalidate_all_caches();
+}
+
+void GodotFontInterface::set_pixel_snap(bool snap) {
+	if (_pixel_snap == snap) return;
+	_pixel_snap = snap;
+	// Only affects quad geometry in GenerateString; bump version so RmlUi
+	// regenerates the cached strings.
+	_invalidate_all_caches();
 }
 
 void GodotFontInterface::_invalidate_all_caches() {
 	for (auto& face : _faces) {
 		face->glyph_cache.clear();
+		face->glyph_index_cache.clear();
 		face->atlas_textures.clear();
 		face->dirty_pages.clear();
 		face->version++;
 	}
 }
 
+void GodotFontInterface::set_layout_mode(int mode) {
+	if (static_cast<int>(_layout_mode) == mode) return;
+	_layout_mode = static_cast<LayoutMode>(mode);
+	// Layout only affects geometry/metrics, not the atlas — but width changes,
+	// so invalidate to force RmlUi to re-measure and regenerate strings.
+	_invalidate_all_caches();
+
+	const char* mode_names[] = {"Manual", "Integer Advance", "Shaped"};
+	int idx = (mode >= 0 && mode <= 2) ? mode : 0;
+	godot::UtilityFunctions::print(
+		godot::String("[RmlUi Font] Layout mode: ") + godot::String(mode_names[idx]));
+}
+
 void GodotFontInterface::set_text_render_mode(TextRenderMode mode) {
-	if (_text_render_mode == mode) return;
 	_text_render_mode = mode;
+
+	// Map the preset onto the granular fields. Hinting/antialiasing stay at
+	// their Label-matching defaults; the presets only toggle subpixel +
+	// oversampling. Granular setters can still override afterwards.
+	bool subpixel = (mode == TextRenderMode::SUBPIXEL || mode == TextRenderMode::HIGH_QUALITY);
+	bool oversampled = (mode == TextRenderMode::OVERSAMPLED || mode == TextRenderMode::HIGH_QUALITY);
+	_subpixel = subpixel ? godot::TextServer::SUBPIXEL_POSITIONING_ONE_QUARTER
+	                     : godot::TextServer::SUBPIXEL_POSITIONING_DISABLED;
+	_oversampling = oversampled ? 2.0f : 0.0f;
 
 	for (auto& font : _loaded_fonts) {
 		_apply_font_settings(font.font_rid);

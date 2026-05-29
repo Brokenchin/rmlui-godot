@@ -11,16 +11,20 @@ config_version=5
 [application]
 
 config/name="RmlUI-Godot Demo"
-run/main_scene="res://addons/rmlui-godot/examples/stress/zindex_stacking/zindex_stacking.tscn"
+run/main_scene="uid://dfho4vfvctiax"
 config/features=PackedStringArray("4.5")
 
 [display]
 
-window/vsync/vsync_mode=0
+window/stretch/aspect="expand"
 
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/rmlui-godot/plugin.cfg")
+
+[gui]
+
+fonts/dynamic_fonts/use_oversampling=false
 
 [rendering]
 

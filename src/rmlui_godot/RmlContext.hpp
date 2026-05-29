@@ -111,6 +111,18 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_font_paths", "paths"), &RmlContext::set_font_paths);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_text_render_mode"), &RmlContext::get_text_render_mode);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_text_render_mode", "mode"), &RmlContext::set_text_render_mode);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_font_hinting"), &RmlContext::get_font_hinting);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_font_hinting", "hinting"), &RmlContext::set_font_hinting);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_font_antialiasing"), &RmlContext::get_font_antialiasing);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_font_antialiasing", "antialiasing"), &RmlContext::set_font_antialiasing);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_font_subpixel"), &RmlContext::get_font_subpixel);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_font_subpixel", "subpixel"), &RmlContext::set_font_subpixel);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_font_oversampling"), &RmlContext::get_font_oversampling);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_font_oversampling", "oversampling"), &RmlContext::set_font_oversampling);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_font_pixel_snap"), &RmlContext::get_font_pixel_snap);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_font_pixel_snap", "snap"), &RmlContext::set_font_pixel_snap);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_font_layout_mode"), &RmlContext::get_font_layout_mode);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_font_layout_mode", "mode"), &RmlContext::set_font_layout_mode);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_gpu_scissor"), &RmlContext::get_gpu_scissor);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_gpu_scissor", "enabled"), &RmlContext::set_gpu_scissor);
 
@@ -123,6 +135,12 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 
 	ADD_GROUP("Font Settings", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "Default,Subpixel,Oversampled,High Quality"), "set_text_render_mode", "get_text_render_mode");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_hinting", godot::PROPERTY_HINT_ENUM, "None,Light,Normal"), "set_font_hinting", "get_font_hinting");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_antialiasing", godot::PROPERTY_HINT_ENUM, "None,Gray,LCD Subpixel"), "set_font_antialiasing", "get_font_antialiasing");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_subpixel", godot::PROPERTY_HINT_ENUM, "Disabled,Auto,One Half,One Quarter"), "set_font_subpixel", "get_font_subpixel");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "font_oversampling", godot::PROPERTY_HINT_RANGE, "0.0,4.0,0.5"), "set_font_oversampling", "get_font_oversampling");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "font_pixel_snap"), "set_font_pixel_snap", "get_font_pixel_snap");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_layout_mode", godot::PROPERTY_HINT_ENUM, "Manual,Integer Advance,Shaped"), "set_font_layout_mode", "get_font_layout_mode");
 
 	ADD_GROUP("Scissor Clipping", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "gpu_scissor"), "set_gpu_scissor", "get_gpu_scissor");
@@ -159,6 +177,19 @@ public:
 
 	int get_text_render_mode() const { return _text_render_mode; }
 	void set_text_render_mode(int mode);
+
+	int get_font_hinting() const { return _font_hinting; }
+	void set_font_hinting(int hinting);
+	int get_font_antialiasing() const { return _font_antialiasing; }
+	void set_font_antialiasing(int antialiasing);
+	int get_font_subpixel() const { return _font_subpixel; }
+	void set_font_subpixel(int subpixel);
+	float get_font_oversampling() const { return _font_oversampling; }
+	void set_font_oversampling(float oversampling);
+	bool get_font_pixel_snap() const { return _font_pixel_snap; }
+	void set_font_pixel_snap(bool snap);
+	int get_font_layout_mode() const { return _font_layout_mode; }
+	void set_font_layout_mode(int mode);
 
 	bool get_gpu_scissor() const { return _gpu_scissor; }
 	void set_gpu_scissor(bool enabled);
@@ -228,6 +259,13 @@ private:
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
 	int _text_render_mode = 0;
+	// Granular font tuning (defaults match Godot's FontFile import + Label).
+	int _font_hinting = 1;        // Light
+	int _font_antialiasing = 1;   // Gray
+	int _font_subpixel = 0;       // Disabled
+	float _font_oversampling = 0.0f;
+	bool _font_pixel_snap = true;
+	int _font_layout_mode = 0;    // Manual
 	bool _counted = false;
 
 	struct LoadedDocument {
