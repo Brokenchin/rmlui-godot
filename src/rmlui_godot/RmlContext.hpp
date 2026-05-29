@@ -85,6 +85,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 
 	// Decorator shader registration (RCSS `decorator: shader("<name>")`)
 	godot::ClassDB::bind_method(godot::D_METHOD("register_decorator_shader", "name", "shader"), &RmlContext::register_decorator_shader);
+	godot::ClassDB::bind_method(godot::D_METHOD("register_decorator_material", "name", "material"), &RmlContext::register_decorator_material);
 	godot::ClassDB::bind_method(godot::D_METHOD("unregister_decorator_shader", "name"), &RmlContext::unregister_decorator_shader);
 
 	// A4: Drag-and-drop (gd_drag interop)
@@ -204,6 +205,7 @@ public:
 
 	// Decorator shader registration
 	bool register_decorator_shader(const godot::String& name, const godot::Ref<godot::Shader>& shader);
+	bool register_decorator_material(const godot::String& name, const godot::Ref<godot::ShaderMaterial>& material);
 	bool unregister_decorator_shader(const godot::String& name);
 
 	// A4: Drag-and-drop (gd_drag interop)

@@ -1524,6 +1524,20 @@ bool RmlContext::register_decorator_shader(const godot::String& name, const godo
 	return true;
 }
 
+bool RmlContext::register_decorator_material(const godot::String& name, const godot::Ref<godot::ShaderMaterial>& material) {
+	if (!material.is_valid() || !material->get_shader().is_valid()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] register_decorator_material — material or its shader is null");
+		return false;
+	}
+	std::string key(name.utf8().get_data());
+	if (!_render_interface.register_shader_material(key, material)) {
+		godot::UtilityFunctions::push_warning(
+			godot::String("[RmlUi] register_decorator_material failed: ") + name);
+		return false;
+	}
+	return true;
+}
+
 bool RmlContext::unregister_decorator_shader(const godot::String& name) {
 	std::string key(name.utf8().get_data());
 	return _render_interface.unregister_shader(key);

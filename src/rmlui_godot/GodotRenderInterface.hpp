@@ -124,6 +124,12 @@ public:
 	// Map a Godot Shader to an RCSS shader name. When a document uses
 	// `decorator: shader("<name>")`, the matching shader is rendered.
 	bool register_shader(const std::string& name, const godot::Ref<godot::Shader>& shader);
+	// Like register_shader but takes a pre-configured ShaderMaterial: the
+	// material's uniform overrides (speed, colors, etc.) are carried onto every
+	// element using this decorator, so authors can tune procedural/animated
+	// shaders from GDScript or the inspector. The material is used as a template
+	// and duplicated per element (so per-element element_dimensions don't clash).
+	bool register_shader_material(const std::string& name, const godot::Ref<godot::ShaderMaterial>& material);
 	bool unregister_shader(const std::string& name);
 
 	size_t get_geometry_count() const { return _geometry.size(); }
@@ -147,7 +153,10 @@ private:
 	std::vector<DrawCommand> _draw_commands;
 
 	std::unordered_map<std::string, godot::Ref<godot::ImageTexture>> _registered_textures;
-	std::unordered_map<std::string, godot::Ref<godot::Shader>> _registered_shaders;
+	// Base templates keyed by RCSS shader name. Duplicated per element in
+	// CompileShader so author-set uniforms persist while element_dimensions
+	// stays per-instance.
+	std::unordered_map<std::string, godot::Ref<godot::ShaderMaterial>> _registered_shaders;
 
 	uintptr_t _next_geo_handle = 1;
 	uintptr_t _next_tex_handle = 1;

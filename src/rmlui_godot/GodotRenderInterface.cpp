@@ -6,6 +6,8 @@
 
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
+#include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/classes/resource.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
@@ -333,7 +335,16 @@ void GodotRenderInterface::ReleaseFilter(Rml::CompiledFilterHandle filter) {
 
 bool GodotRenderInterface::register_shader(const std::string& name, const godot::Ref<godot::Shader>& shader) {
 	if (!shader.is_valid()) return false;
-	_registered_shaders[name] = shader;
+	godot::Ref<godot::ShaderMaterial> material;
+	material.instantiate();
+	material->set_shader(shader);
+	_registered_shaders[name] = material;
+	return true;
+}
+
+bool GodotRenderInterface::register_shader_material(const std::string& name, const godot::Ref<godot::ShaderMaterial>& material) {
+	if (!material.is_valid() || !material->get_shader().is_valid()) return false;
+	_registered_shaders[name] = material;
 	return true;
 }
 
@@ -362,8 +373,11 @@ Rml::CompiledShaderHandle GodotRenderInterface::CompileShader(
 
 	ShaderData data;
 	data.name = shader_name;
-	data.material.instantiate();
-	data.material->set_shader(reg_it->second);
+	// Duplicate the registered template so author-set uniforms carry over while
+	// element_dimensions (set below) stays per-element.
+	godot::Ref<godot::Resource> dup = reg_it->second->duplicate();
+	data.material = godot::Ref<godot::ShaderMaterial>(godot::Object::cast_to<godot::ShaderMaterial>(dup.ptr()));
+	if (!data.material.is_valid()) return 0;
 
 	auto dim_it = parameters.find("dimensions");
 	if (dim_it != parameters.end()) {
