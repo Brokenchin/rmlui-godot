@@ -85,11 +85,19 @@ public:
 		float value = 1.0f;
 	};
 
+	struct RawGeometry {
+		godot::PackedVector2Array positions;
+		godot::PackedColorArray colors;
+		godot::PackedVector2Array uvs;
+		godot::PackedInt32Array indices;
+	};
+
 	const std::vector<DrawCommand>& get_draw_commands() const { return _draw_commands; }
 	void clear_draw_commands() { _draw_commands.clear(); }
 	void release_all_resources();
 
 	godot::Ref<godot::ArrayMesh> get_mesh(Rml::CompiledGeometryHandle handle) const;
+	const RawGeometry* get_raw_geometry(Rml::CompiledGeometryHandle handle) const;
 	godot::Ref<godot::Texture2D> get_texture_or_white(Rml::TextureHandle handle);
 	const FilterData* get_filter(Rml::CompiledFilterHandle handle) const;
 
@@ -107,6 +115,7 @@ private:
 	godot::Ref<godot::ImageTexture> _white_texture;
 
 	std::unordered_map<uintptr_t, godot::Ref<godot::ArrayMesh>> _geometry;
+	std::unordered_map<uintptr_t, RawGeometry> _raw_geometry;
 	std::unordered_map<uintptr_t, godot::Ref<godot::ImageTexture>> _textures;
 	std::unordered_map<uintptr_t, FilterData> _filters;
 	std::vector<DrawCommand> _draw_commands;

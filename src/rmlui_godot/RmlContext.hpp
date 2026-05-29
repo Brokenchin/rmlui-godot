@@ -2,6 +2,8 @@
 
 #include "RmlGD.hpp"
 #include <godot_cpp/classes/canvas_item_material.hpp>
+#include <godot_cpp/classes/material.hpp>
+#include <godot_cpp/classes/shader_material.hpp>
 #include <godot_cpp/classes/control.hpp>
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/input_event.hpp>
@@ -103,6 +105,8 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_font_paths", "paths"), &RmlContext::set_font_paths);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_text_render_mode"), &RmlContext::get_text_render_mode);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_text_render_mode", "mode"), &RmlContext::set_text_render_mode);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_gpu_scissor"), &RmlContext::get_gpu_scissor);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_gpu_scissor", "enabled"), &RmlContext::set_gpu_scissor);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "rml_context_name"), "set_rml_context_name", "get_rml_context_name");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "dp_ratio", godot::PROPERTY_HINT_RANGE, "0.25,4.0,0.25"), "set_dp_ratio", "get_dp_ratio");
@@ -113,6 +117,9 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 
 	ADD_GROUP("Font Settings", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "Default,Subpixel,Oversampled,High Quality"), "set_text_render_mode", "get_text_render_mode");
+
+	ADD_GROUP("Scissor Clipping", "");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "gpu_scissor"), "set_gpu_scissor", "get_gpu_scissor");
 
 });
 
@@ -146,6 +153,9 @@ public:
 
 	int get_text_render_mode() const { return _text_render_mode; }
 	void set_text_render_mode(int mode);
+
+	bool get_gpu_scissor() const { return _gpu_scissor; }
+	void set_gpu_scissor(bool enabled);
 
 	bool create_data_model(const godot::String& model_name);
 	bool bind_data_variable(const godot::String& model_name, const godot::String& variable_name, const godot::Variant& initial_value);
@@ -216,7 +226,11 @@ private:
 	std::vector<LoadedDocument> _loaded_documents;
 	std::vector<godot::RID> _scissor_items;
 	std::vector<godot::RID> _layer_items;
-	godot::Ref<godot::CanvasItemMaterial> _premul_material;
+	godot::Ref<godot::Material> _active_material;
+
+	bool _gpu_scissor = false;
+	godot::Ref<godot::ShaderMaterial> _scissor_material;
+	void _ensure_scissor_material();
 
 	struct ListenerRecord {
 		Rml::Element* element = nullptr;

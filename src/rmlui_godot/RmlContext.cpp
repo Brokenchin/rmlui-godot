@@ -9,15 +9,128 @@
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/StyleSheetContainer.h>
 #include <RmlUi/Debugger.h>
-#include <godot_cpp/classes/canvas_item_material.hpp>
 #include <godot_cpp/classes/font_file.hpp>
 #include <godot_cpp/classes/input_event_key.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
+#include <godot_cpp/classes/resource_loader.hpp>
+#include <godot_cpp/classes/shader.hpp>
+#include <godot_cpp/classes/shader_material.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/variant/vector4.hpp>
 
 namespace {
+
+struct ClipVertex {
+	godot::Vector2 pos;
+	godot::Vector2 uv;
+	godot::Color col;
+};
+
+static float _edge_dist(const godot::Vector2& p, int edge, const godot::Rect2& r) {
+	switch (edge) {
+		case 0: return p.x - r.position.x;                      // left
+		case 1: return (r.position.x + r.size.x) - p.x;         // right
+		case 2: return p.y - r.position.y;                       // top
+		case 3: return (r.position.y + r.size.y) - p.y;          // bottom
+		default: return 0.0f;
+	}
+}
+
+static ClipVertex _lerp_vertex(const ClipVertex& a, const ClipVertex& b, float t) {
+	return {
+		a.pos.lerp(b.pos, t),
+		a.uv.lerp(b.uv, t),
+		a.col.lerp(b.col, t)
+	};
+}
+
+static void _clip_polygon_edge(const std::vector<ClipVertex>& in, std::vector<ClipVertex>& out,
+		int edge, const godot::Rect2& rect) {
+	out.clear();
+	if (in.empty()) return;
+	for (size_t i = 0; i < in.size(); i++) {
+		const ClipVertex& cur = in[i];
+		const ClipVertex& prev = in[(i + in.size() - 1) % in.size()];
+		float d_cur = _edge_dist(cur.pos, edge, rect);
+		float d_prev = _edge_dist(prev.pos, edge, rect);
+		if (d_prev >= 0.0f) {
+			if (d_cur >= 0.0f) {
+				out.push_back(cur);
+			} else {
+				float t = d_prev / (d_prev - d_cur);
+				out.push_back(_lerp_vertex(prev, cur, t));
+			}
+		} else if (d_cur >= 0.0f) {
+			float t = d_prev / (d_prev - d_cur);
+			out.push_back(_lerp_vertex(prev, cur, t));
+			out.push_back(cur);
+		}
+	}
+}
+
+struct ClipResult {
+	godot::PackedVector2Array positions;
+	godot::PackedColorArray colors;
+	godot::PackedVector2Array uvs;
+	godot::PackedInt32Array indices;
+};
+
+static bool _clip_mesh_to_rect(
+		const RmlGodot::GodotRenderInterface::RawGeometry& raw,
+		const godot::Transform2D& xform,
+		const godot::Rect2& clip_rect,
+		ClipResult& result) {
+
+	const auto& src_pos = raw.positions;
+	const auto& src_col = raw.colors;
+	const auto& src_uv = raw.uvs;
+	const auto& src_idx = raw.indices;
+
+	result.positions.clear();
+	result.colors.clear();
+	result.uvs.clear();
+	result.indices.clear();
+
+	std::vector<ClipVertex> poly, buf;
+	poly.reserve(8);
+	buf.reserve(8);
+
+	int vertex_base = 0;
+	for (int64_t t = 0; t + 2 < src_idx.size(); t += 3) {
+		poly.clear();
+		for (int k = 0; k < 3; k++) {
+			int vi = src_idx[t + k];
+			ClipVertex v;
+			v.pos = xform.xform(src_pos[vi]);
+			v.uv = src_uv[vi];
+			v.col = src_col[vi];
+			poly.push_back(v);
+		}
+
+		for (int edge = 0; edge < 4; edge++) {
+			_clip_polygon_edge(poly, buf, edge, clip_rect);
+			std::swap(poly, buf);
+		}
+
+		if (poly.size() < 3) continue;
+
+		for (auto& v : poly) {
+			result.positions.push_back(v.pos);
+			result.uvs.push_back(v.uv);
+			result.colors.push_back(v.col);
+		}
+		for (size_t i = 1; i + 1 < poly.size(); i++) {
+			result.indices.push_back(vertex_base);
+			result.indices.push_back(vertex_base + static_cast<int>(i));
+			result.indices.push_back(vertex_base + static_cast<int>(i) + 1);
+		}
+		vertex_base += static_cast<int>(poly.size());
+	}
+
+	return result.indices.size() > 0;
+}
 
 Rml::Variant godot_to_rml_variant(const godot::Variant& gv) {
 	switch (gv.get_type()) {
@@ -125,9 +238,16 @@ void RmlContext::_ready() {
 		return;
 	}
 
-	_premul_material.instantiate();
-	_premul_material->set_blend_mode(godot::CanvasItemMaterial::BLEND_MODE_PREMULT_ALPHA);
-	set_material(_premul_material);
+	godot::Ref<godot::Material> editor_mat = get_material();
+	if (editor_mat.is_valid()) {
+		_active_material = editor_mat;
+	} else {
+		godot::Ref<godot::CanvasItemMaterial> premul;
+		premul.instantiate();
+		premul->set_blend_mode(godot::CanvasItemMaterial::BLEND_MODE_PREMULT_ALPHA);
+		_active_material = premul;
+		set_material(_active_material);
+	}
 
 	manager->ensure_initialized();
 	_create_context();
@@ -149,7 +269,7 @@ void RmlContext::_process(double /*delta*/) {
 
 	_sync_dimensions();
 	_rml_context->Update();
-	queue_redraw();
+	queue_redraw(); //what if nothing changed?
 }
 
 void RmlContext::_draw() {
@@ -165,8 +285,14 @@ void RmlContext::_draw() {
 	_free_scissor_items();
 	_free_layer_items();
 
-	if (!_premul_material.is_valid()) return;
-	godot::RID mat_rid = _premul_material->get_rid();
+	if (!_active_material.is_valid()) return;
+	godot::RID mat_rid = _active_material->get_rid();
+
+	if (_gpu_scissor) _ensure_scissor_material();
+	const bool use_gpu = _gpu_scissor && _scissor_material.is_valid();
+	godot::RID scissor_mat_rid = use_gpu ? _scissor_material->get_rid() : godot::RID();
+
+	ClipResult clip_buf;
 
 	using CmdType = RmlGodot::GodotRenderInterface::CommandType;
 
@@ -185,12 +311,49 @@ void RmlContext::_draw() {
 
 	godot::RID draw_target = root_draw;
 
+	// GPU scissor path: route every mesh through a child canvas item that
+	// carries the scissor rect as an instance uniform. A new sub-item is
+	// started on each scissor-state transition and pinned with an increasing
+	// draw index, so sibling paint order always matches command order (this is
+	// what previously broke z-index when sub-items were reused/reordered).
+	godot::RID gpu_item;
+	godot::RID gpu_item_parent;
+	bool gpu_item_scissored = false;
+	godot::Rect2 gpu_item_rect;
+	int gpu_draw_index = 0;
+
+	auto gpu_invalidate = [&]() { gpu_item = godot::RID(); };
+
+	auto gpu_target_for = [&](godot::RID parent, bool scissored,
+			const godot::Rect2& rect) -> godot::RID {
+		if (gpu_item.is_valid() && gpu_item_parent == parent &&
+			gpu_item_scissored == scissored &&
+			(!scissored || gpu_item_rect == rect)) {
+			return gpu_item;
+		}
+		godot::RID item = rs->canvas_item_create();
+		rs->canvas_item_set_parent(item, parent);
+		rs->canvas_item_set_material(item, scissor_mat_rid);
+		rs->canvas_item_set_draw_index(item, gpu_draw_index++);
+		godot::Vector4 rv = scissored
+			? godot::Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y)
+			: godot::Vector4(-1000000.0f, -1000000.0f, 2000000.0f, 2000000.0f);
+		rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", rv);
+		_scissor_items.push_back(item);
+		gpu_item = item;
+		gpu_item_parent = parent;
+		gpu_item_scissored = scissored;
+		gpu_item_rect = rect;
+		return item;
+	};
+
 	for (int ci = 0; ci < static_cast<int>(commands.size()); ci++) {
 		const auto& cmd = commands[ci];
 
 		switch (cmd.type) {
 
 		case CmdType::PUSH_LAYER: {
+			gpu_invalidate();
 			godot::RID group_item = rs->canvas_item_create();
 			rs->canvas_item_set_parent(group_item, layer_stack.back().canvas_item);
 			rs->canvas_item_set_material(group_item, mat_rid);
@@ -203,6 +366,7 @@ void RmlContext::_draw() {
 		}
 
 		case CmdType::COMPOSITE_LAYERS: {
+			gpu_invalidate();
 			if (layer_stack.size() < 2) break;
 			godot::RID current_layer = layer_stack.back().canvas_item;
 
@@ -216,13 +380,14 @@ void RmlContext::_draw() {
 			}
 
 			if (opacity < 1.0f) {
-				rs->canvas_item_set_self_modulate(current_layer,
+				rs->canvas_item_set_modulate(current_layer,
 					godot::Color(1.0f, 1.0f, 1.0f, opacity));
 			}
 			break;
 		}
 
 		case CmdType::POP_LAYER: {
+			gpu_invalidate();
 			if (layer_stack.size() > 1) {
 				layer_stack.pop_back();
 				draw_target = layer_stack.back().canvas_item;
@@ -231,6 +396,7 @@ void RmlContext::_draw() {
 		}
 
 		case CmdType::ENABLE_CLIP_MASK: {
+			gpu_invalidate();
 			if (layer_stack.size() < 2) break;
 			godot::RID current_layer = layer_stack.back().canvas_item;
 			if (cmd.clip_mask_enabled) {
@@ -244,6 +410,7 @@ void RmlContext::_draw() {
 		}
 
 		case CmdType::RENDER_TO_CLIP_MASK: {
+			gpu_invalidate();
 			godot::Ref<godot::ArrayMesh> mask_mesh = _render_interface.get_mesh(cmd.geometry);
 			if (!mask_mesh.is_valid()) break;
 
@@ -300,8 +467,30 @@ void RmlContext::_draw() {
 
 			godot::Ref<godot::Texture2D> draw_tex = _render_interface.get_texture_or_white(cmd.texture);
 			godot::RID tex_rid = draw_tex.is_valid() ? draw_tex->get_rid() : godot::RID();
-			rs->canvas_item_add_mesh(draw_target, mesh->get_rid(), xform,
-				godot::Color(1, 1, 1, 1), tex_rid);
+
+			bool fully_inside = (mesh_left >= clip_rect.position.x &&
+				mesh_top >= clip_rect.position.y &&
+				mesh_right <= clip_rect.position.x + clip_rect.size.x &&
+				mesh_bottom <= clip_rect.position.y + clip_rect.size.y);
+
+			bool needs_scissor = cmd.scissor_enabled && !fully_inside;
+
+			if (use_gpu) {
+				godot::RID target = gpu_target_for(draw_target, needs_scissor, clip_rect);
+				rs->canvas_item_add_mesh(target, mesh->get_rid(), xform,
+					godot::Color(1, 1, 1, 1), tex_rid);
+			} else if (needs_scissor) {
+				const auto* raw = _render_interface.get_raw_geometry(cmd.geometry);
+				if (raw && _clip_mesh_to_rect(*raw, xform, clip_rect, clip_buf)) {
+					rs->canvas_item_add_triangle_array(draw_target,
+						clip_buf.indices, clip_buf.positions, clip_buf.colors,
+						clip_buf.uvs, godot::PackedInt32Array(),
+						godot::PackedFloat32Array(), tex_rid);
+				}
+			} else {
+				rs->canvas_item_add_mesh(draw_target, mesh->get_rid(), xform,
+					godot::Color(1, 1, 1, 1), tex_rid);
+			}
 			break;
 		}
 
@@ -618,6 +807,31 @@ void RmlContext::set_text_render_mode(int mode) {
 			static_cast<RmlGodot::GodotFontInterface::TextRenderMode>(mode));
 		queue_redraw();
 	}
+}
+
+void RmlContext::set_gpu_scissor(bool enabled) {
+	if (_gpu_scissor == enabled) return;
+	_gpu_scissor = enabled;
+	queue_redraw();
+}
+
+void RmlContext::_ensure_scissor_material() {
+	if (_scissor_material.is_valid()) return;
+
+	auto* loader = godot::ResourceLoader::get_singleton();
+	godot::Ref<godot::Shader> shader = loader->load(
+		"res://addons/rmlui-godot/shaders/rmlui_canvas_item.gdshader");
+	if (!shader.is_valid()) {
+		godot::UtilityFunctions::push_error(
+			"[RmlUi] GPU scissor enabled but scissor shader could not be loaded; "
+			"falling back to CPU clipping");
+		return;
+	}
+
+	godot::Ref<godot::ShaderMaterial> mat;
+	mat.instantiate();
+	mat->set_shader(shader);
+	_scissor_material = mat;
 }
 
 // --- Private: Dimension sync ---

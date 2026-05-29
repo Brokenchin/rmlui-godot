@@ -62,6 +62,7 @@ Rml::CompiledGeometryHandle GodotRenderInterface::CompileGeometry(
 
 	uintptr_t handle = _next_geo_handle++;
 	_geometry[handle] = mesh;
+	_raw_geometry[handle] = {positions, colors, uvs, idx};
 	return handle;
 }
 
@@ -84,6 +85,7 @@ void GodotRenderInterface::RenderGeometry(
 
 void GodotRenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry) {
 	_geometry.erase(geometry);
+	_raw_geometry.erase(geometry);
 }
 
 // --- Textures ---
@@ -331,6 +333,7 @@ void GodotRenderInterface::ReleaseFilter(Rml::CompiledFilterHandle filter) {
 
 void GodotRenderInterface::release_all_resources() {
 	_geometry.clear();
+	_raw_geometry.clear();
 	_textures.clear();
 	_filters.clear();
 	_draw_commands.clear();
@@ -352,6 +355,12 @@ void GodotRenderInterface::release_all_resources() {
 godot::Ref<godot::ArrayMesh> GodotRenderInterface::get_mesh(Rml::CompiledGeometryHandle handle) const {
 	auto it = _geometry.find(handle);
 	return it != _geometry.end() ? it->second : godot::Ref<godot::ArrayMesh>();
+}
+
+const GodotRenderInterface::RawGeometry* GodotRenderInterface::get_raw_geometry(
+		Rml::CompiledGeometryHandle handle) const {
+	auto it = _raw_geometry.find(handle);
+	return it != _raw_geometry.end() ? &it->second : nullptr;
 }
 
 void GodotRenderInterface::_ensure_white_texture() {

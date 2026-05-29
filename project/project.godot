@@ -14,6 +14,10 @@ config/name="RmlUI-Godot Demo"
 run/main_scene="res://addons/rmlui-godot/examples/stress/zindex_stacking/zindex_stacking.tscn"
 config/features=PackedStringArray("4.5")
 
+[display]
+
+window/vsync/vsync_mode=0
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/rmlui-godot/plugin.cfg")
