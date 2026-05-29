@@ -9,9 +9,9 @@ instance uniform vec4 scissor_rect = vec4(-1000000.0, -1000000.0, 2000000.0, 200
 varying vec2 v_local_pos;
 
 void vertex() {
-	// VERTEX already has the add_mesh transform applied, so this is in
-	// control-local pixel space — the same space as scissor_rect.
-	v_local_pos = VERTEX;
+	// Map the mesh-local VERTEX into control-local pixel space (the space
+	// scissor_rect lives in) via the draw's model transform.
+	v_local_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
 
 void fragment() {
