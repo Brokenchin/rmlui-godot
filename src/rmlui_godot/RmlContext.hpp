@@ -3,6 +3,7 @@
 #include "RmlGD.hpp"
 #include <godot_cpp/classes/canvas_item_material.hpp>
 #include <godot_cpp/classes/material.hpp>
+#include <godot_cpp/classes/shader.hpp>
 #include <godot_cpp/classes/shader_material.hpp>
 #include <godot_cpp/classes/control.hpp>
 #include <godot_cpp/classes/font.hpp>
@@ -81,6 +82,10 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	// Texture registration
 	godot::ClassDB::bind_method(godot::D_METHOD("register_texture", "name", "texture"), &RmlContext::register_texture);
 	godot::ClassDB::bind_method(godot::D_METHOD("unregister_texture", "name"), &RmlContext::unregister_texture);
+
+	// Decorator shader registration (RCSS `decorator: shader("<name>")`)
+	godot::ClassDB::bind_method(godot::D_METHOD("register_decorator_shader", "name", "shader"), &RmlContext::register_decorator_shader);
+	godot::ClassDB::bind_method(godot::D_METHOD("unregister_decorator_shader", "name"), &RmlContext::unregister_decorator_shader);
 
 	// A4: Drag-and-drop (gd_drag interop)
 	godot::ClassDB::bind_method(godot::D_METHOD("register_drag_source", "element_id", "payload_builder", "ghost_builder"), &RmlContext::register_drag_source, DEFVAL(godot::Callable()), DEFVAL(godot::Callable()));
@@ -196,6 +201,10 @@ public:
 	// Texture registration
 	bool register_texture(const godot::String& name, const godot::Ref<godot::Texture2D>& texture);
 	bool unregister_texture(const godot::String& name);
+
+	// Decorator shader registration
+	bool register_decorator_shader(const godot::String& name, const godot::Ref<godot::Shader>& shader);
+	bool unregister_decorator_shader(const godot::String& name);
 
 	// A4: Drag-and-drop (gd_drag interop)
 	void register_drag_source(const godot::String& element_id, const godot::Callable& payload_builder = godot::Callable(), const godot::Callable& ghost_builder = godot::Callable());

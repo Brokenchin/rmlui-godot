@@ -311,39 +311,47 @@ void RmlContext::_draw() {
 
 	godot::RID draw_target = root_draw;
 
-	// GPU scissor path: route every mesh through a child canvas item that
-	// carries the scissor rect as an instance uniform. A new sub-item is
-	// started on each scissor-state transition and pinned with an increasing
-	// draw index, so sibling paint order always matches command order (this is
-	// what previously broke z-index when sub-items were reused/reordered).
-	godot::RID gpu_item;
-	godot::RID gpu_item_parent;
-	bool gpu_item_scissored = false;
-	godot::Rect2 gpu_item_rect;
-	int gpu_draw_index = 0;
+	// Unified ordered sub-item pipeline.
+	// Every drawable command paints into a child canvas item ("run") of the
+	// current layer, NOT into the layer item directly. A new run is started
+	// whenever the parent layer, the material, or (for GPU scissor) the scissor
+	// rect changes, and each run is pinned with a strictly increasing draw index
+	// so sibling paint order always matches command order. This is required
+	// because a Godot canvas item draws its own commands BEFORE its children:
+	// mixing direct draws with child items would reorder geometry. Routing
+	// everything through ordered runs keeps z-index, GPU-scissor sub-items, and
+	// decorator-shader material switches all consistent.
+	godot::RID run_item;
+	godot::RID run_parent;
+	godot::RID run_material;
+	bool run_scissored = false;
+	godot::Rect2 run_rect;
+	int run_draw_index = 0;
 
-	auto gpu_invalidate = [&]() { gpu_item = godot::RID(); };
+	auto invalidate_run = [&]() { run_item = godot::RID(); };
 
-	auto gpu_target_for = [&](godot::RID parent, bool scissored,
-			const godot::Rect2& rect) -> godot::RID {
-		if (gpu_item.is_valid() && gpu_item_parent == parent &&
-			gpu_item_scissored == scissored &&
-			(!scissored || gpu_item_rect == rect)) {
-			return gpu_item;
+	auto target_for = [&](godot::RID parent, godot::RID material,
+			bool scissored, const godot::Rect2& rect) -> godot::RID {
+		if (run_item.is_valid() && run_parent == parent && run_material == material &&
+			run_scissored == scissored && (!scissored || run_rect == rect)) {
+			return run_item;
 		}
 		godot::RID item = rs->canvas_item_create();
 		rs->canvas_item_set_parent(item, parent);
-		rs->canvas_item_set_material(item, scissor_mat_rid);
-		rs->canvas_item_set_draw_index(item, gpu_draw_index++);
-		godot::Vector4 rv = scissored
-			? godot::Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y)
-			: godot::Vector4(-1000000.0f, -1000000.0f, 2000000.0f, 2000000.0f);
-		rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", rv);
+		rs->canvas_item_set_material(item, material);
+		rs->canvas_item_set_draw_index(item, run_draw_index++);
+		if (material == scissor_mat_rid) {
+			godot::Vector4 rv = scissored
+				? godot::Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y)
+				: godot::Vector4(-1000000.0f, -1000000.0f, 2000000.0f, 2000000.0f);
+			rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", rv);
+		}
 		_scissor_items.push_back(item);
-		gpu_item = item;
-		gpu_item_parent = parent;
-		gpu_item_scissored = scissored;
-		gpu_item_rect = rect;
+		run_item = item;
+		run_parent = parent;
+		run_material = material;
+		run_scissored = scissored;
+		run_rect = rect;
 		return item;
 	};
 
@@ -353,7 +361,7 @@ void RmlContext::_draw() {
 		switch (cmd.type) {
 
 		case CmdType::PUSH_LAYER: {
-			gpu_invalidate();
+			invalidate_run();
 			godot::RID group_item = rs->canvas_item_create();
 			rs->canvas_item_set_parent(group_item, layer_stack.back().canvas_item);
 			rs->canvas_item_set_material(group_item, mat_rid);
@@ -366,7 +374,7 @@ void RmlContext::_draw() {
 		}
 
 		case CmdType::COMPOSITE_LAYERS: {
-			gpu_invalidate();
+			invalidate_run();
 			if (layer_stack.size() < 2) break;
 			godot::RID current_layer = layer_stack.back().canvas_item;
 
@@ -387,7 +395,7 @@ void RmlContext::_draw() {
 		}
 
 		case CmdType::POP_LAYER: {
-			gpu_invalidate();
+			invalidate_run();
 			if (layer_stack.size() > 1) {
 				layer_stack.pop_back();
 				draw_target = layer_stack.back().canvas_item;
@@ -396,7 +404,7 @@ void RmlContext::_draw() {
 		}
 
 		case CmdType::ENABLE_CLIP_MASK: {
-			gpu_invalidate();
+			invalidate_run();
 			if (layer_stack.size() < 2) break;
 			godot::RID current_layer = layer_stack.back().canvas_item;
 			if (cmd.clip_mask_enabled) {
@@ -410,7 +418,7 @@ void RmlContext::_draw() {
 		}
 
 		case CmdType::RENDER_TO_CLIP_MASK: {
-			gpu_invalidate();
+			invalidate_run();
 			godot::Ref<godot::ArrayMesh> mask_mesh = _render_interface.get_mesh(cmd.geometry);
 			if (!mask_mesh.is_valid()) break;
 
@@ -430,9 +438,24 @@ void RmlContext::_draw() {
 			break;
 		}
 
-		case CmdType::GEOMETRY: {
+		case CmdType::GEOMETRY:
+		case CmdType::SHADER_GEOMETRY: {
 			godot::Ref<godot::ArrayMesh> mesh = _render_interface.get_mesh(cmd.geometry);
 			if (!mesh.is_valid()) continue;
+
+			// Resolve the material for this draw. Ordinary geometry uses the
+			// default canvas material; a decorator shader carries its own. If a
+			// shader draw references an unregistered/invalid shader, fall back to
+			// the default material so the geometry still renders.
+			godot::RID geo_material = mat_rid;
+			bool is_shader = false;
+			if (cmd.type == CmdType::SHADER_GEOMETRY) {
+				const auto* sd = _render_interface.get_shader(cmd.shader_handle);
+				if (sd != nullptr && sd->material.is_valid()) {
+					geo_material = sd->material->get_rid();
+					is_shader = true;
+				}
+			}
 
 			godot::Transform2D xform;
 			if (cmd.has_transform) {
@@ -475,20 +498,26 @@ void RmlContext::_draw() {
 
 			bool needs_scissor = cmd.scissor_enabled && !fully_inside;
 
-			if (use_gpu) {
-				godot::RID target = gpu_target_for(draw_target, needs_scissor, clip_rect);
+			// GPU scissor only applies to ordinary geometry: a decorator shader
+			// has its own material with no scissor uniform, so it always CPU-clips.
+			bool gpu_path = use_gpu && !is_shader;
+
+			if (gpu_path) {
+				godot::RID target = target_for(draw_target, scissor_mat_rid, needs_scissor, clip_rect);
 				rs->canvas_item_add_mesh(target, mesh->get_rid(), xform,
 					godot::Color(1, 1, 1, 1), tex_rid);
 			} else if (needs_scissor) {
 				const auto* raw = _render_interface.get_raw_geometry(cmd.geometry);
 				if (raw && _clip_mesh_to_rect(*raw, xform, clip_rect, clip_buf)) {
-					rs->canvas_item_add_triangle_array(draw_target,
+					godot::RID target = target_for(draw_target, geo_material, false, clip_rect);
+					rs->canvas_item_add_triangle_array(target,
 						clip_buf.indices, clip_buf.positions, clip_buf.colors,
 						clip_buf.uvs, godot::PackedInt32Array(),
 						godot::PackedFloat32Array(), tex_rid);
 				}
 			} else {
-				rs->canvas_item_add_mesh(draw_target, mesh->get_rid(), xform,
+				godot::RID target = target_for(draw_target, geo_material, false, clip_rect);
+				rs->canvas_item_add_mesh(target, mesh->get_rid(), xform,
 					godot::Color(1, 1, 1, 1), tex_rid);
 			}
 			break;
@@ -1477,6 +1506,27 @@ bool RmlContext::register_texture(const godot::String& name, const godot::Ref<go
 bool RmlContext::unregister_texture(const godot::String& name) {
 	std::string key(name.utf8().get_data());
 	return _render_interface.unregister_texture(key);
+}
+
+// --- Decorator shader registration ---
+
+bool RmlContext::register_decorator_shader(const godot::String& name, const godot::Ref<godot::Shader>& shader) {
+	if (!shader.is_valid()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] register_decorator_shader — shader is null");
+		return false;
+	}
+	std::string key(name.utf8().get_data());
+	if (!_render_interface.register_shader(key, shader)) {
+		godot::UtilityFunctions::push_warning(
+			godot::String("[RmlUi] register_decorator_shader failed: ") + name);
+		return false;
+	}
+	return true;
+}
+
+bool RmlContext::unregister_decorator_shader(const godot::String& name) {
+	std::string key(name.utf8().get_data());
+	return _render_interface.unregister_shader(key);
 }
 
 // --- A4: Drag-and-drop (gd_drag interop) ---

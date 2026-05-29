@@ -329,6 +329,76 @@ void GodotRenderInterface::ReleaseFilter(Rml::CompiledFilterHandle filter) {
 	_filters.erase(filter);
 }
 
+// --- Shaders (decorator: shader(...)) ---
+
+bool GodotRenderInterface::register_shader(const std::string& name, const godot::Ref<godot::Shader>& shader) {
+	if (!shader.is_valid()) return false;
+	_registered_shaders[name] = shader;
+	return true;
+}
+
+bool GodotRenderInterface::unregister_shader(const std::string& name) {
+	return _registered_shaders.erase(name) > 0;
+}
+
+Rml::CompiledShaderHandle GodotRenderInterface::CompileShader(
+	const Rml::String& /*name*/, const Rml::Dictionary& parameters) {
+
+	// RmlUi's built-in shader decorator always passes name == "shader" and the
+	// user-facing name from `decorator: shader("<value>")` under "value".
+	auto value_it = parameters.find("value");
+	if (value_it == parameters.end()) return 0;
+	std::string shader_name(value_it->second.Get<Rml::String>().c_str());
+
+	auto reg_it = _registered_shaders.find(shader_name);
+	if (reg_it == _registered_shaders.end() || !reg_it->second.is_valid()) {
+		// No Godot shader registered for this name — returning 0 makes RmlUi fall
+		// back to ordinary geometry rendering for this decorator.
+		godot::UtilityFunctions::push_warning(
+			godot::String("[RmlUi] No decorator shader registered for: ") +
+			godot::String(shader_name.c_str()));
+		return 0;
+	}
+
+	ShaderData data;
+	data.name = shader_name;
+	data.material.instantiate();
+	data.material->set_shader(reg_it->second);
+
+	auto dim_it = parameters.find("dimensions");
+	if (dim_it != parameters.end()) {
+		auto dims = dim_it->second.Get<Rml::Vector2f>();
+		data.dimensions = godot::Vector2(dims.x, dims.y);
+		data.material->set_shader_parameter("element_dimensions", data.dimensions);
+	}
+
+	uintptr_t handle = _next_shader_handle++;
+	_shaders[handle] = std::move(data);
+	return handle;
+}
+
+void GodotRenderInterface::RenderShader(Rml::CompiledShaderHandle shader,
+	Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation, Rml::TextureHandle texture) {
+
+	DrawCommand cmd;
+	cmd.type = CommandType::SHADER_GEOMETRY;
+	cmd.geometry = geometry;
+	cmd.shader_handle = shader;
+	cmd.translation = godot::Vector2(translation.x, translation.y);
+	cmd.texture = texture;
+	cmd.scissor_enabled = _scissor_enabled;
+	cmd.scissor_rect = godot::Rect2i(
+		_scissor_region.Left(), _scissor_region.Top(),
+		_scissor_region.Width(), _scissor_region.Height());
+	cmd.has_transform = _has_transform;
+	cmd.transform = _current_transform;
+	_draw_commands.push_back(cmd);
+}
+
+void GodotRenderInterface::ReleaseShader(Rml::CompiledShaderHandle shader) {
+	_shaders.erase(shader);
+}
+
 // --- Lifecycle ---
 
 void GodotRenderInterface::release_all_resources() {
@@ -336,12 +406,15 @@ void GodotRenderInterface::release_all_resources() {
 	_raw_geometry.clear();
 	_textures.clear();
 	_filters.clear();
+	_shaders.clear();
 	_draw_commands.clear();
 	_registered_textures.clear();
+	_registered_shaders.clear();
 	_white_texture.unref();
 	_next_geo_handle = 1;
 	_next_tex_handle = 1;
 	_next_filter_handle = 1;
+	_next_shader_handle = 1;
 	_next_layer_handle = 1;
 	_scissor_enabled = false;
 	_scissor_region = {};
@@ -390,6 +463,12 @@ const GodotRenderInterface::FilterData* GodotRenderInterface::get_filter(
 	Rml::CompiledFilterHandle handle) const {
 	auto it = _filters.find(handle);
 	return it != _filters.end() ? &it->second : nullptr;
+}
+
+const GodotRenderInterface::ShaderData* GodotRenderInterface::get_shader(
+	Rml::CompiledShaderHandle handle) const {
+	auto it = _shaders.find(handle);
+	return it != _shaders.end() ? &it->second : nullptr;
 }
 
 } // namespace RmlGodot

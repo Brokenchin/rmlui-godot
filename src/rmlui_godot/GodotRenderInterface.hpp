@@ -3,7 +3,10 @@
 #include <RmlUi/Core/RenderInterface.h>
 #include <godot_cpp/classes/array_mesh.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
+#include <godot_cpp/classes/shader.hpp>
+#include <godot_cpp/classes/shader_material.hpp>
 #include <godot_cpp/variant/vector2.hpp>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -44,9 +47,16 @@ public:
 	Rml::CompiledFilterHandle CompileFilter(const Rml::String& name, const Rml::Dictionary& parameters) override;
 	void ReleaseFilter(Rml::CompiledFilterHandle filter) override;
 
+	// --- Optional: Shaders (decorator: shader(...)) ---
+	Rml::CompiledShaderHandle CompileShader(const Rml::String& name, const Rml::Dictionary& parameters) override;
+	void RenderShader(Rml::CompiledShaderHandle shader, Rml::CompiledGeometryHandle geometry,
+		Rml::Vector2f translation, Rml::TextureHandle texture) override;
+	void ReleaseShader(Rml::CompiledShaderHandle shader) override;
+
 	// --- Draw command types ---
 	enum class CommandType : uint8_t {
 		GEOMETRY,
+		SHADER_GEOMETRY,
 		PUSH_LAYER,
 		POP_LAYER,
 		COMPOSITE_LAYERS,
@@ -61,6 +71,7 @@ public:
 		Rml::CompiledGeometryHandle geometry = 0;
 		godot::Vector2 translation;
 		Rml::TextureHandle texture = 0;
+		Rml::CompiledShaderHandle shader_handle = 0;
 		bool scissor_enabled = false;
 		godot::Rect2i scissor_rect;
 		bool has_transform = false;
@@ -92,6 +103,14 @@ public:
 		godot::PackedInt32Array indices;
 	};
 
+	// A compiled decorator shader: a per-instance ShaderMaterial clone with the
+	// element dimensions already pushed as a uniform.
+	struct ShaderData {
+		godot::Ref<godot::ShaderMaterial> material;
+		std::string name;
+		godot::Vector2 dimensions;
+	};
+
 	const std::vector<DrawCommand>& get_draw_commands() const { return _draw_commands; }
 	void clear_draw_commands() { _draw_commands.clear(); }
 	void release_all_resources();
@@ -100,6 +119,12 @@ public:
 	const RawGeometry* get_raw_geometry(Rml::CompiledGeometryHandle handle) const;
 	godot::Ref<godot::Texture2D> get_texture_or_white(Rml::TextureHandle handle);
 	const FilterData* get_filter(Rml::CompiledFilterHandle handle) const;
+	const ShaderData* get_shader(Rml::CompiledShaderHandle handle) const;
+
+	// Map a Godot Shader to an RCSS shader name. When a document uses
+	// `decorator: shader("<name>")`, the matching shader is rendered.
+	bool register_shader(const std::string& name, const godot::Ref<godot::Shader>& shader);
+	bool unregister_shader(const std::string& name);
 
 	size_t get_geometry_count() const { return _geometry.size(); }
 	size_t get_texture_count() const { return _textures.size(); }
@@ -118,13 +143,16 @@ private:
 	std::unordered_map<uintptr_t, RawGeometry> _raw_geometry;
 	std::unordered_map<uintptr_t, godot::Ref<godot::ImageTexture>> _textures;
 	std::unordered_map<uintptr_t, FilterData> _filters;
+	std::unordered_map<uintptr_t, ShaderData> _shaders;
 	std::vector<DrawCommand> _draw_commands;
 
 	std::unordered_map<std::string, godot::Ref<godot::ImageTexture>> _registered_textures;
+	std::unordered_map<std::string, godot::Ref<godot::Shader>> _registered_shaders;
 
 	uintptr_t _next_geo_handle = 1;
 	uintptr_t _next_tex_handle = 1;
 	uintptr_t _next_filter_handle = 1;
+	uintptr_t _next_shader_handle = 1;
 	Rml::LayerHandle _next_layer_handle = 1;
 
 	bool _scissor_enabled = false;
