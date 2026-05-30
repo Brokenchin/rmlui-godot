@@ -1,0 +1,77 @@
+<rml>
+<head>
+	<title>Font Effects Test</title>
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 24px;
+			color: #ffffff;
+			padding: 30px;
+		}
+		h2 {
+			font-size: 18px;
+			color: #888;
+			margin: 20px 0 8px 0;
+		}
+		.shadow {
+			font-effect: shadow(2px 2px black);
+			font-size: 32px;
+		}
+		.shadow-color {
+			font-effect: shadow(3px 3px #ff4444);
+			font-size: 32px;
+		}
+		.outline {
+			font-effect: outline(2px #44ff44);
+			font-size: 32px;
+		}
+		.outline-thick {
+			font-effect: outline(4px #4444ff);
+			font-size: 32px;
+		}
+		.blur {
+			font-effect: blur(2px #ffffff);
+			font-size: 32px;
+		}
+		.glow {
+			font-effect: glow(2px 3px yellow);
+			font-size: 32px;
+			color: #ff8800;
+		}
+		.multi {
+			font-effect: shadow(2px 2px #000000), outline(1px #ff6600);
+			font-size: 36px;
+			color: #ffcc00;
+		}
+		.no-effect {
+			font-size: 32px;
+		}
+	</style>
+</head>
+<body>
+	<h2>No effect (baseline)</h2>
+	<div class="no-effect">Hello World ABCDEF 0123</div>
+
+	<h2>Shadow (2px 2px black)</h2>
+	<div class="shadow">Shadow Text Effect</div>
+
+	<h2>Shadow (3px 3px red)</h2>
+	<div class="shadow-color">Red Shadow Behind</div>
+
+	<h2>Outline (2px green)</h2>
+	<div class="outline">Green Outline Text</div>
+
+	<h2>Outline (4px blue)</h2>
+	<div class="outline-thick">Thick Blue Outline</div>
+
+	<h2>Blur (2px white)</h2>
+	<div class="blur">Blurred Soft Text</div>
+
+	<h2>Glow (2px 3px yellow)</h2>
+	<div class="glow">Glowing Neon Text</div>
+
+	<h2>Multiple: shadow + outline</h2>
+	<div class="multi">Combined Effects!</div>
+</body>
+</rml>

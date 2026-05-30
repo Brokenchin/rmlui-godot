@@ -1,6 +1,8 @@
 #pragma once
 
 #include <RmlUi/Core/FontEngineInterface.h>
+#include <RmlUi/Core/FontEffect.h>
+#include <RmlUi/Core/FontGlyph.h>
 #include <RmlUi/Core/FontMetrics.h>
 #include <RmlUi/Core/CallbackTexture.h>
 
@@ -90,6 +92,35 @@ private:
 		bool has_geometry = false;
 	};
 
+	struct EffectGlyph {
+		Rml::Vector2f origin;
+		Rml::Vector2f dimensions;
+		Rml::Vector2f uv_min;
+		Rml::Vector2f uv_max;
+		int atlas_page = -1;
+		bool has_geometry = false;
+	};
+
+	struct EffectAtlasPage {
+		static constexpr int SIZE = 1024;
+		std::vector<uint8_t> pixels;
+		int cursor_x = 1;
+		int cursor_y = 1;
+		int row_height = 0;
+		EffectAtlasPage() : pixels(SIZE * SIZE * 4, 0) {}
+		std::pair<int, int> place(int w, int h, const uint8_t* rgba);
+	};
+
+	struct EffectLayer {
+		Rml::SharedPtr<const Rml::FontEffect> effect;
+		bool uses_base_textures = false;
+		std::unordered_map<uint32_t, EffectGlyph> glyph_cache;
+		std::unordered_map<uint32_t, EffectGlyph> glyph_index_cache;
+		std::vector<EffectAtlasPage> atlas_pages;
+		std::unordered_map<int, std::unique_ptr<Rml::CallbackTextureSource>> atlas_textures;
+		std::set<int> dirty_pages;
+	};
+
 	struct FontFace {
 		int loaded_font_index = -1;
 		int size = 0;
@@ -100,6 +131,8 @@ private:
 		std::unordered_map<uint32_t, int64_t> codepoint_to_index;  // codepoint → raw glyph index (no shift bits)
 		std::unordered_map<int, std::unique_ptr<Rml::CallbackTextureSource>> atlas_textures;
 		std::set<int> dirty_pages;
+		std::vector<std::unique_ptr<EffectLayer>> effect_layers;
+		std::vector<std::vector<int>> layer_configs; // -1 = base layer
 	};
 
 	std::vector<LoadedFont> _loaded_fonts;
@@ -126,9 +159,15 @@ private:
 	// (oversampled) render size. Caller owns the RID and must free_rid it.
 	godot::RID _shape_string(const FontFace& face, Rml::StringView string) const;
 	int _generate_shaped(Rml::RenderManager& render_manager, FontFace& face, Rml::StringView string,
-		Rml::Vector2f position, Rml::ColourbPremultiplied colour,
+		Rml::Vector2f position, Rml::ColourbPremultiplied colour, float opacity,
+		Rml::FontEffectsHandle font_effects_handle,
 		const Rml::TextShapingContext& text_shaping_context, Rml::TexturedMeshList& mesh_list);
 	void _rebuild_dirty_atlases(FontFace& face);
+	void _rebuild_effect_atlases(EffectLayer& layer);
+	void _ensure_effect_glyph(FontFace& face, EffectLayer& layer, uint32_t codepoint);
+	void _ensure_effect_glyph_index(FontFace& face, EffectLayer& layer, int64_t glyph_index);
+	std::vector<uint8_t> _extract_glyph_alpha(const FontFace& face, int64_t glyph_index) const;
+	EffectGlyph _build_effect_glyph(FontFace& face, EffectLayer& layer, int64_t glyph_index);
 	void _apply_font_settings(godot::RID font_rid) const;
 	void _invalidate_all_caches();
 	int _effective_subpixel_mode(const LoadedFont& font, int render_size) const;
