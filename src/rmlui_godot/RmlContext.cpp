@@ -739,7 +739,7 @@ bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 	bool any_ok = false;
 	for (int i = 0; i < rids.size(); i++) {
 		godot::RID rid = rids[i];
-		if (fi.LoadFontFromRID(rid, false, Rml::Style::FontWeight::Normal))
+		if (fi.LoadFontFromRID(rid, false, Rml::Style::FontWeight::Auto))
 			any_ok = true;
 	}
 

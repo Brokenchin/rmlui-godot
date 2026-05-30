@@ -63,6 +63,12 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 	if (static_cast<int64_t>(ts->font_get_style(font_rid)) & godot::TextServer::FONT_ITALIC)
 		style = Rml::Style::FontStyle::Italic;
 
+	if (weight == Rml::Style::FontWeight::Auto || weight == Rml::Style::FontWeight::Normal) {
+		int ts_weight = static_cast<int>(ts->font_get_weight(font_rid));
+		if (ts_weight > 0 && ts_weight <= 1000)
+			weight = static_cast<Rml::Style::FontWeight>(ts_weight);
+	}
+
 	return _register_font(font_rid, family, style, weight, fallback_face);
 }
 
@@ -94,6 +100,12 @@ bool GodotFontInterface::LoadFontFromRID(godot::RID font_rid, bool fallback_face
 	Rml::Style::FontStyle style = Rml::Style::FontStyle::Normal;
 	if (static_cast<int64_t>(ts->font_get_style(font_rid)) & godot::TextServer::FONT_ITALIC)
 		style = Rml::Style::FontStyle::Italic;
+
+	if (weight == Rml::Style::FontWeight::Auto || weight == Rml::Style::FontWeight::Normal) {
+		int ts_weight = static_cast<int>(ts->font_get_weight(font_rid));
+		if (ts_weight > 0 && ts_weight <= 1000)
+			weight = static_cast<Rml::Style::FontWeight>(ts_weight);
+	}
 
 	if (!_register_font(font_rid, family, style, weight, fallback_face))
 		return false;
@@ -136,9 +148,16 @@ int GodotFontInterface::_find_font(const Rml::String& family, Rml::Style::FontSt
 		if (to_lower(_loaded_fonts[i].family) != family_lower)
 			continue;
 
-		int score = 0;
-		if (_loaded_fonts[i].style == style) score += 2;
-		if (_loaded_fonts[i].weight == weight) score += 1;
+		// Style must match exactly (CSS spec: style takes priority, no
+		// cross-style fallback within a family).
+		if (_loaded_fonts[i].style != style)
+			continue;
+
+		// Weight scored by closeness: max distance is 999 (1 to 1000), so
+		// 1000 - distance gives higher scores for closer weights.
+		int weight_dist = std::abs(
+			static_cast<int>(_loaded_fonts[i].weight) - static_cast<int>(weight));
+		int score = 1000 - weight_dist;
 
 		if (score > best_score) {
 			best_score = score;
@@ -151,7 +170,25 @@ int GodotFontInterface::_find_font(const Rml::String& family, Rml::Style::FontSt
 Rml::FontFaceHandle GodotFontInterface::GetFontFaceHandle(const Rml::String& family,
 	Rml::Style::FontStyle style, Rml::Style::FontWeight weight, int size) {
 
-	int font_idx = _find_font(family, style, weight);
+	int font_idx = -1;
+
+	// Parse comma-separated family list (e.g. "\"Noto Sans\", Arial, sans-serif").
+	Rml::StringList families;
+	Rml::StringUtilities::ExpandString(families, family, ',');
+	for (auto& fam : families) {
+		Rml::String trimmed = Rml::StringUtilities::StripWhitespace(fam);
+		if (trimmed.size() >= 2 &&
+			(trimmed.front() == '"' || trimmed.front() == '\'')) {
+			trimmed = trimmed.substr(1, trimmed.size() - 2);
+		}
+		if (trimmed.empty())
+			continue;
+
+		font_idx = _find_font(trimmed, style, weight);
+		if (font_idx >= 0)
+			break;
+	}
+
 	if (font_idx < 0) {
 		font_idx = _fallback_font_index;
 		if (font_idx < 0) return 0;
