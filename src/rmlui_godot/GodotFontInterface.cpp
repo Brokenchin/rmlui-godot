@@ -812,27 +812,4 @@ void GodotFontInterface::set_layout_mode(int mode) {
 		godot::String("[RmlUi Font] Layout mode: ") + godot::String(mode_names[idx]));
 }
 
-void GodotFontInterface::set_text_render_mode(TextRenderMode mode) {
-	_text_render_mode = mode;
-
-	// Map the preset onto the granular fields. Hinting/antialiasing stay at
-	// their Label-matching defaults; the presets only toggle subpixel +
-	// oversampling. Granular setters can still override afterwards.
-	bool subpixel = (mode == TextRenderMode::SUBPIXEL || mode == TextRenderMode::HIGH_QUALITY);
-	bool oversampled = (mode == TextRenderMode::OVERSAMPLED || mode == TextRenderMode::HIGH_QUALITY);
-	_subpixel = subpixel ? godot::TextServer::SUBPIXEL_POSITIONING_ONE_QUARTER
-	                     : godot::TextServer::SUBPIXEL_POSITIONING_DISABLED;
-	_oversampling = oversampled ? 2.0f : 0.0f;
-
-	for (auto& font : _loaded_fonts) {
-		if (!font.externally_owned) _apply_font_settings(font.font_rid);
-	}
-	_invalidate_all_caches();
-
-	const char* mode_names[] = {"Default", "Subpixel", "Oversampled", "High Quality"};
-	godot::UtilityFunctions::print(
-		godot::String("[RmlUi Font] Text render mode: ") +
-		godot::String(mode_names[static_cast<int>(mode)]));
-}
-
 } // namespace RmlGodot

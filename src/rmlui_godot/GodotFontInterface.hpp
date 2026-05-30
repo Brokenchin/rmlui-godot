@@ -15,13 +15,6 @@ namespace RmlGodot {
 
 class GodotFontInterface final : public Rml::FontEngineInterface {
 public:
-	enum class TextRenderMode : int {
-		DEFAULT = 0,
-		SUBPIXEL = 1,
-		OVERSAMPLED = 2,
-		HIGH_QUALITY = 3,
-	};
-
 	// How glyphs are laid out horizontally.
 	enum class LayoutMode : int {
 		// Fractional advance accumulated, each glyph floored independently when
@@ -36,9 +29,6 @@ public:
 		// and per-glyph offsets come straight from Godot for true parity.
 		SHAPED = 2,
 	};
-
-	void set_text_render_mode(TextRenderMode mode);
-	TextRenderMode get_text_render_mode() const { return _text_render_mode; }
 
 	void set_layout_mode(int mode);
 	int get_layout_mode() const { return static_cast<int>(_layout_mode); }
@@ -112,7 +102,6 @@ private:
 	std::vector<LoadedFont> _loaded_fonts;
 	std::vector<std::unique_ptr<FontFace>> _faces;
 	int _fallback_font_index = -1;
-	TextRenderMode _text_render_mode = TextRenderMode::DEFAULT;
 	LayoutMode _layout_mode = LayoutMode::MANUAL;
 
 	// Defaults chosen to match Godot's default FontFile import + Label render:
