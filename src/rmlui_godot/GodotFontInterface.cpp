@@ -263,7 +263,15 @@ Rml::FontFaceHandle GodotFontInterface::GetFontFaceHandle(const Rml::String& fam
 	face->metrics.descent = descent;
 	float leading = std::round(static_cast<float>(size) * 0.2f);
 	face->metrics.line_spacing = ascent + descent + leading;
-	face->metrics.x_height = ascent * 0.5f;
+	float x_height = ascent * 0.5f;
+	if (ts->font_has_char(font.font_rid, 'x')) {
+		int64_t x_idx = ts->font_get_glyph_index(font.font_rid, size, 'x', 0);
+		godot::Vector2 x_offset = ts->font_get_glyph_offset(font.font_rid, godot::Vector2i(size, 0), x_idx);
+		godot::Vector2 x_size = ts->font_get_glyph_size(font.font_rid, godot::Vector2i(size, 0), x_idx);
+		if (x_size.y > 0)
+			x_height = static_cast<float>(x_size.y);
+	}
+	face->metrics.x_height = x_height;
 	face->metrics.underline_position = static_cast<float>(ts->font_get_underline_position(font.font_rid, size));
 	face->metrics.underline_thickness = static_cast<float>(ts->font_get_underline_thickness(font.font_rid, size));
 	if (face->metrics.underline_thickness < 1.0f) face->metrics.underline_thickness = 1.0f;
