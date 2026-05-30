@@ -554,6 +554,24 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 	_forward_key_event(event);
 }
 
+void RmlContext::_apply_base_stylesheet(Rml::ElementDocument* doc) {
+	if (!_use_default_rcss || doc == nullptr) return;
+
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (!manager) return;
+
+	auto base = manager->get_default_sheet();
+	if (!base) return;
+
+	const Rml::StyleSheetContainer* doc_sheet = doc->GetStyleSheetContainer();
+	if (doc_sheet) {
+		auto combined = base->CombineStyleSheetContainer(*doc_sheet);
+		doc->SetStyleSheetContainer(std::move(combined));
+	} else {
+		doc->SetStyleSheetContainer(base);
+	}
+}
+
 void RmlContext::load_document(const godot::String& path) {
 	if (_rml_context == nullptr) {
 		godot::UtilityFunctions::push_error("[RmlUi] Cannot load document — context not initialized");
@@ -569,6 +587,7 @@ void RmlContext::load_document(const godot::String& path) {
 
 	Rml::ElementDocument* doc = _rml_context->LoadDocument(rml_path);
 	if (doc != nullptr) {
+		_apply_base_stylesheet(doc);
 		doc->Show();
 		_sync_dimensions();
 		_rml_context->Update();
@@ -617,6 +636,7 @@ bool RmlContext::reload_document(const godot::String& path) {
 	}
 
 	it->document = new_doc;
+	_apply_base_stylesheet(new_doc);
 	new_doc->Show();
 
 	for (auto& [name, entry] : _data_models) {
@@ -650,6 +670,7 @@ void RmlContext::reload_all_documents() {
 	for (auto& ld : _loaded_documents) {
 		Rml::ElementDocument* doc = _rml_context->LoadDocument(Rml::String(ld.path));
 		if (doc != nullptr) {
+			_apply_base_stylesheet(doc);
 			doc->Show();
 			ld.document = doc;
 		} else {

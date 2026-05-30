@@ -6,6 +6,53 @@
 
 namespace RmlGodot {
 
+static const char* k_builtin_default_rcss = R"rcss(
+*, *::before, *::after {
+	box-sizing: border-box;
+}
+body {
+	display: block;
+	overflow: hidden auto;
+	font-size: 16px;
+	line-height: 1.4;
+	color: #e0e0e0;
+}
+div, p, h1, h2, h3, h4, h5, h6,
+header, footer, section, nav,
+blockquote, pre, form, fieldset {
+	display: block;
+}
+em, i       { font-style: italic; }
+strong, b   { font-weight: bold; }
+h1 { font-size: 2em;    font-weight: bold; margin: 0.67em 0; }
+h2 { font-size: 1.5em;  font-weight: bold; margin: 0.83em 0; }
+h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
+h4 { font-size: 1em;    font-weight: bold; margin: 1.33em 0; }
+h5 { font-size: 0.83em; font-weight: bold; margin: 1.67em 0; }
+h6 { font-size: 0.67em; font-weight: bold; margin: 2.33em 0; }
+p { margin: 1em 0; }
+ul, ol { padding-left: 2em; margin: 1em 0; }
+table      { box-sizing: border-box; display: table; }
+tr         { box-sizing: border-box; display: table-row; }
+td, th     { box-sizing: border-box; display: table-cell; }
+col        { box-sizing: border-box; display: table-column; }
+colgroup   { display: table-column-group; }
+thead, tbody, tfoot { display: table-row-group; }
+th         { font-weight: bold; text-align: center; }
+select     { text-align: left; }
+tabset tabs { display: block; }
+scrollbarvertical            { width: 12px; }
+scrollbarvertical slidertrack   { background: #2a2a2a; }
+scrollbarvertical sliderbar     { width: 12px; min-height: 20px; background: #555; }
+scrollbarvertical sliderbar:hover  { background: #777; }
+scrollbarvertical sliderbar:active { background: #999; }
+scrollbarhorizontal          { height: 12px; }
+scrollbarhorizontal slidertrack   { background: #2a2a2a; }
+scrollbarhorizontal sliderbar     { height: 12px; min-width: 20px; background: #555; }
+scrollbarhorizontal sliderbar:hover  { background: #777; }
+scrollbarhorizontal sliderbar:active { background: #999; }
+)rcss";
+
 RmlManager* RmlManager::_singleton = nullptr;
 
 RmlManager* RmlManager::get_singleton() {
@@ -14,6 +61,7 @@ RmlManager* RmlManager::get_singleton() {
 
 RmlManager::RmlManager() {
 	_singleton = this;
+	_default_rcss = k_builtin_default_rcss;
 }
 
 RmlManager::~RmlManager() {
@@ -120,6 +168,38 @@ godot::Dictionary RmlManager::get_info() const {
 	return info;
 }
 
+// --- Default RCSS ---
+
+void RmlManager::set_default_rcss(const godot::String& rcss) {
+	_default_rcss = Rml::String(rcss.utf8().get_data());
+	_default_sheet.reset();
+	_default_sheet_dirty = true;
+}
+
+godot::String RmlManager::get_default_rcss() const {
+	return godot::String(_default_rcss.c_str());
+}
+
+void RmlManager::set_default_rcss_enabled(bool enabled) {
+	_default_rcss_enabled = enabled;
+}
+
+Rml::SharedPtr<Rml::StyleSheetContainer> RmlManager::get_default_sheet() {
+	if (!_default_rcss_enabled || _default_rcss.empty())
+		return nullptr;
+
+	if (_default_sheet_dirty || !_default_sheet) {
+		_default_sheet = Rml::Factory::InstanceStyleSheetString(_default_rcss);
+		_default_sheet_dirty = false;
+
+		if (!_default_sheet) {
+			godot::UtilityFunctions::push_error(
+				"[RmlManager] Failed to parse default RCSS");
+		}
+	}
+	return _default_sheet;
+}
+
 // --- Private: RmlUI lifecycle ---
 
 void RmlManager::_initialize_rmlui() {
@@ -147,6 +227,8 @@ void RmlManager::_shutdown_rmlui() {
 	if (!_rmlui_initialized) return;
 
 	_font_interface.ReleaseFontResources();
+	_default_sheet.reset();
+	_default_sheet_dirty = true;
 	_global_textures.clear();
 	_loaded_fonts.clear();
 	_registered_tags.clear();

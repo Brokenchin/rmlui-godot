@@ -123,6 +123,8 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_font_layout_mode", "mode"), &RmlContext::set_font_layout_mode);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_gpu_scissor"), &RmlContext::get_gpu_scissor);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_gpu_scissor", "enabled"), &RmlContext::set_gpu_scissor);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_use_default_rcss"), &RmlContext::get_use_default_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_use_default_rcss", "enabled"), &RmlContext::set_use_default_rcss);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "rml_context_name"), "set_rml_context_name", "get_rml_context_name");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "dp_ratio", godot::PROPERTY_HINT_RANGE, "0.25,4.0,0.25"), "set_dp_ratio", "get_dp_ratio");
@@ -130,6 +132,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_GROUP("Auto-Configuration", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "document_path", godot::PROPERTY_HINT_FILE, "*.rml"), "set_document_path", "get_document_path");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::PACKED_STRING_ARRAY, "font_paths"), "set_font_paths", "get_font_paths");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "use_default_rcss"), "set_use_default_rcss", "get_use_default_rcss");
 
 	ADD_GROUP("Font Settings", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_hinting", godot::PROPERTY_HINT_ENUM, "None,Light,Normal"), "set_font_hinting", "get_font_hinting");
@@ -187,6 +190,9 @@ public:
 
 	bool get_gpu_scissor() const { return _gpu_scissor; }
 	void set_gpu_scissor(bool enabled);
+
+	bool get_use_default_rcss() const { return _use_default_rcss; }
+	void set_use_default_rcss(bool enabled) { _use_default_rcss = enabled; }
 
 	bool create_data_model(const godot::String& model_name);
 	bool bind_data_variable(const godot::String& model_name, const godot::String& variable_name, const godot::Variant& initial_value);
@@ -271,8 +277,10 @@ private:
 	godot::Ref<godot::Material> _active_material;
 
 	bool _gpu_scissor = false;
+	bool _use_default_rcss = true;
 	godot::Ref<godot::ShaderMaterial> _scissor_material;
 	void _ensure_scissor_material();
+	void _apply_base_stylesheet(Rml::ElementDocument* doc);
 
 	struct ListenerRecord {
 		Rml::Element* element = nullptr;
