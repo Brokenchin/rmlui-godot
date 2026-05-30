@@ -54,9 +54,12 @@ public:
 	Rml::String get_generic_family(const Rml::String& generic) const;
 
 	bool LoadFontFace(const Rml::String& file_name, int face_index, bool fallback_face, Rml::Style::FontWeight weight) override;
+	bool LoadFontFace(const Rml::String& file_name, int face_index, const Rml::String& family,
+		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face) override;
 	bool LoadFontFace(Rml::Span<const Rml::byte> data, int face_index, const Rml::String& family,
 		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face) override;
-	bool LoadFontFromRID(godot::RID font_rid, bool fallback_face, Rml::Style::FontWeight weight);
+	bool LoadFontFromRID(godot::RID font_rid, bool fallback_face, Rml::Style::FontWeight weight,
+		const Rml::String& family_override = {});
 	Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle style,
 		Rml::Style::FontWeight weight, int size) override;
 	Rml::FontEffectsHandle PrepareFontEffects(Rml::FontFaceHandle handle, const Rml::FontEffectList& font_effects) override;

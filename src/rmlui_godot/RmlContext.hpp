@@ -40,7 +40,9 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("reload_all_documents"), &RmlContext::reload_all_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_loaded_documents"), &RmlContext::get_loaded_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("load_font_face", "path"), &RmlContext::load_font_face);
+	godot::ClassDB::bind_method(godot::D_METHOD("load_font_face_ex", "path", "family", "style", "weight", "fallback"), &RmlContext::load_font_face_ex, DEFVAL(0), DEFVAL(400), DEFVAL(false));
 	godot::ClassDB::bind_method(godot::D_METHOD("load_font_resource", "font"), &RmlContext::load_font_resource);
+	godot::ClassDB::bind_method(godot::D_METHOD("load_font_resource_ex", "font", "family", "weight", "fallback"), &RmlContext::load_font_resource_ex, DEFVAL(""), DEFVAL(0), DEFVAL(false));
 	godot::ClassDB::bind_method(godot::D_METHOD("get_rml_context_name"), &RmlContext::get_rml_context_name);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_rml_context_name", "name"), &RmlContext::set_rml_context_name);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_dp_ratio"), &RmlContext::get_dp_ratio);
@@ -165,7 +167,9 @@ public:
 	void reload_all_documents();
 	godot::Array get_loaded_documents() const;
 	bool load_font_face(const godot::String& path);
+	bool load_font_face_ex(const godot::String& path, const godot::String& family, int style = 0, int weight = 400, bool fallback = false);
 	bool load_font_resource(const godot::Ref<godot::Font>& font);
+	bool load_font_resource_ex(const godot::Ref<godot::Font>& font, const godot::String& family = "", int weight = 0, bool fallback = false);
 
 	godot::String get_rml_context_name() const { return _context_name; }
 	void set_rml_context_name(const godot::String& name) { _context_name = name; }

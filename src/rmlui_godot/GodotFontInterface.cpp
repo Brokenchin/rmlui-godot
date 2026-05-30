@@ -72,6 +72,44 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 	return _register_font(font_rid, family, style, weight, fallback_face);
 }
 
+bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_index*/,
+	const Rml::String& family, Rml::Style::FontStyle style,
+	Rml::Style::FontWeight weight, bool fallback_face) {
+
+	godot::String path = godot::String(file_name.c_str());
+	if (path.begins_with("uid://")) {
+		auto* uid_mgr = godot::ResourceUID::get_singleton();
+		int64_t uid = uid_mgr->text_to_id(path);
+		if (uid_mgr->has_id(uid))
+			path = uid_mgr->get_id_path(uid);
+	}
+	if (!path.begins_with("res://") && !path.begins_with("user://"))
+		path = godot::String("res://") + path;
+
+	godot::Ref<godot::FileAccess> f = godot::FileAccess::open(path, godot::FileAccess::READ);
+	if (!f.is_valid()) {
+		godot::UtilityFunctions::push_warning(
+			godot::String("[RmlUi Font] Cannot open font file: ") + path);
+		return false;
+	}
+
+	godot::PackedByteArray data = f->get_buffer(f->get_length());
+	f->close();
+
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	godot::RID font_rid = ts->create_font();
+	ts->font_set_data(font_rid, data);
+	_apply_font_settings(font_rid);
+
+	if (weight == Rml::Style::FontWeight::Auto) {
+		int ts_weight = static_cast<int>(ts->font_get_weight(font_rid));
+		if (ts_weight > 0 && ts_weight <= 1000)
+			weight = static_cast<Rml::Style::FontWeight>(ts_weight);
+	}
+
+	return _register_font(font_rid, family, style, weight, fallback_face);
+}
+
 bool GodotFontInterface::LoadFontFace(Rml::Span<const Rml::byte> data, int /*face_index*/,
 	const Rml::String& family, Rml::Style::FontStyle style,
 	Rml::Style::FontWeight weight, bool fallback_face) {
@@ -89,13 +127,15 @@ bool GodotFontInterface::LoadFontFace(Rml::Span<const Rml::byte> data, int /*fac
 }
 
 bool GodotFontInterface::LoadFontFromRID(godot::RID font_rid, bool fallback_face,
-	Rml::Style::FontWeight weight) {
+	Rml::Style::FontWeight weight, const Rml::String& family_override) {
 
 	if (!font_rid.is_valid()) return false;
 
 	godot::Ref<godot::TextServer> ts = get_text_server();
 
-	Rml::String family(ts->font_get_name(font_rid).utf8().get_data());
+	Rml::String family = family_override.empty()
+		? Rml::String(ts->font_get_name(font_rid).utf8().get_data())
+		: family_override;
 
 	Rml::Style::FontStyle style = Rml::Style::FontStyle::Normal;
 	if (static_cast<int64_t>(ts->font_get_style(font_rid)) & godot::TextServer::FONT_ITALIC)

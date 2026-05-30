@@ -738,6 +738,37 @@ bool RmlContext::load_font_face(const godot::String& path) {
 	return ok;
 }
 
+bool RmlContext::load_font_face_ex(const godot::String& path, const godot::String& family,
+	int style, int weight, bool fallback) {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager == nullptr || !manager->is_initialized()) {
+		godot::UtilityFunctions::push_error("[RmlUi] Cannot load font — RmlUI not initialized");
+		return false;
+	}
+	if (path.is_empty() || family.is_empty()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] load_font_face_ex: path and family are required");
+		return false;
+	}
+
+	Rml::String rml_path(path.utf8().get_data());
+	Rml::String rml_family(family.utf8().get_data());
+	auto rml_style = (style == 1) ? Rml::Style::FontStyle::Italic : Rml::Style::FontStyle::Normal;
+	auto rml_weight = (weight > 0 && weight <= 1000)
+		? static_cast<Rml::Style::FontWeight>(weight)
+		: Rml::Style::FontWeight::Auto;
+
+	bool ok = Rml::LoadFontFace(rml_path, rml_family, rml_style, rml_weight, fallback);
+	if (ok) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Font loaded: ") + family +
+			godot::String(" (from ") + path + godot::String(")"));
+	} else {
+		godot::UtilityFunctions::push_error(
+			godot::String("[RmlUi] Failed to load font: ") + path);
+	}
+	return ok;
+}
+
 bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager == nullptr || !manager->is_initialized()) {
@@ -769,6 +800,49 @@ bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 			godot::String("[RmlUi] Font resource loaded: ") + font->get_font_name());
 	} else {
 		godot::UtilityFunctions::push_error("[RmlUi] Failed to load font resource");
+	}
+	return any_ok;
+}
+
+bool RmlContext::load_font_resource_ex(const godot::Ref<godot::Font>& font,
+	const godot::String& family, int weight, bool fallback) {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager == nullptr || !manager->is_initialized()) {
+		godot::UtilityFunctions::push_error("[RmlUi] Cannot load font — RmlUI not initialized");
+		return false;
+	}
+	if (!font.is_valid()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] Cannot load font — null resource");
+		return false;
+	}
+
+	auto& fi = manager->get_font_interface();
+	godot::TypedArray<godot::RID> rids = font->get_rids();
+	if (rids.is_empty()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] Font resource has no TextServer RIDs");
+		return false;
+	}
+
+	Rml::String rml_family = family.is_empty()
+		? Rml::String() : Rml::String(family.utf8().get_data());
+	auto rml_weight = (weight > 0 && weight <= 1000)
+		? static_cast<Rml::Style::FontWeight>(weight)
+		: Rml::Style::FontWeight::Auto;
+
+	bool any_ok = false;
+	for (int i = 0; i < rids.size(); i++) {
+		godot::RID rid = rids[i];
+		if (fi.LoadFontFromRID(rid, fallback, rml_weight, rml_family))
+			any_ok = true;
+	}
+
+	godot::String display_name = family.is_empty() ? font->get_font_name() : family;
+	if (any_ok) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Font resource loaded: ") + display_name);
+	} else {
+		godot::UtilityFunctions::push_error(
+			godot::String("[RmlUi] Failed to load font resource: ") + display_name);
 	}
 	return any_ok;
 }
