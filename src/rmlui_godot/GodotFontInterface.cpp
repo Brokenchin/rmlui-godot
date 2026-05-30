@@ -187,6 +187,15 @@ Rml::FontFaceHandle GodotFontInterface::GetFontFaceHandle(const Rml::String& fam
 		font_idx = _find_font(trimmed, style, weight);
 		if (font_idx >= 0)
 			break;
+
+		// Check generic family mapping (sans-serif, serif, monospace).
+		std::string lower_key(to_lower(trimmed).c_str());
+		auto git = _generic_families.find(lower_key);
+		if (git != _generic_families.end()) {
+			font_idx = _find_font(Rml::String(git->second.c_str()), style, weight);
+			if (font_idx >= 0)
+				break;
+		}
 	}
 
 	if (font_idx < 0) {
@@ -847,6 +856,23 @@ void GodotFontInterface::set_layout_mode(int mode) {
 	int idx = (mode >= 0 && mode <= 2) ? mode : 0;
 	godot::UtilityFunctions::print(
 		godot::String("[RmlUi Font] Layout mode: ") + godot::String(mode_names[idx]));
+}
+
+void GodotFontInterface::set_generic_family(const Rml::String& generic, const Rml::String& mapped) {
+	std::string key(to_lower(generic).c_str());
+	if (mapped.empty()) {
+		_generic_families.erase(key);
+	} else {
+		_generic_families[key] = std::string(mapped.c_str());
+	}
+}
+
+Rml::String GodotFontInterface::get_generic_family(const Rml::String& generic) const {
+	std::string key(to_lower(generic).c_str());
+	auto it = _generic_families.find(key);
+	if (it != _generic_families.end())
+		return Rml::String(it->second.c_str());
+	return {};
 }
 
 } // namespace RmlGodot

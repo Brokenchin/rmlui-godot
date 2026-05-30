@@ -104,6 +104,9 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("unload_document", "path"), &RmlContext::unload_document);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_context_info"), &RmlContext::get_context_info);
 
+	godot::ClassDB::bind_method(godot::D_METHOD("set_generic_family", "generic_name", "family_name"), &RmlContext::set_generic_family);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_generic_family", "generic_name"), &RmlContext::get_generic_family);
+
 	// Auto-configuration
 	godot::ClassDB::bind_method(godot::D_METHOD("get_document_path"), &RmlContext::get_document_path);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_document_path", "path"), &RmlContext::set_document_path);
@@ -193,6 +196,9 @@ public:
 
 	bool get_use_default_rcss() const { return _use_default_rcss; }
 	void set_use_default_rcss(bool enabled) { _use_default_rcss = enabled; }
+
+	void set_generic_family(const godot::String& generic_name, const godot::String& family_name);
+	godot::String get_generic_family(const godot::String& generic_name) const;
 
 	bool create_data_model(const godot::String& model_name);
 	bool bind_data_variable(const godot::String& model_name, const godot::String& variable_name, const godot::Variant& initial_value);

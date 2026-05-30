@@ -773,6 +773,22 @@ bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 	return any_ok;
 }
 
+void RmlContext::set_generic_family(const godot::String& generic_name, const godot::String& family_name) {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (!manager || !manager->is_initialized()) return;
+	manager->get_font_interface().set_generic_family(
+		Rml::String(generic_name.utf8().get_data()),
+		Rml::String(family_name.utf8().get_data()));
+}
+
+godot::String RmlContext::get_generic_family(const godot::String& generic_name) const {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (!manager || !manager->is_initialized()) return {};
+	Rml::String result = manager->get_font_interface().get_generic_family(
+		Rml::String(generic_name.utf8().get_data()));
+	return godot::String(result.c_str());
+}
+
 // --- Private: Context lifecycle ---
 
 void RmlContext::_create_context() {

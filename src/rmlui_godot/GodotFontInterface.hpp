@@ -48,6 +48,9 @@ public:
 	void set_pixel_snap(bool snap);
 	bool get_pixel_snap() const { return _pixel_snap; }
 
+	void set_generic_family(const Rml::String& generic, const Rml::String& mapped);
+	Rml::String get_generic_family(const Rml::String& generic) const;
+
 	bool LoadFontFace(const Rml::String& file_name, int face_index, bool fallback_face, Rml::Style::FontWeight weight) override;
 	bool LoadFontFace(Rml::Span<const Rml::byte> data, int face_index, const Rml::String& family,
 		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face) override;
@@ -102,6 +105,7 @@ private:
 	std::vector<LoadedFont> _loaded_fonts;
 	std::vector<std::unique_ptr<FontFace>> _faces;
 	int _fallback_font_index = -1;
+	std::unordered_map<std::string, std::string> _generic_families;
 	LayoutMode _layout_mode = LayoutMode::MANUAL;
 
 	// Defaults chosen to match Godot's default FontFile import + Label render:
