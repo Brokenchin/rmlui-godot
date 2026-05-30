@@ -249,7 +249,7 @@ int GodotFontInterface::GetStringWidth(Rml::FontFaceHandle handle, Rml::StringVi
 		float raw = kern_adj + glyph.advance + text_shaping_context.letter_spacing;
 		if (integer_advance) {
 			raw += adv_rem;
-			float rounded = Rml::Math::Round(raw);
+			const float rounded = Rml::Math::Round(raw);
 			adv_rem = raw - rounded;
 			width += rounded;
 		} else {
