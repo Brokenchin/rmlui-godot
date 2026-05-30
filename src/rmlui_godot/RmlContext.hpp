@@ -22,6 +22,7 @@
 #include <vector>
 
 #include <RmlUi/Core/DataModelHandle.h>
+#include <RmlUi/Core/StyleSheetContainer.h>
 #include <RmlUi/Core/Variant.h>
 
 namespace Rml {
@@ -130,6 +131,10 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_gpu_scissor", "enabled"), &RmlContext::set_gpu_scissor);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_use_default_rcss"), &RmlContext::get_use_default_rcss);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_use_default_rcss", "enabled"), &RmlContext::set_use_default_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_base_rcss", "rcss"), &RmlContext::set_base_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_base_rcss"), &RmlContext::get_base_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("append_base_rcss", "rcss"), &RmlContext::append_base_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("reset_base_rcss"), &RmlContext::reset_base_rcss);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "rml_context_name"), "set_rml_context_name", "get_rml_context_name");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "dp_ratio", godot::PROPERTY_HINT_RANGE, "0.25,4.0,0.25"), "set_dp_ratio", "get_dp_ratio");
@@ -200,6 +205,11 @@ public:
 
 	bool get_use_default_rcss() const { return _use_default_rcss; }
 	void set_use_default_rcss(bool enabled) { _use_default_rcss = enabled; }
+
+	void set_base_rcss(const godot::String& rcss);
+	godot::String get_base_rcss() const;
+	void append_base_rcss(const godot::String& rcss);
+	void reset_base_rcss();
 
 	void set_generic_family(const godot::String& generic_name, const godot::String& family_name);
 	godot::String get_generic_family(const godot::String& generic_name) const;
@@ -288,9 +298,12 @@ private:
 
 	bool _gpu_scissor = false;
 	bool _use_default_rcss = true;
+	std::string _local_base_rcss;
+	bool _has_local_base_rcss = false;
 	godot::Ref<godot::ShaderMaterial> _scissor_material;
 	void _ensure_scissor_material();
 	void _apply_base_stylesheet(Rml::ElementDocument* doc);
+	Rml::SharedPtr<Rml::StyleSheetContainer> _get_effective_base_sheet();
 
 	struct ListenerRecord {
 		Rml::Element* element = nullptr;

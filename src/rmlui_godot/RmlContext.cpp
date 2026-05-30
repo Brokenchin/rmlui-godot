@@ -554,13 +554,20 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 	_forward_key_event(event);
 }
 
+Rml::SharedPtr<Rml::StyleSheetContainer> RmlContext::_get_effective_base_sheet() {
+	if (_has_local_base_rcss) {
+		if (_local_base_rcss.empty()) return nullptr;
+		return Rml::Factory::InstanceStyleSheetString(Rml::String(_local_base_rcss.c_str()));
+	}
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (!manager) return nullptr;
+	return manager->get_default_sheet();
+}
+
 void RmlContext::_apply_base_stylesheet(Rml::ElementDocument* doc) {
 	if (!_use_default_rcss || doc == nullptr) return;
 
-	auto* manager = RmlGodot::RmlManager::get_singleton();
-	if (!manager) return;
-
-	auto base = manager->get_default_sheet();
+	auto base = _get_effective_base_sheet();
 	if (!base) return;
 
 	const Rml::StyleSheetContainer* doc_sheet = doc->GetStyleSheetContainer();
@@ -570,6 +577,35 @@ void RmlContext::_apply_base_stylesheet(Rml::ElementDocument* doc) {
 	} else {
 		doc->SetStyleSheetContainer(base);
 	}
+}
+
+void RmlContext::set_base_rcss(const godot::String& rcss) {
+	_local_base_rcss = std::string(rcss.utf8().get_data());
+	_has_local_base_rcss = true;
+}
+
+godot::String RmlContext::get_base_rcss() const {
+	if (_has_local_base_rcss)
+		return godot::String(_local_base_rcss.c_str());
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager) return manager->get_default_rcss();
+	return {};
+}
+
+void RmlContext::append_base_rcss(const godot::String& rcss) {
+	if (!_has_local_base_rcss) {
+		auto* manager = RmlGodot::RmlManager::get_singleton();
+		if (manager)
+			_local_base_rcss = std::string(manager->get_default_rcss().utf8().get_data());
+	}
+	_local_base_rcss += "\n";
+	_local_base_rcss += std::string(rcss.utf8().get_data());
+	_has_local_base_rcss = true;
+}
+
+void RmlContext::reset_base_rcss() {
+	_local_base_rcss.clear();
+	_has_local_base_rcss = false;
 }
 
 void RmlContext::load_document(const godot::String& path) {
