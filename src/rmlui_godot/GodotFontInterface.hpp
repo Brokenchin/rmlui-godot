@@ -103,7 +103,8 @@ private:
 		Rml::FontMetrics metrics{};
 		int version = 0;
 		std::unordered_map<uint32_t, GlyphData> glyph_cache;       // keyed by codepoint (MANUAL/INTEGER)
-		std::unordered_map<uint32_t, GlyphData> glyph_index_cache; // keyed by glyph index (SHAPED)
+		std::unordered_map<uint32_t, GlyphData> glyph_index_cache; // keyed by glyph index, may include subpixel shift bits 27-28
+		std::unordered_map<uint32_t, int64_t> codepoint_to_index;  // codepoint → raw glyph index (no shift bits)
 		std::unordered_map<int, std::unique_ptr<Rml::CallbackTextureSource>> atlas_textures;
 		std::set<int> dirty_pages;
 	};
@@ -137,6 +138,8 @@ private:
 	void _rebuild_dirty_atlases(FontFace& face);
 	void _apply_font_settings(godot::RID font_rid) const;
 	void _invalidate_all_caches();
+	int _effective_subpixel_mode(const LoadedFont& font, int render_size) const;
+	static int _compute_subpixel_shift(int subpixel_mode, float pen_x);
 
 	// Oversampling factor (>=1.0). When >1, glyphs are rasterized at
 	// size*factor and the quad is scaled down by 1/factor, mirroring Godot's
