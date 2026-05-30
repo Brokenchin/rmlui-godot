@@ -292,6 +292,7 @@ void RmlContext::_draw() {
 	if (rs == nullptr) return;
 	_free_scissor_items();
 	_free_layer_items();
+	
 
 	if (!_active_material.is_valid()) return;
 	godot::RID mat_rid = _active_material->get_rid();
