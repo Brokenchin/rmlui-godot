@@ -1,0 +1,69 @@
+<rml>
+<head>
+	<title>Font Comparison — RmlUI Side</title>
+	<style>
+		body {
+			font-family: "Noto Sans";
+			color: #e0e0e0;
+			background-color: transparent;
+			margin: 0;
+			padding: 8px;
+		}
+		.row {
+			margin-bottom: 2px;
+		}
+		.size-label {
+			color: #666666;
+			font-size: 10px;
+			display: inline;
+		}
+		.s8  { font-size: 8px; }
+		.s10 { font-size: 10px; }
+		.s12 { font-size: 12px; }
+		.s14 { font-size: 14px; }
+		.s16 { font-size: 16px; }
+		.s18 { font-size: 18px; }
+		.s20 { font-size: 20px; }
+		.s24 { font-size: 24px; }
+		.s32 { font-size: 32px; }
+	</style>
+</head>
+<body>
+	<div class="row"><span class="s8">8px: The quick brown fox jumps over the lazy dog 0123456789</span></div>
+	<div class="row"><span class="s10">10px: The quick brown fox jumps over the lazy dog 0123456789</span></div>
+	<div class="row"><span class="s12">12px: The quick brown fox jumps over the lazy dog 0123456789</span></div>
+	<div class="row"><span class="s14">14px: The quick brown fox jumps over the lazy dog 0123456789</span></div>
+	<div class="row"><span class="s16">16px: The quick brown fox jumps over the lazy dog 0123456789</span></div>
+	<div class="row"><span class="s18">18px: The quick brown fox jumps over the lazy dog 0123456789</span></div>
+	<div class="row"><span class="s20">20px: The quick brown fox jumps over the lazy dog 0123456789</span></div>
+	<div class="row"><span class="s24">24px: The quick brown fox jumps over the lazy dog</span></div>
+	<div class="row"><span class="s32">32px: The quick brown fox jumps</span></div>
+
+	<div style="margin-top: 12px; border-top: 1px #333333;">
+		<div class="row"><span class="s12">Kerning pairs: AVATAR WAV Type To fly</span></div>
+		<div class="row"><span class="s16">Kerning pairs: AVATAR WAV Type To fly</span></div>
+		<div class="row"><span class="s8">Tight: iiillllIIII mmmwww fiji ffl</span></div>
+		<div class="row"><span class="s12">Tight: iiillllIIII mmmwww fiji ffl</span></div>
+		<div class="row"><span class="s16">Tight: iiillllIIII mmmwww fiji ffl</span></div>
+	</div>
+
+	<div style="margin-top: 12px; border-top: 1px #333333;">
+		<div class="row"><span class="s10">Mixed: HP: 1250/1250 | MP: 340/500 | STR: 42 DEX: 38 INT: 55</span></div>
+		<div class="row"><span class="s12">Mixed: HP: 1250/1250 | MP: 340/500 | STR: 42 DEX: 38 INT: 55</span></div>
+		<div class="row"><span class="s8">Symbols: +–×÷ ≤≥≠ °©® €£¥ «»</span></div>
+		<div class="row"><span class="s12">Symbols: +–×÷ ≤≥≠ °©® €£¥ «»</span></div>
+	</div>
+
+	<div style="margin-top: 12px; border-top: 1px #333333;">
+		<div class="row"><span class="s8">mmmmmm mmmmmm mmmmmm</span></div>
+		<div class="row"><span class="s8">wwwwww wwwwww wwwwww</span></div>
+		<div class="row"><span class="s8">iiiiii iiiiii iiiiii</span></div>
+		<div class="row"><span class="s8">llllll llllll llllll</span></div>
+		<div class="row"><span class="s8">mmwwmmww mmwwmmww</span></div>
+		<div class="row"><span class="s8">lazy lazy lazy lazy lazy</span></div>
+		<div class="row"><span class="s8">brown brown brown brown</span></div>
+		<div class="row"><span class="s8">all all all all all all</span></div>
+		<div class="row"><span class="s8">av va av va av va av va</span></div>
+	</div>
+</body>
+</rml>

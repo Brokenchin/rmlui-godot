@@ -5,6 +5,8 @@
 #include <RmlUi/Core/StringUtilities.h>
 #include <RmlUi/Core/TextShapingContext.h>
 
+#include <cmath>
+
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/resource_uid.hpp>
@@ -577,10 +579,10 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 					gy += static_cast<float>(eo.y);
 				}
 
-				if (_pixel_snap || integer_advance) {
-					gx = Rml::Math::RoundDown(gx);
-					gy = Rml::Math::RoundDown(gy);
-				}
+				gy = Rml::Math::RoundDown(gy);
+				if (subpx_mode == 0 && (_pixel_snap || integer_advance))
+					gx = std::round(gx);
+
 				Rml::MeshUtilities::GenerateQuad(
 					mesh_list[pit->second].mesh, Rml::Vector2f(gx, gy), gd->dimensions,
 					layer_colour, gd->uv_min, gd->uv_max);
@@ -622,10 +624,9 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 
 				float gx = position.x + e.cursor_x + e.kern_adj + eg.origin.x;
 				float gy = position.y + eg.origin.y;
-				if (_pixel_snap || integer_advance) {
-					gx = Rml::Math::RoundDown(gx);
-					gy = Rml::Math::RoundDown(gy);
-				}
+				gy = Rml::Math::RoundDown(gy);
+				if (subpx_mode == 0 && (_pixel_snap || integer_advance))
+					gx = std::round(gx);
 				Rml::MeshUtilities::GenerateQuad(
 					mesh_list[pit->second].mesh, Rml::Vector2f(gx, gy), eg.dimensions,
 					layer_colour, eg.uv_min, eg.uv_max);
@@ -775,10 +776,10 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 					gy += static_cast<float>(eo.y);
 				}
 
-				if (_pixel_snap) {
-					gx = Rml::Math::RoundDown(gx);
-					gy = Rml::Math::RoundDown(gy);
-				}
+				gy = Rml::Math::RoundDown(gy);
+				if (subpx_mode == 0 && _pixel_snap)
+					gx = std::round(gx);
+
 				Rml::MeshUtilities::GenerateQuad(
 					mesh_list[pit->second].mesh, Rml::Vector2f(gx, gy), gd.dimensions,
 					layer_colour, gd.uv_min, gd.uv_max);
@@ -822,10 +823,9 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 
 				float gx = position.x + e.pen_x + e.x_off + eg.origin.x;
 				float gy = position.y + e.y_off + eg.origin.y;
-				if (_pixel_snap) {
-					gx = Rml::Math::RoundDown(gx);
-					gy = Rml::Math::RoundDown(gy);
-				}
+				gy = Rml::Math::RoundDown(gy);
+				if (subpx_mode == 0 && _pixel_snap)
+					gx = std::round(gx);
 				Rml::MeshUtilities::GenerateQuad(
 					mesh_list[pit->second].mesh, Rml::Vector2f(gx, gy), eg.dimensions,
 					layer_colour, eg.uv_min, eg.uv_max);
@@ -1352,6 +1352,182 @@ Rml::String GodotFontInterface::get_generic_family(const Rml::String& generic) c
 	if (it != _generic_families.end())
 		return Rml::String(it->second.c_str());
 	return {};
+}
+
+void GodotFontInterface::direct_draw_string(godot::RID canvas_item, Rml::FontFaceHandle handle,
+	Rml::StringView string, godot::Vector2 position, godot::Color color) {
+
+	if (handle == 0 || handle > static_cast<Rml::FontFaceHandle>(_faces.size()))
+		return;
+	FontFace& face = *_faces[handle - 1];
+	if (face.loaded_font_index < 0 || face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return;
+	const auto& font = _loaded_fonts[face.loaded_font_index];
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	if (ts.is_null()) return;
+
+	godot::TypedArray<godot::RID> fonts;
+	fonts.push_back(font.font_rid);
+	if (_fallback_font_index >= 0 && _fallback_font_index < static_cast<int>(_loaded_fonts.size()) &&
+		_fallback_font_index != face.loaded_font_index)
+		fonts.push_back(_loaded_fonts[_fallback_font_index].font_rid);
+
+	godot::RID shaped = ts->create_shaped_text();
+	godot::String text = godot::String::utf8(Rml::String(string).c_str());
+	ts->shaped_text_add_string(shaped, text, fonts, face.size);
+	ts->shaped_text_shape(shaped);
+
+	godot::Array glyphs = ts->shaped_text_get_glyphs(shaped);
+	int count = static_cast<int>(glyphs.size());
+
+	float pen_x = 0;
+	for (int i = 0; i < count; i++) {
+		godot::Dictionary g = glyphs[i];
+		float x_off = static_cast<float>(static_cast<double>(g["x_off"]));
+		float y_off = static_cast<float>(static_cast<double>(g["y_off"]));
+		float advance = static_cast<float>(static_cast<double>(g["advance"]));
+		int64_t index = static_cast<int64_t>(g["index"]);
+		godot::RID glyph_font = g["font_rid"];
+
+		if (glyph_font.is_valid()) {
+			godot::Vector2 glyph_pos = position + godot::Vector2(pen_x + x_off, y_off);
+			ts->font_draw_glyph(glyph_font, canvas_item, face.size, glyph_pos, index, color);
+		}
+		pen_x += advance;
+	}
+
+	ts->free_rid(shaped);
+}
+
+void GodotFontInterface::debug_dump_glyph_positions(Rml::FontFaceHandle handle, const Rml::String& text) {
+	if (handle == 0 || handle > static_cast<Rml::FontFaceHandle>(_faces.size()))
+		return;
+	FontFace& face = *_faces[handle - 1];
+	if (face.loaded_font_index < 0 || face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return;
+	const auto& font = _loaded_fonts[face.loaded_font_index];
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	if (ts.is_null()) return;
+
+	const float os = _oversample_factor();
+	const int rsize = _render_size(face.size);
+	const int subpx_mode = _effective_subpixel_mode(font, rsize);
+
+	godot::UtilityFunctions::print(godot::String("\n=== GLYPH DEBUG DUMP === size=") +
+		godot::String::num_int64(face.size) +
+		godot::String(" rsize=") + godot::String::num_int64(rsize) +
+		godot::String(" subpx=") + godot::String::num_int64(subpx_mode) +
+		godot::String(" pixel_snap=") + godot::String(_pixel_snap ? "true" : "false") +
+		godot::String(" layout=") + godot::String::num_int64(static_cast<int>(_layout_mode)));
+
+	auto chr = [](uint32_t cp) -> godot::String {
+		char32_t c = (cp >= 32 && cp < 127) ? static_cast<char32_t>(cp) : U'?';
+		return godot::String::chr(c);
+	};
+	auto row = [](std::initializer_list<godot::String> cols) -> godot::String {
+		godot::String r;
+		for (auto& c : cols) { r += c + godot::String(" | "); }
+		return r;
+	};
+
+	// --- Per-glyph layout with subpixel detail ---
+	godot::UtilityFunctions::print(godot::String("--- MANUAL layout with subpixel ---"));
+	godot::UtilityFunctions::print(godot::String("idx|ch|cursor_x |advance |shift|origin.x|origin_s|raw_gx  |snap_gx|godot_gx|width|gap"));
+
+	float cursor_x = 0;
+	int idx = 0;
+	float prev_snap_gx = 0;
+	float prev_width = 0;
+	for (auto it = Rml::StringIteratorU8(text); it; ++it) {
+		uint32_t cp = static_cast<uint32_t>(*it);
+		const GlyphData& gd_base = _ensure_glyph(face, cp);
+
+		int shift = _compute_subpixel_shift(subpx_mode, cursor_x);
+		int64_t raw_idx = face.codepoint_to_index[cp];
+		int64_t composite = raw_idx | (static_cast<int64_t>(shift) << 27);
+		_ensure_glyph_index(face, composite);
+		const GlyphData& gd_shift = face.glyph_index_cache[static_cast<uint32_t>(composite)];
+
+		float raw_gx = cursor_x + gd_shift.origin.x;
+		float snap_gx = Rml::Math::RoundDown(raw_gx);
+
+		// Godot approach: floor(pen_x) + origin
+		float godot_gx = std::floor(cursor_x) + gd_shift.origin.x;
+
+		// Gap detection: does this glyph start after the previous one ends?
+		float gap = 0;
+		if (idx > 0 && gd_shift.has_geometry && prev_width > 0) {
+			float prev_end = prev_snap_gx + prev_width;
+			gap = snap_gx - prev_end;
+		}
+
+		godot::String gap_str = (gap > 0.5f) ? godot::String(" <<GAP>>") : godot::String("");
+
+		godot::UtilityFunctions::print(row({
+			godot::String::num_int64(idx), chr(cp),
+			godot::String::num(cursor_x, 3),
+			godot::String::num(gd_base.advance, 3),
+			godot::String::num_int64(shift),
+			godot::String::num(gd_base.origin.x, 2),
+			godot::String::num(gd_shift.origin.x, 2),
+			godot::String::num(raw_gx, 3),
+			godot::String::num(snap_gx, 0),
+			godot::String::num(godot_gx, 2),
+			godot::String::num(gd_shift.dimensions.x, 0)
+		}) + gap_str);
+
+		if (gd_shift.has_geometry) {
+			prev_snap_gx = snap_gx;
+			prev_width = gd_shift.dimensions.x;
+		}
+		cursor_x += gd_base.advance;
+		idx++;
+	}
+
+	// --- Godot shaped text layout ---
+	godot::UtilityFunctions::print(godot::String("\n--- SHAPED layout (Godot) ---"));
+	godot::UtilityFunctions::print(godot::String("idx|ch|pen_x    |x_off   |advance |adv_diff|pen_diff"));
+
+	godot::RID shaped = _shape_string(face, text);
+	if (shaped.is_valid()) {
+		godot::Array glyphs = ts->shaped_text_get_glyphs(shaped);
+		float shaped_pen = 0;
+		float manual_pen = 0;
+		for (int gi = 0; gi < static_cast<int>(glyphs.size()); gi++) {
+			godot::Dictionary g = glyphs[gi];
+			float adv = static_cast<float>(static_cast<double>(g["advance"])) / os;
+			float x_off = static_cast<float>(static_cast<double>(g["x_off"])) / os;
+			int64_t glyph_idx = static_cast<int64_t>(g["index"]);
+
+			uint32_t cp = 0;
+			for (auto& [k, v] : face.codepoint_to_index) {
+				if (v == glyph_idx) { cp = k; break; }
+			}
+			const GlyphData& gd = _ensure_glyph(face, cp);
+
+			float adv_diff = adv - gd.advance;
+			float pen_diff = shaped_pen - manual_pen;
+
+			godot::UtilityFunctions::print(row({
+				godot::String::num_int64(gi), chr(cp),
+				godot::String::num(shaped_pen, 3),
+				godot::String::num(x_off, 3),
+				godot::String::num(adv, 3),
+				godot::String::num(adv_diff, 3),
+				godot::String::num(pen_diff, 3)
+			}));
+
+			shaped_pen += adv;
+			manual_pen += gd.advance;
+		}
+		godot::String total = godot::String("Shaped=") + godot::String::num(shaped_pen, 3);
+		total += godot::String("  Manual=") + godot::String::num(manual_pen, 3);
+		total += godot::String("  Diff=") + godot::String::num(shaped_pen - manual_pen, 3);
+		godot::UtilityFunctions::print(total);
+		ts->free_rid(shaped);
+	}
+
+	godot::UtilityFunctions::print(godot::String("=== END DUMP ===\n"));
 }
 
 } // namespace RmlGodot

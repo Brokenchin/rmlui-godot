@@ -110,6 +110,10 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_generic_family", "generic_name", "family_name"), &RmlContext::set_generic_family);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_generic_family", "generic_name"), &RmlContext::get_generic_family);
 
+	godot::ClassDB::bind_method(godot::D_METHOD("debug_dump_glyph_positions", "family", "size", "text"), &RmlContext::debug_dump_glyph_positions);
+	godot::ClassDB::bind_method(godot::D_METHOD("add_direct_draw", "text", "family", "size", "position", "color"), &RmlContext::add_direct_draw);
+	godot::ClassDB::bind_method(godot::D_METHOD("clear_direct_draws"), &RmlContext::clear_direct_draws);
+
 	// Auto-configuration
 	godot::ClassDB::bind_method(godot::D_METHOD("get_document_path"), &RmlContext::get_document_path);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_document_path", "path"), &RmlContext::set_document_path);
@@ -200,6 +204,12 @@ public:
 	int get_font_layout_mode() const { return _font_layout_mode; }
 	void set_font_layout_mode(int mode);
 
+	void debug_dump_glyph_positions(const godot::String& family, int size, const godot::String& text);
+
+	void add_direct_draw(const godot::String& text, const godot::String& family, int size,
+		godot::Vector2 position, godot::Color color);
+	void clear_direct_draws();
+
 	bool get_gpu_scissor() const { return _gpu_scissor; }
 	void set_gpu_scissor(bool enabled);
 
@@ -281,7 +291,7 @@ private:
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light
 	int _font_antialiasing = 1;   // Gray
-	int _font_subpixel = 0;       // Disabled
+	int _font_subpixel = 1;       // Auto
 	float _font_oversampling = 0.0f;
 	bool _font_pixel_snap = true;
 	int _font_layout_mode = 0;    // Manual
@@ -340,6 +350,14 @@ private:
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);
 	void _create_drag_ghost(const std::string& source_element_id, const godot::Callable& ghost_builder);
+
+	struct DirectDrawEntry {
+		Rml::FontFaceHandle handle;
+		Rml::String text;
+		godot::Vector2 position;
+		godot::Color color;
+	};
+	std::vector<DirectDrawEntry> _direct_draws;
 
 	void _create_context();
 	void _destroy_context();

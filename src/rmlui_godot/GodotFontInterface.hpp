@@ -6,7 +6,9 @@
 #include <RmlUi/Core/FontMetrics.h>
 #include <RmlUi/Core/CallbackTexture.h>
 
+#include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/rid.hpp>
+#include <godot_cpp/variant/vector2.hpp>
 
 #include <memory>
 #include <unordered_map>
@@ -74,6 +76,11 @@ public:
 
 	void ReleaseFontResources();
 	void ReleaseTexturesForRenderManager(Rml::RenderManager* rm);
+
+	void debug_dump_glyph_positions(Rml::FontFaceHandle handle, const Rml::String& text);
+
+	void direct_draw_string(godot::RID canvas_item, Rml::FontFaceHandle handle,
+		Rml::StringView string, godot::Vector2 position, godot::Color color);
 
 private:
 	struct LoadedFont {
@@ -144,11 +151,11 @@ private:
 	std::unordered_map<std::string, std::string> _generic_families;
 	LayoutMode _layout_mode = LayoutMode::MANUAL;
 
-	// Defaults chosen to match Godot's default FontFile import + Label render:
-	// HINTING_LIGHT(1), FONT_ANTIALIASING_GRAY(1), SUBPIXEL_POSITIONING_DISABLED(0).
+	// Defaults match Godot's FontFile defaults:
+	// HINTING_LIGHT(1), FONT_ANTIALIASING_GRAY(1), SUBPIXEL_POSITIONING_AUTO(1).
 	int _hinting = 1;
 	int _antialiasing = 1;
-	int _subpixel = 0;
+	int _subpixel = 1;
 	float _oversampling = 0.0f;
 	bool _pixel_snap = true;
 
