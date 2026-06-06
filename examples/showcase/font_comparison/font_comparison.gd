@@ -81,56 +81,53 @@ func _ready() -> void:
 	rml.load_document(
 		"res://addons/rmlui-godot/examples/showcase/font_comparison/font_comparison.rml")
 
-	# --- Direct-draw test (font_draw_glyph bypass) ---
-	# Draws via Godot's native font_draw_glyph on a canvas item ON TOP of
-	# the RmlUI rendering. If these look correct while the RmlUI text above
-	# has gaps, the problem is in our atlas/mesh reconstruction.
-	var y := 500.0
+	# --- Diagnostic draw tests ---
+	# Three methods compared:
+	#   cyan   = font_draw_glyph (Godot native — known good)
+	#   yellow = our mesh quads + atlas texture (bypasses RmlUI)
+	#   white  = RmlUI mesh pipeline (the .rml doc above)
+	# If yellow matches cyan → problem is in RmlUI geometry compilation.
+	# If yellow has gaps like white → problem is in our atlas/quad building.
+	var y := 900.0
 	var cyan := Color(0.2, 1.0, 0.8, 1.0)
-
+	var yellow := Color(1.0, 0.9, 0.2, 1.0)
 	var header := Color(0.5, 0.5, 1.0)
 
-	rml.add_direct_draw("--- DIRECT DRAW 8px ---", "Noto Sans", 10, Vector2(8, y), header)
+	# 8px comparison
+	rml.add_direct_draw("--- 8px: CYAN=font_draw_glyph  YELLOW=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
 	y += 14
 	for text in GAP_TESTS:
 		rml.add_direct_draw(text, "Noto Sans", 8, Vector2(8, y), cyan)
-		y += 12
+		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 10), yellow)
+		y += 22
 	for text in TIGHT:
 		rml.add_direct_draw(text, "Noto Sans", 8, Vector2(8, y), cyan)
-		y += 12
+		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 10), yellow)
+		y += 22
 	for text in SYMBOLS:
 		rml.add_direct_draw(text, "Noto Sans", 8, Vector2(8, y), cyan)
-		y += 12
+		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 10), yellow)
+		y += 22
 
+	# 12px comparison
 	y += 6
-	rml.add_direct_draw("--- DIRECT DRAW 12px ---", "Noto Sans", 10, Vector2(8, y), header)
+	rml.add_direct_draw("--- 12px: CYAN=font_draw_glyph  YELLOW=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
 	y += 14
-	rml.add_direct_draw(PANGRAM, "Noto Sans", 12, Vector2(8, y), cyan)
-	y += 16
-	for text in TIGHT:
+	var texts_12 := [PANGRAM] + TIGHT + KERNING_PAIRS + MIXED + SYMBOLS
+	for text in texts_12:
 		rml.add_direct_draw(text, "Noto Sans", 12, Vector2(8, y), cyan)
-		y += 16
-	for text in KERNING_PAIRS:
-		rml.add_direct_draw(text, "Noto Sans", 12, Vector2(8, y), cyan)
-		y += 16
-	for text in MIXED:
-		rml.add_direct_draw(text, "Noto Sans", 12, Vector2(8, y), cyan)
-		y += 16
-	for text in SYMBOLS:
-		rml.add_direct_draw(text, "Noto Sans", 12, Vector2(8, y), cyan)
-		y += 16
+		rml.add_direct_mesh_draw(text, "Noto Sans", 12, Vector2(8, y + 14), yellow)
+		y += 28
 
+	# 16px comparison
 	y += 6
-	rml.add_direct_draw("--- DIRECT DRAW 16px ---", "Noto Sans", 10, Vector2(8, y), header)
+	rml.add_direct_draw("--- 16px: CYAN=font_draw_glyph  YELLOW=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
 	y += 14
-	rml.add_direct_draw(PANGRAM, "Noto Sans", 16, Vector2(8, y), cyan)
-	y += 20
-	for text in TIGHT:
+	var texts_16 := [PANGRAM] + TIGHT + SYMBOLS
+	for text in texts_16:
 		rml.add_direct_draw(text, "Noto Sans", 16, Vector2(8, y), cyan)
-		y += 20
-	for text in SYMBOLS:
-		rml.add_direct_draw(text, "Noto Sans", 16, Vector2(8, y), cyan)
-		y += 20
+		rml.add_direct_mesh_draw(text, "Noto Sans", 16, Vector2(8, y + 20), yellow)
+		y += 40
 
 func _add_header(parent: Control, text: String) -> void:
 	var lbl := Label.new()

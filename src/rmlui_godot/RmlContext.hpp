@@ -112,6 +112,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 
 	godot::ClassDB::bind_method(godot::D_METHOD("debug_dump_glyph_positions", "family", "size", "text"), &RmlContext::debug_dump_glyph_positions);
 	godot::ClassDB::bind_method(godot::D_METHOD("add_direct_draw", "text", "family", "size", "position", "color"), &RmlContext::add_direct_draw);
+	godot::ClassDB::bind_method(godot::D_METHOD("add_direct_mesh_draw", "text", "family", "size", "position", "color"), &RmlContext::add_direct_mesh_draw);
 	godot::ClassDB::bind_method(godot::D_METHOD("clear_direct_draws"), &RmlContext::clear_direct_draws);
 
 	// Auto-configuration
@@ -207,6 +208,8 @@ public:
 	void debug_dump_glyph_positions(const godot::String& family, int size, const godot::String& text);
 
 	void add_direct_draw(const godot::String& text, const godot::String& family, int size,
+		godot::Vector2 position, godot::Color color);
+	void add_direct_mesh_draw(const godot::String& text, const godot::String& family, int size,
 		godot::Vector2 position, godot::Color color);
 	void clear_direct_draws();
 
@@ -356,6 +359,7 @@ private:
 		Rml::String text;
 		godot::Vector2 position;
 		godot::Color color;
+		bool use_mesh = false;
 	};
 	std::vector<DirectDrawEntry> _direct_draws;
 

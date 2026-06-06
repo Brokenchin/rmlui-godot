@@ -6,6 +6,7 @@
 #include <RmlUi/Core/FontMetrics.h>
 #include <RmlUi/Core/CallbackTexture.h>
 
+#include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/rid.hpp>
 #include <godot_cpp/variant/vector2.hpp>
@@ -80,6 +81,9 @@ public:
 	void debug_dump_glyph_positions(Rml::FontFaceHandle handle, const Rml::String& text);
 
 	void direct_draw_string(godot::RID canvas_item, Rml::FontFaceHandle handle,
+		Rml::StringView string, godot::Vector2 position, godot::Color color);
+
+	void direct_mesh_draw_string(godot::RID canvas_item, Rml::FontFaceHandle handle,
 		Rml::StringView string, godot::Vector2 position, godot::Color color);
 
 private:
@@ -182,6 +186,10 @@ private:
 	void _invalidate_all_caches();
 	int _effective_subpixel_mode(const LoadedFont& font, int render_size) const;
 	static int _compute_subpixel_shift(int subpixel_mode, float pen_x);
+
+	// Texture cache for direct_mesh_draw_string — keeps atlas textures alive
+	// across frames so the RenderingServer can reference them.
+	std::unordered_map<uint64_t, godot::Ref<godot::Texture2D>> _mesh_draw_tex_cache;
 
 	// Oversampling factor (>=1.0). When >1, glyphs are rasterized at
 	// size*factor and the quad is scaled down by 1/factor, mirroring Godot's

@@ -543,7 +543,10 @@ void RmlContext::_draw() {
 			rs->canvas_item_set_draw_index(dd_item, run_draw_index + 1000);
 			_layer_items.push_back(dd_item);
 			for (const auto& dd : _direct_draws) {
-				fi.direct_draw_string(dd_item, dd.handle, dd.text, dd.position, dd.color);
+				if (dd.use_mesh)
+					fi.direct_mesh_draw_string(dd_item, dd.handle, dd.text, dd.position, dd.color);
+				else
+					fi.direct_draw_string(dd_item, dd.handle, dd.text, dd.position, dd.color);
 			}
 		}
 	}
@@ -1082,6 +1085,25 @@ void RmlContext::add_direct_draw(const godot::String& text, const godot::String&
 	}
 	Rml::String rml_text(text.utf8().get_data());
 	_direct_draws.push_back({handle, rml_text, position, color});
+	queue_redraw();
+}
+
+void RmlContext::add_direct_mesh_draw(const godot::String& text, const godot::String& family,
+	int size, godot::Vector2 position, godot::Color color) {
+
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (!manager || !manager->is_initialized()) return;
+
+	auto& fi = manager->get_font_interface();
+	Rml::String rml_family(family.utf8().get_data());
+	auto handle = fi.GetFontFaceHandle(rml_family, Rml::Style::FontStyle::Normal,
+		Rml::Style::FontWeight::Normal, size);
+	if (handle == 0) {
+		godot::UtilityFunctions::push_warning("[RmlUi] add_direct_mesh_draw: font not found: " + family);
+		return;
+	}
+	Rml::String rml_text(text.utf8().get_data());
+	_direct_draws.push_back({handle, rml_text, position, color, true});
 	queue_redraw();
 }
 
