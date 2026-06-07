@@ -91,43 +91,49 @@ func _ready() -> void:
 	var y := 900.0
 	var cyan := Color(0.2, 1.0, 0.8, 1.0)
 	var yellow := Color(1.0, 0.9, 0.2, 1.0)
+	var white := Color(0.88, 0.88, 0.88, 1.0)
 	var header := Color(0.5, 0.5, 1.0)
 
-	# 8px comparison
-	rml.add_direct_draw("--- 8px: CYAN=font_draw_glyph  YELLOW=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
+	# 8px comparison: cyan=font_draw_glyph, yellow=mesh_draw, white=mesh_draw same color as Label
+	rml.add_direct_draw("--- 8px: CYAN=font_draw_glyph  YELLOW=mesh_draw  WHITE=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
 	y += 14
 	for text in GAP_TESTS:
 		rml.add_direct_draw(text, "Noto Sans", 8, Vector2(8, y), cyan)
 		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 10), yellow)
-		y += 22
+		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 20), white)
+		y += 32
 	for text in TIGHT:
 		rml.add_direct_draw(text, "Noto Sans", 8, Vector2(8, y), cyan)
 		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 10), yellow)
-		y += 22
+		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 20), white)
+		y += 32
 	for text in SYMBOLS:
 		rml.add_direct_draw(text, "Noto Sans", 8, Vector2(8, y), cyan)
 		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 10), yellow)
-		y += 22
+		rml.add_direct_mesh_draw(text, "Noto Sans", 8, Vector2(8, y + 20), white)
+		y += 32
 
 	# 12px comparison
 	y += 6
-	rml.add_direct_draw("--- 12px: CYAN=font_draw_glyph  YELLOW=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
+	rml.add_direct_draw("--- 12px: CYAN=font_draw_glyph  YELLOW=mesh_draw  WHITE=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
 	y += 14
 	var texts_12 := [PANGRAM] + TIGHT + KERNING_PAIRS + MIXED + SYMBOLS
 	for text in texts_12:
 		rml.add_direct_draw(text, "Noto Sans", 12, Vector2(8, y), cyan)
 		rml.add_direct_mesh_draw(text, "Noto Sans", 12, Vector2(8, y + 14), yellow)
-		y += 28
+		rml.add_direct_mesh_draw(text, "Noto Sans", 12, Vector2(8, y + 28), white)
+		y += 42
 
 	# 16px comparison
 	y += 6
-	rml.add_direct_draw("--- 16px: CYAN=font_draw_glyph  YELLOW=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
+	rml.add_direct_draw("--- 16px: CYAN=font_draw_glyph  YELLOW=mesh_draw  WHITE=mesh_draw ---", "Noto Sans", 10, Vector2(8, y), header)
 	y += 14
 	var texts_16 := [PANGRAM] + TIGHT + SYMBOLS
 	for text in texts_16:
 		rml.add_direct_draw(text, "Noto Sans", 16, Vector2(8, y), cyan)
 		rml.add_direct_mesh_draw(text, "Noto Sans", 16, Vector2(8, y + 20), yellow)
-		y += 40
+		rml.add_direct_mesh_draw(text, "Noto Sans", 16, Vector2(8, y + 40), white)
+		y += 60
 
 func _add_header(parent: Control, text: String) -> void:
 	var lbl := Label.new()

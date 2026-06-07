@@ -9,7 +9,6 @@
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/image.hpp>
-#include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/resource_uid.hpp>
 #include <godot_cpp/classes/text_server.hpp>
@@ -1281,7 +1280,6 @@ void GodotFontInterface::set_pixel_snap(bool snap) {
 }
 
 void GodotFontInterface::_invalidate_all_caches() {
-	_mesh_draw_tex_cache.clear();
 	for (auto& face : _faces) {
 		face->glyph_cache.clear();
 		face->glyph_index_cache.clear();
@@ -1430,12 +1428,6 @@ void GodotFontInterface::direct_mesh_draw_string(godot::RID canvas_item, Rml::Fo
 	int count = static_cast<int>(glyphs.size());
 	godot::Vector2i size_v(face.size, 0);
 
-	struct GlyphQuad {
-		godot::Vector2 pos, size, uv_min, uv_max;
-	};
-	std::unordered_map<uint64_t, std::vector<GlyphQuad>> page_quads;
-	std::unordered_map<uint64_t, std::pair<godot::RID, int64_t>> page_fonts;
-
 	float pen_x = 0;
 	for (int i = 0; i < count; i++) {
 		godot::Dictionary g = glyphs[i];
@@ -1452,116 +1444,38 @@ void GodotFontInterface::direct_mesh_draw_string(godot::RID canvas_item, Rml::Fo
 		godot::Vector2 glyph_size = ts->font_get_glyph_size(glyph_font, size_v, index);
 		if (glyph_size.x < 1 || glyph_size.y < 1) { pen_x += advance; continue; }
 
-		godot::Vector2 offset = ts->font_get_glyph_offset(glyph_font, size_v, index);
+		godot::Vector2 glyph_offset = ts->font_get_glyph_offset(glyph_font, size_v, index);
 		godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(glyph_font, size_v, index);
-		godot::Vector2 tex_size = ts->font_get_glyph_texture_size(glyph_font, size_v, index);
-		int64_t tex_idx = ts->font_get_glyph_texture_idx(glyph_font, size_v, index);
+		godot::RID tex_rid = ts->font_get_glyph_texture_rid(glyph_font, size_v, index);
+		if (!tex_rid.is_valid()) { pen_x += advance; continue; }
 
-		GlyphQuad quad;
-		quad.pos = position + godot::Vector2(pen_x + x_off + static_cast<float>(offset.x),
-		                                      y_off + static_cast<float>(offset.y));
-		quad.size = glyph_size;
-		if (tex_size.x > 0 && tex_size.y > 0) {
-			quad.uv_min = godot::Vector2(
-				static_cast<float>(uv_rect.position.x / tex_size.x),
-				static_cast<float>(uv_rect.position.y / tex_size.y));
-			quad.uv_max = godot::Vector2(
-				static_cast<float>((uv_rect.position.x + uv_rect.size.x) / tex_size.x),
-				static_cast<float>((uv_rect.position.y + uv_rect.size.y) / tex_size.y));
+		// Replicate font_draw_glyph's internal position handling:
+		// 1. Pen position = base + accumulated advance + cluster offset
+		godot::Vector2 pen_pos = position + godot::Vector2(pen_x + x_off, y_off);
+
+		// 2. Subpixel bias before flooring (matches font_draw_glyph)
+		int subpx = static_cast<int>(ts->font_get_subpixel_positioning(glyph_font));
+		if (subpx == 1) { // AUTO — resolve based on size
+			subpx = (face.size <= 16) ? 3 : (face.size <= 20) ? 2 : 0;
 		}
+		if (subpx == 3)      pen_pos.x += 0.125f; // ONE_QUARTER
+		else if (subpx == 2) pen_pos.x += 0.25f;  // ONE_HALF
 
-		uint64_t page_key = static_cast<uint64_t>(glyph_font.get_id()) * 10000 +
-		                     static_cast<uint64_t>(tex_idx);
-		page_quads[page_key].push_back(quad);
-		page_fonts[page_key] = {glyph_font, tex_idx};
+		// 3. Floor to pixel boundary (font_draw_glyph does this when scale == 1.0)
+		pen_pos.x = std::floor(pen_pos.x);
+		pen_pos.y = std::floor(pen_pos.y);
+
+		// 4. Add glyph offset AFTER floor — font_get_glyph_offset/size are already
+		//    in logical pixels (pre-divided by oversampling at rasterization time)
+		godot::Vector2 glyph_pos = pen_pos + glyph_offset;
+
+		godot::Rect2 dst_rect(glyph_pos, glyph_size);
+		rs->canvas_item_add_texture_rect_region(canvas_item, dst_rect, tex_rid, uv_rect,
+			color, false, false);
+
 		pen_x += advance;
 	}
 	ts->free_rid(shaped);
-
-	for (auto& [page_key, quads] : page_quads) {
-		auto& [glyph_font, tex_idx] = page_fonts[page_key];
-
-		// Get or create cached atlas texture — same L8→RGBA8 + premultiply as our pipeline
-		auto tex_it = _mesh_draw_tex_cache.find(page_key);
-		if (tex_it == _mesh_draw_tex_cache.end()) {
-			godot::Ref<godot::Image> atlas = ts->font_get_texture_image(
-				glyph_font, size_v, static_cast<int>(tex_idx));
-			if (!atlas.is_valid() || atlas->is_empty()) continue;
-
-			int w = atlas->get_width();
-			int h = atlas->get_height();
-			auto fmt = atlas->get_format();
-
-			godot::Ref<godot::Image> img;
-			if (fmt == godot::Image::FORMAT_L8) {
-				godot::PackedByteArray src_data = atlas->get_data();
-				godot::PackedByteArray data;
-				data.resize(w * h * 4);
-				uint8_t* dst = data.ptrw();
-				const uint8_t* src = src_data.ptr();
-				for (int p = 0; p < w * h; p++) {
-					dst[p * 4 + 0] = 255;
-					dst[p * 4 + 1] = 255;
-					dst[p * 4 + 2] = 255;
-					dst[p * 4 + 3] = src[p];
-				}
-				img = godot::Image::create_from_data(w, h, false, godot::Image::FORMAT_RGBA8, data);
-			} else {
-				img = godot::Image::create_from_data(w, h, false, fmt, atlas->get_data());
-				if (img->get_format() != godot::Image::FORMAT_RGBA8)
-					img->convert(godot::Image::FORMAT_RGBA8);
-			}
-			img->premultiply_alpha();
-			godot::Ref<godot::ImageTexture> new_tex = godot::ImageTexture::create_from_image(img);
-			_mesh_draw_tex_cache[page_key] = new_tex;
-			tex_it = _mesh_draw_tex_cache.find(page_key);
-		}
-		if (!tex_it->second.is_valid()) continue;
-
-		int qc = static_cast<int>(quads.size());
-		godot::PackedVector2Array positions;
-		godot::PackedVector2Array uvs;
-		godot::PackedColorArray colors;
-		godot::PackedInt32Array indices;
-		positions.resize(qc * 4);
-		uvs.resize(qc * 4);
-		colors.resize(qc * 4);
-		indices.resize(qc * 6);
-
-		for (int qi = 0; qi < qc; qi++) {
-			const auto& q = quads[qi];
-			int vi = qi * 4;
-			int ii = qi * 6;
-
-			positions[vi + 0] = q.pos;
-			positions[vi + 1] = q.pos + godot::Vector2(q.size.x, 0);
-			positions[vi + 2] = q.pos + q.size;
-			positions[vi + 3] = q.pos + godot::Vector2(0, q.size.y);
-
-			uvs[vi + 0] = q.uv_min;
-			uvs[vi + 1] = godot::Vector2(q.uv_max.x, q.uv_min.y);
-			uvs[vi + 2] = q.uv_max;
-			uvs[vi + 3] = godot::Vector2(q.uv_min.x, q.uv_max.y);
-
-			colors[vi + 0] = color;
-			colors[vi + 1] = color;
-			colors[vi + 2] = color;
-			colors[vi + 3] = color;
-
-			indices[ii + 0] = vi;
-			indices[ii + 1] = vi + 1;
-			indices[ii + 2] = vi + 2;
-			indices[ii + 3] = vi;
-			indices[ii + 4] = vi + 2;
-			indices[ii + 5] = vi + 3;
-		}
-
-		// Use triangle_array — copies data directly into the rendering server,
-		// no mesh RID lifetime issues.
-		rs->canvas_item_add_triangle_array(canvas_item, indices, positions, colors,
-			uvs, godot::PackedInt32Array(), godot::PackedFloat32Array(),
-			tex_it->second->get_rid());
-	}
 }
 
 void GodotFontInterface::debug_dump_glyph_positions(Rml::FontFaceHandle handle, const Rml::String& text) {
