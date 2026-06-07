@@ -255,6 +255,7 @@ void RmlContext::_ready() {
 	// Push granular font settings before loading faces so the first glyph
 	// rasterization already uses them.
 	auto& font_iface = manager->get_font_interface();
+	font_iface.set_text_render_mode(_text_render_mode);
 	font_iface.set_hinting(_font_hinting);
 	font_iface.set_font_antialiasing(_font_antialiasing);
 	font_iface.set_subpixel_positioning(_font_subpixel);
@@ -995,6 +996,15 @@ void RmlContext::set_dp_ratio(float ratio) {
 	_dp_ratio = ratio;
 	if (_rml_context != nullptr) {
 		_rml_context->SetDensityIndependentPixelRatio(ratio);
+	}
+}
+
+void RmlContext::set_text_render_mode(int mode) {
+	_text_render_mode = mode;
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		manager->get_font_interface().set_text_render_mode(mode);
+		queue_redraw();
 	}
 }
 

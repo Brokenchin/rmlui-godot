@@ -514,6 +514,40 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 		_rebuild_effect_atlases(layer);
 	}
 
+	// --- Compositing: mode-specific position snap + UV padding ---
+	const auto mode = (_text_render_mode == TextRenderMode::NONE)
+		? TextRenderMode::RMLUI_NATIVE : _text_render_mode;
+	const bool snap_x = _pixel_snap || integer_advance;
+
+	// Position snap: isolates mode-specific glyph placement.
+	// pen_x/y_off = pen offset from string origin (before glyph visual offset).
+	// origin_x/y  = glyph visual offset from baseline.
+	auto snap_pos = [&](float pen_x, float y_off, float origin_x, float origin_y) -> Rml::Vector2f {
+		if (mode == TextRenderMode::SUBPIX_OFFSET) {
+			float px = position.x + pen_x;
+			float py = position.y + y_off;
+			if (subpx_mode >= 3)     px += 0.125f; // ONE_QUARTER bias
+			else if (subpx_mode == 2) px += 0.25f;  // ONE_HALF bias
+			return {std::floor(px) + origin_x, std::floor(py) + origin_y};
+		}
+		// RMLUI_NATIVE
+		float gx = position.x + pen_x + origin_x;
+		float gy = Rml::Math::RoundDown(position.y + y_off + origin_y);
+		if (subpx_mode == 0 && snap_x) gx = std::round(gx);
+		return {gx, gy};
+	};
+
+	// UV padding: shrink by half-texel to prevent bilinear bleed between
+	// adjacent glyphs in the atlas. Only active in SUBPIX_OFFSET mode.
+	auto pad_uv = [&](Rml::Vector2f uv0, Rml::Vector2f uv1, float tw, float th) {
+		if (mode == TextRenderMode::SUBPIX_OFFSET && tw > 0 && th > 0) {
+			float hx = 0.5f / tw, hy = 0.5f / th;
+			uv0.x += hx; uv0.y += hy;
+			uv1.x -= hx; uv1.y -= hy;
+		}
+		return std::pair{uv0, uv1};
+	};
+
 	// Phase 5+6: generate mesh_list per layer.
 	mesh_list.clear();
 	int mesh_offset = 0;
@@ -568,25 +602,21 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 				auto pit = page_to_mesh.find(gd->texture_page);
 				if (pit == page_to_mesh.end()) continue;
 
-				float gx = position.x + e.cursor_x + e.kern_adj + gd->origin.x;
-				float gy = position.y + gd->origin.y;
+				auto pos = snap_pos(e.cursor_x + e.kern_adj, 0, gd->origin.x, gd->origin.y);
 
 				if (is_shadow) {
 					Rml::Vector2i eo(0, 0);
 					Rml::Vector2i ed(static_cast<int>(gd->dimensions.x), static_cast<int>(gd->dimensions.y));
 					if (!elayer->effect->GetGlyphMetrics(eo, ed, dummy_fg))
 						continue;
-					gx += static_cast<float>(eo.x);
-					gy += static_cast<float>(eo.y);
+					pos.x += static_cast<float>(eo.x);
+					pos.y += static_cast<float>(eo.y);
 				}
 
-				gy = Rml::Math::RoundDown(gy);
-				if (subpx_mode == 0 && (_pixel_snap || integer_advance))
-					gx = std::round(gx);
-
+				auto [uv0, uv1] = pad_uv(gd->uv_min, gd->uv_max, gd->tex_w, gd->tex_h);
 				Rml::MeshUtilities::GenerateQuad(
-					mesh_list[pit->second].mesh, Rml::Vector2f(gx, gy), gd->dimensions,
-					layer_colour, gd->uv_min, gd->uv_max);
+					mesh_list[pit->second].mesh, pos, gd->dimensions,
+					layer_colour, uv0, uv1);
 			}
 			mesh_offset += layer_count;
 
@@ -623,14 +653,12 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 				auto pit = page_to_mesh.find(eg.atlas_page);
 				if (pit == page_to_mesh.end()) continue;
 
-				float gx = position.x + e.cursor_x + e.kern_adj + eg.origin.x;
-				float gy = position.y + eg.origin.y;
-				gy = Rml::Math::RoundDown(gy);
-				if (subpx_mode == 0 && (_pixel_snap || integer_advance))
-					gx = std::round(gx);
+				auto pos = snap_pos(e.cursor_x + e.kern_adj, 0, eg.origin.x, eg.origin.y);
+				constexpr float eff_atlas = static_cast<float>(EffectAtlasPage::SIZE);
+				auto [uv0, uv1] = pad_uv(eg.uv_min, eg.uv_max, eff_atlas, eff_atlas);
 				Rml::MeshUtilities::GenerateQuad(
-					mesh_list[pit->second].mesh, Rml::Vector2f(gx, gy), eg.dimensions,
-					layer_colour, eg.uv_min, eg.uv_max);
+					mesh_list[pit->second].mesh, pos, eg.dimensions,
+					layer_colour, uv0, uv1);
 			}
 			mesh_offset += layer_count;
 		}
@@ -712,6 +740,33 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 		_rebuild_effect_atlases(layer);
 	}
 
+	// --- Compositing: mode-specific position snap + UV padding ---
+	const auto mode = (_text_render_mode == TextRenderMode::NONE)
+		? TextRenderMode::RMLUI_NATIVE : _text_render_mode;
+
+	auto snap_pos = [&](float pen_x, float y_off, float origin_x, float origin_y) -> Rml::Vector2f {
+		if (mode == TextRenderMode::SUBPIX_OFFSET) {
+			float px = position.x + pen_x;
+			float py = position.y + y_off;
+			if (subpx_mode >= 3)     px += 0.125f;
+			else if (subpx_mode == 2) px += 0.25f;
+			return {std::floor(px) + origin_x, std::floor(py) + origin_y};
+		}
+		float gx = position.x + pen_x + origin_x;
+		float gy = Rml::Math::RoundDown(position.y + y_off + origin_y);
+		if (subpx_mode == 0 && _pixel_snap) gx = std::round(gx);
+		return {gx, gy};
+	};
+
+	auto pad_uv = [&](Rml::Vector2f uv0, Rml::Vector2f uv1, float tw, float th) {
+		if (mode == TextRenderMode::SUBPIX_OFFSET && tw > 0 && th > 0) {
+			float hx = 0.5f / tw, hy = 0.5f / th;
+			uv0.x += hx; uv0.y += hy;
+			uv1.x -= hx; uv1.y -= hy;
+		}
+		return std::pair{uv0, uv1};
+	};
+
 	// Phase 5+6: generate mesh_list per layer.
 	mesh_list.clear();
 	int mesh_offset = 0;
@@ -765,25 +820,21 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 				auto pit = page_to_mesh.find(gd.texture_page);
 				if (pit == page_to_mesh.end()) continue;
 
-				float gx = position.x + e.pen_x + e.x_off + gd.origin.x;
-				float gy = position.y + e.y_off + gd.origin.y;
+				auto pos = snap_pos(e.pen_x + e.x_off, e.y_off, gd.origin.x, gd.origin.y);
 
 				if (is_shadow) {
 					Rml::Vector2i eo(0, 0);
 					Rml::Vector2i ed(static_cast<int>(gd.dimensions.x), static_cast<int>(gd.dimensions.y));
 					if (!elayer->effect->GetGlyphMetrics(eo, ed, dummy_fg))
 						continue;
-					gx += static_cast<float>(eo.x);
-					gy += static_cast<float>(eo.y);
+					pos.x += static_cast<float>(eo.x);
+					pos.y += static_cast<float>(eo.y);
 				}
 
-				gy = Rml::Math::RoundDown(gy);
-				if (subpx_mode == 0 && _pixel_snap)
-					gx = std::round(gx);
-
+				auto [uv0, uv1] = pad_uv(gd.uv_min, gd.uv_max, gd.tex_w, gd.tex_h);
 				Rml::MeshUtilities::GenerateQuad(
-					mesh_list[pit->second].mesh, Rml::Vector2f(gx, gy), gd.dimensions,
-					layer_colour, gd.uv_min, gd.uv_max);
+					mesh_list[pit->second].mesh, pos, gd.dimensions,
+					layer_colour, uv0, uv1);
 			}
 			mesh_offset += layer_count;
 
@@ -822,14 +873,12 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 				auto pit = page_to_mesh.find(eg.atlas_page);
 				if (pit == page_to_mesh.end()) continue;
 
-				float gx = position.x + e.pen_x + e.x_off + eg.origin.x;
-				float gy = position.y + e.y_off + eg.origin.y;
-				gy = Rml::Math::RoundDown(gy);
-				if (subpx_mode == 0 && _pixel_snap)
-					gx = std::round(gx);
+				auto pos = snap_pos(e.pen_x + e.x_off, e.y_off, eg.origin.x, eg.origin.y);
+				constexpr float eff_atlas = static_cast<float>(EffectAtlasPage::SIZE);
+				auto [uv0, uv1] = pad_uv(eg.uv_min, eg.uv_max, eff_atlas, eff_atlas);
 				Rml::MeshUtilities::GenerateQuad(
-					mesh_list[pit->second].mesh, Rml::Vector2f(gx, gy), eg.dimensions,
-					layer_colour, eg.uv_min, eg.uv_max);
+					mesh_list[pit->second].mesh, pos, eg.dimensions,
+					layer_colour, uv0, uv1);
 			}
 			mesh_offset += layer_count;
 		}
@@ -881,6 +930,8 @@ GodotFontInterface::GlyphData GodotFontInterface::_build_glyph_data(FontFace& fa
 	glyph.texture_page = static_cast<int>(tex_idx);
 	glyph.origin = Rml::Vector2f(static_cast<float>(offset.x) / os, static_cast<float>(offset.y) / os);
 	glyph.dimensions = Rml::Vector2f(static_cast<float>(glyph_size.x) / os, static_cast<float>(glyph_size.y) / os);
+	glyph.tex_w = static_cast<float>(tex_size.x);
+	glyph.tex_h = static_cast<float>(tex_size.y);
 	glyph.has_geometry = true;
 
 	if (tex_size.x > 0 && tex_size.y > 0) {
@@ -1274,8 +1325,13 @@ void GodotFontInterface::set_font_oversampling(float oversampling) {
 void GodotFontInterface::set_pixel_snap(bool snap) {
 	if (_pixel_snap == snap) return;
 	_pixel_snap = snap;
-	// Only affects quad geometry in GenerateString; bump version so RmlUi
-	// regenerates the cached strings.
+	_invalidate_all_caches();
+}
+
+void GodotFontInterface::set_text_render_mode(int mode) {
+	auto m = static_cast<TextRenderMode>(mode);
+	if (_text_render_mode == m) return;
+	_text_render_mode = m;
 	_invalidate_all_caches();
 }
 
@@ -1449,24 +1505,29 @@ void GodotFontInterface::direct_mesh_draw_string(godot::RID canvas_item, Rml::Fo
 		godot::RID tex_rid = ts->font_get_glyph_texture_rid(glyph_font, size_v, index);
 		if (!tex_rid.is_valid()) { pen_x += advance; continue; }
 
+		// UV padding: shrink by half-texel to prevent bilinear bleed
+		godot::Vector2 tex_size = ts->font_get_glyph_texture_size(glyph_font, size_v, index);
+		if (tex_size.x > 0 && tex_size.y > 0) {
+			float hx = 0.5f / static_cast<float>(tex_size.x);
+			float hy = 0.5f / static_cast<float>(tex_size.y);
+			uv_rect.position.x += hx;
+			uv_rect.position.y += hy;
+			uv_rect.size.x -= 2.0f * hx;
+			uv_rect.size.y -= 2.0f * hy;
+		}
+
 		// Replicate font_draw_glyph's internal position handling:
-		// 1. Pen position = base + accumulated advance + cluster offset
 		godot::Vector2 pen_pos = position + godot::Vector2(pen_x + x_off, y_off);
 
-		// 2. Subpixel bias before flooring (matches font_draw_glyph)
 		int subpx = static_cast<int>(ts->font_get_subpixel_positioning(glyph_font));
-		if (subpx == 1) { // AUTO — resolve based on size
+		if (subpx == 1) // AUTO
 			subpx = (face.size <= 16) ? 3 : (face.size <= 20) ? 2 : 0;
-		}
-		if (subpx == 3)      pen_pos.x += 0.125f; // ONE_QUARTER
-		else if (subpx == 2) pen_pos.x += 0.25f;  // ONE_HALF
+		if (subpx == 3)      pen_pos.x += 0.125f;
+		else if (subpx == 2) pen_pos.x += 0.25f;
 
-		// 3. Floor to pixel boundary (font_draw_glyph does this when scale == 1.0)
 		pen_pos.x = std::floor(pen_pos.x);
 		pen_pos.y = std::floor(pen_pos.y);
 
-		// 4. Add glyph offset AFTER floor — font_get_glyph_offset/size are already
-		//    in logical pixels (pre-divided by oversampling at rasterization time)
 		godot::Vector2 glyph_pos = pen_pos + glyph_offset;
 
 		godot::Rect2 dst_rect(glyph_pos, glyph_size);

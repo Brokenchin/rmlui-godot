@@ -120,6 +120,8 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_document_path", "path"), &RmlContext::set_document_path);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_font_paths"), &RmlContext::get_font_paths);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_font_paths", "paths"), &RmlContext::set_font_paths);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_text_render_mode"), &RmlContext::get_text_render_mode);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_text_render_mode", "mode"), &RmlContext::set_text_render_mode);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_font_hinting"), &RmlContext::get_font_hinting);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_font_hinting", "hinting"), &RmlContext::set_font_hinting);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_font_antialiasing"), &RmlContext::get_font_antialiasing);
@@ -150,6 +152,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "use_default_rcss"), "set_use_default_rcss", "get_use_default_rcss");
 
 	ADD_GROUP("Font Settings", "");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "RmlUI Native,SubPixel Offset,Godot Native,None"), "set_text_render_mode", "get_text_render_mode");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_hinting", godot::PROPERTY_HINT_ENUM, "None,Light,Normal"), "set_font_hinting", "get_font_hinting");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_antialiasing", godot::PROPERTY_HINT_ENUM, "None,Gray,LCD Subpixel"), "set_font_antialiasing", "get_font_antialiasing");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_subpixel", godot::PROPERTY_HINT_ENUM, "Disabled,Auto,One Half,One Quarter"), "set_font_subpixel", "get_font_subpixel");
@@ -191,6 +194,9 @@ public:
 	void set_document_path(const godot::String& path) { _document_path = path; }
 	godot::PackedStringArray get_font_paths() const { return _font_paths; }
 	void set_font_paths(const godot::PackedStringArray& paths) { _font_paths = paths; }
+
+	int get_text_render_mode() const { return _text_render_mode; }
+	void set_text_render_mode(int mode);
 
 	int get_font_hinting() const { return _font_hinting; }
 	void set_font_hinting(int hinting);
@@ -291,6 +297,7 @@ private:
 	float _dp_ratio = 1.0f;
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
+	int _text_render_mode = 0;    // RMLUI_NATIVE
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light
 	int _font_antialiasing = 1;   // Gray

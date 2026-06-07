@@ -37,6 +37,25 @@ public:
 	void set_layout_mode(int mode);
 	int get_layout_mode() const { return static_cast<int>(_layout_mode); }
 
+	// How glyphs are composited to the screen. Separate from LayoutMode which
+	// controls position computation; this controls the final draw method.
+	enum class TextRenderMode : int {
+		// Current mesh pipeline: our atlas textures + GenerateQuad. Full shader
+		// and effect support. May show gaps/smushing at small sizes (<=12px).
+		RMLUI_NATIVE = 0,
+		// Position-corrected quads + UV padding. Matches font_draw_glyph's
+		// floor-before-offset positioning. Full shader/effect/scissor support.
+		SUBPIX_OFFSET = 1,
+		// Calls font_draw_glyph / font_draw_glyph_outline per glyph. Pixel-
+		// perfect fidelity. No decorator shaders, no GPU scissor.
+		GODOT_NATIVE = 2,
+		// No override — falls through to RMLUI_NATIVE (the production default).
+		NONE = 3,
+	};
+
+	void set_text_render_mode(int mode);
+	int get_text_render_mode() const { return static_cast<int>(_text_render_mode); }
+
 	// Granular font tuning (mirrors godot::TextServer enums; stored as int to
 	// keep this header free of the TextServer include). Each setter re-applies
 	// to all loaded fonts and invalidates the glyph caches so the change is
@@ -102,6 +121,8 @@ private:
 		Rml::Vector2f uv_min;
 		Rml::Vector2f uv_max;
 		float advance = 0;
+		float tex_w = 0;
+		float tex_h = 0;
 		bool has_geometry = false;
 	};
 
@@ -153,6 +174,7 @@ private:
 	int _fallback_font_index = -1;
 	std::unordered_map<std::string, std::string> _generic_families;
 	LayoutMode _layout_mode = LayoutMode::MANUAL;
+	TextRenderMode _text_render_mode = TextRenderMode::RMLUI_NATIVE;
 
 	// Defaults match Godot's FontFile defaults:
 	// HINTING_LIGHT(1), FONT_ANTIALIASING_GRAY(1), SUBPIXEL_POSITIONING_AUTO(1).
