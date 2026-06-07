@@ -96,14 +96,6 @@ public:
 	void ReleaseFontResources();
 	void ReleaseTexturesForRenderManager(Rml::RenderManager* rm);
 
-	void debug_dump_glyph_positions(Rml::FontFaceHandle handle, const Rml::String& text);
-
-	void direct_draw_string(godot::RID canvas_item, Rml::FontFaceHandle handle,
-		Rml::StringView string, godot::Vector2 position, godot::Color color);
-
-	void direct_mesh_draw_string(godot::RID canvas_item, Rml::FontFaceHandle handle,
-		Rml::StringView string, godot::Vector2 position, godot::Color color);
-
 private:
 	struct LoadedFont {
 		godot::RID font_rid;

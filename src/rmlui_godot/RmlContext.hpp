@@ -110,11 +110,6 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_generic_family", "generic_name", "family_name"), &RmlContext::set_generic_family);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_generic_family", "generic_name"), &RmlContext::get_generic_family);
 
-	godot::ClassDB::bind_method(godot::D_METHOD("debug_dump_glyph_positions", "family", "size", "text"), &RmlContext::debug_dump_glyph_positions);
-	godot::ClassDB::bind_method(godot::D_METHOD("add_direct_draw", "text", "family", "size", "position", "color"), &RmlContext::add_direct_draw);
-	godot::ClassDB::bind_method(godot::D_METHOD("add_direct_mesh_draw", "text", "family", "size", "position", "color"), &RmlContext::add_direct_mesh_draw);
-	godot::ClassDB::bind_method(godot::D_METHOD("clear_direct_draws"), &RmlContext::clear_direct_draws);
-
 	// Auto-configuration
 	godot::ClassDB::bind_method(godot::D_METHOD("get_document_path"), &RmlContext::get_document_path);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_document_path", "path"), &RmlContext::set_document_path);
@@ -151,14 +146,16 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::PACKED_STRING_ARRAY, "font_paths"), "set_font_paths", "get_font_paths");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "use_default_rcss"), "set_use_default_rcss", "get_use_default_rcss");
 
-	ADD_GROUP("Font Settings", "");
+	ADD_GROUP("Text Rendering", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "RmlUI Native,SubPixel Offset,Godot Native,None"), "set_text_render_mode", "get_text_render_mode");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "font_pixel_snap"), "set_font_pixel_snap", "get_font_pixel_snap");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_layout_mode", godot::PROPERTY_HINT_ENUM, "Manual,Integer Advance,Shaped"), "set_font_layout_mode", "get_font_layout_mode");
+
+	ADD_GROUP("Font Face Overrides (load_font_face only)", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_hinting", godot::PROPERTY_HINT_ENUM, "None,Light,Normal"), "set_font_hinting", "get_font_hinting");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_antialiasing", godot::PROPERTY_HINT_ENUM, "None,Gray,LCD Subpixel"), "set_font_antialiasing", "get_font_antialiasing");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_subpixel", godot::PROPERTY_HINT_ENUM, "Disabled,Auto,One Half,One Quarter"), "set_font_subpixel", "get_font_subpixel");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "font_oversampling", godot::PROPERTY_HINT_RANGE, "0.0,4.0,0.5"), "set_font_oversampling", "get_font_oversampling");
-	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "font_pixel_snap"), "set_font_pixel_snap", "get_font_pixel_snap");
-	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_layout_mode", godot::PROPERTY_HINT_ENUM, "Manual,Integer Advance,Shaped"), "set_font_layout_mode", "get_font_layout_mode");
 
 	ADD_GROUP("Scissor Clipping", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "gpu_scissor"), "set_gpu_scissor", "get_gpu_scissor");
@@ -210,14 +207,6 @@ public:
 	void set_font_pixel_snap(bool snap);
 	int get_font_layout_mode() const { return _font_layout_mode; }
 	void set_font_layout_mode(int mode);
-
-	void debug_dump_glyph_positions(const godot::String& family, int size, const godot::String& text);
-
-	void add_direct_draw(const godot::String& text, const godot::String& family, int size,
-		godot::Vector2 position, godot::Color color);
-	void add_direct_mesh_draw(const godot::String& text, const godot::String& family, int size,
-		godot::Vector2 position, godot::Color color);
-	void clear_direct_draws();
 
 	bool get_gpu_scissor() const { return _gpu_scissor; }
 	void set_gpu_scissor(bool enabled);
@@ -360,15 +349,6 @@ private:
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);
 	void _create_drag_ghost(const std::string& source_element_id, const godot::Callable& ghost_builder);
-
-	struct DirectDrawEntry {
-		Rml::FontFaceHandle handle;
-		Rml::String text;
-		godot::Vector2 position;
-		godot::Color color;
-		bool use_mesh = false;
-	};
-	std::vector<DirectDrawEntry> _direct_draws;
 
 	void _create_context();
 	void _destroy_context();
