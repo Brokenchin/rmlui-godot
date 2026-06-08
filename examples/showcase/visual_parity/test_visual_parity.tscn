@@ -353,7 +353,8 @@ size_flags_horizontal = 3
 
 [node name="RmlContext" type="RmlContext" parent="Columns/RmlSide"]
 rml_context_name = "parity_rml"
-text_render_mode = 3
+font_subpixel = 3
+font_oversampling = 2.0
 clip_contents = true
 layout_mode = 1
 anchors_preset = 15

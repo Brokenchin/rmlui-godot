@@ -1,0 +1,56 @@
+<rml>
+<head>
+<style>
+body {
+	font-family: "Noto Sans";
+	color: #e0e0e0;
+	background-color: #1a1a2e;
+	padding: 8px;
+}
+.section { margin-bottom: 12px; }
+.label { color: #6688cc; font-size: 10px; margin-bottom: 2px; margin-top: 4px; }
+.s8  { font-size: 8px; }
+.s10 { font-size: 10px; }
+.s12 { font-size: 12px; }
+.s14 { font-size: 14px; }
+.s16 { font-size: 16px; }
+.row { margin-bottom: 1px; }
+</style>
+</head>
+<body>
+<div class="section">
+	<div class="label">8px</div>
+	<div class="row s8">The quick brown fox jumps over the lazy dog</div>
+	<div class="row s8">Tight: iiillllIIII mmmwww fiji ffl</div>
+	<div class="row s8">Mixed: HP 1250/1250 | STR 42 DEX 38</div>
+	<div class="row s8">Symbols: +–×÷ ≤≥≠ °©® €£¥ «»</div>
+	<div class="row s8">all all all all all all all all</div>
+</div>
+<div class="section">
+	<div class="label">10px</div>
+	<div class="row s10">The quick brown fox jumps over the lazy dog</div>
+	<div class="row s10">Tight: iiillllIIII mmmwww fiji ffl</div>
+	<div class="row s10">Mixed: HP 1250/1250 | STR 42 DEX 38</div>
+	<div class="row s10">Symbols: +–×÷ ≤≥≠ °©® €£¥ «»</div>
+	<div class="row s10">all all all all all all all all</div>
+</div>
+<div class="section">
+	<div class="label">12px</div>
+	<div class="row s12">The quick brown fox jumps over the lazy dog</div>
+	<div class="row s12">Tight: iiillllIIII mmmwww fiji ffl</div>
+	<div class="row s12">Mixed: HP 1250/1250 | STR 42 DEX 38</div>
+	<div class="row s12">Symbols: +–×÷ ≤≥≠ °©® €£¥ «»</div>
+	<div class="row s12">Kerning: AVATAR WAV Type To fly</div>
+</div>
+<div class="section">
+	<div class="label">14px</div>
+	<div class="row s14">The quick brown fox jumps over the lazy dog</div>
+	<div class="row s14">Tight: iiillllIIII mmmwww fiji ffl</div>
+</div>
+<div class="section">
+	<div class="label">16px</div>
+	<div class="row s16">The quick brown fox jumps over the lazy dog</div>
+	<div class="row s16">Tight: iiillllIIII mmmwww fiji ffl</div>
+</div>
+</body>
+</rml>

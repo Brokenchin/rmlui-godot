@@ -22,6 +22,7 @@
 #include <vector>
 
 #include <RmlUi/Core/DataModelHandle.h>
+#include <RmlUi/Core/StyleSheetContainer.h>
 #include <RmlUi/Core/Variant.h>
 
 namespace Rml {
@@ -40,7 +41,9 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("reload_all_documents"), &RmlContext::reload_all_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_loaded_documents"), &RmlContext::get_loaded_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("load_font_face", "path"), &RmlContext::load_font_face);
+	godot::ClassDB::bind_method(godot::D_METHOD("load_font_face_ex", "path", "family", "style", "weight", "fallback"), &RmlContext::load_font_face_ex, DEFVAL(0), DEFVAL(400), DEFVAL(false));
 	godot::ClassDB::bind_method(godot::D_METHOD("load_font_resource", "font"), &RmlContext::load_font_resource);
+	godot::ClassDB::bind_method(godot::D_METHOD("load_font_resource_ex", "font", "family", "weight", "fallback"), &RmlContext::load_font_resource_ex, DEFVAL(""), DEFVAL(0), DEFVAL(false));
 	godot::ClassDB::bind_method(godot::D_METHOD("get_rml_context_name"), &RmlContext::get_rml_context_name);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_rml_context_name", "name"), &RmlContext::set_rml_context_name);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_dp_ratio"), &RmlContext::get_dp_ratio);
@@ -104,6 +107,9 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("unload_document", "path"), &RmlContext::unload_document);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_context_info"), &RmlContext::get_context_info);
 
+	godot::ClassDB::bind_method(godot::D_METHOD("set_generic_family", "generic_name", "family_name"), &RmlContext::set_generic_family);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_generic_family", "generic_name"), &RmlContext::get_generic_family);
+
 	// Auto-configuration
 	godot::ClassDB::bind_method(godot::D_METHOD("get_document_path"), &RmlContext::get_document_path);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_document_path", "path"), &RmlContext::set_document_path);
@@ -125,6 +131,12 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("set_font_layout_mode", "mode"), &RmlContext::set_font_layout_mode);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_gpu_scissor"), &RmlContext::get_gpu_scissor);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_gpu_scissor", "enabled"), &RmlContext::set_gpu_scissor);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_use_default_rcss"), &RmlContext::get_use_default_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_use_default_rcss", "enabled"), &RmlContext::set_use_default_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_base_rcss", "rcss"), &RmlContext::set_base_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_base_rcss"), &RmlContext::get_base_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("append_base_rcss", "rcss"), &RmlContext::append_base_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("reset_base_rcss"), &RmlContext::reset_base_rcss);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "rml_context_name"), "set_rml_context_name", "get_rml_context_name");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "dp_ratio", godot::PROPERTY_HINT_RANGE, "0.25,4.0,0.25"), "set_dp_ratio", "get_dp_ratio");
@@ -132,15 +144,18 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_GROUP("Auto-Configuration", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "document_path", godot::PROPERTY_HINT_FILE, "*.rml"), "set_document_path", "get_document_path");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::PACKED_STRING_ARRAY, "font_paths"), "set_font_paths", "get_font_paths");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "use_default_rcss"), "set_use_default_rcss", "get_use_default_rcss");
 
-	ADD_GROUP("Font Settings", "");
-	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "Default,Subpixel,Oversampled,High Quality"), "set_text_render_mode", "get_text_render_mode");
+	ADD_GROUP("Text Rendering", "");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "Default,SubPixel Offset,Godot Native,RmlUI Native"), "set_text_render_mode", "get_text_render_mode");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "font_pixel_snap"), "set_font_pixel_snap", "get_font_pixel_snap");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_layout_mode", godot::PROPERTY_HINT_ENUM, "Manual,Integer Advance,Shaped"), "set_font_layout_mode", "get_font_layout_mode");
+
+	ADD_GROUP("Font Face Overrides (load_font_face only)", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_hinting", godot::PROPERTY_HINT_ENUM, "None,Light,Normal"), "set_font_hinting", "get_font_hinting");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_antialiasing", godot::PROPERTY_HINT_ENUM, "None,Gray,LCD Subpixel"), "set_font_antialiasing", "get_font_antialiasing");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_subpixel", godot::PROPERTY_HINT_ENUM, "Disabled,Auto,One Half,One Quarter"), "set_font_subpixel", "get_font_subpixel");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "font_oversampling", godot::PROPERTY_HINT_RANGE, "0.0,4.0,0.5"), "set_font_oversampling", "get_font_oversampling");
-	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "font_pixel_snap"), "set_font_pixel_snap", "get_font_pixel_snap");
-	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_layout_mode", godot::PROPERTY_HINT_ENUM, "Manual,Integer Advance,Shaped"), "set_font_layout_mode", "get_font_layout_mode");
 
 	ADD_GROUP("Scissor Clipping", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "gpu_scissor"), "set_gpu_scissor", "get_gpu_scissor");
@@ -162,7 +177,9 @@ public:
 	void reload_all_documents();
 	godot::Array get_loaded_documents() const;
 	bool load_font_face(const godot::String& path);
+	bool load_font_face_ex(const godot::String& path, const godot::String& family, int style = 0, int weight = 400, bool fallback = false);
 	bool load_font_resource(const godot::Ref<godot::Font>& font);
+	bool load_font_resource_ex(const godot::Ref<godot::Font>& font, const godot::String& family = "", int weight = 0, bool fallback = false);
 
 	godot::String get_rml_context_name() const { return _context_name; }
 	void set_rml_context_name(const godot::String& name) { _context_name = name; }
@@ -193,6 +210,17 @@ public:
 
 	bool get_gpu_scissor() const { return _gpu_scissor; }
 	void set_gpu_scissor(bool enabled);
+
+	bool get_use_default_rcss() const { return _use_default_rcss; }
+	void set_use_default_rcss(bool enabled) { _use_default_rcss = enabled; }
+
+	void set_base_rcss(const godot::String& rcss);
+	godot::String get_base_rcss() const;
+	void append_base_rcss(const godot::String& rcss);
+	void reset_base_rcss();
+
+	void set_generic_family(const godot::String& generic_name, const godot::String& family_name);
+	godot::String get_generic_family(const godot::String& generic_name) const;
 
 	bool create_data_model(const godot::String& model_name);
 	bool bind_data_variable(const godot::String& model_name, const godot::String& variable_name, const godot::Variant& initial_value);
@@ -258,11 +286,11 @@ private:
 	float _dp_ratio = 1.0f;
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
-	int _text_render_mode = 0;
+	int _text_render_mode = 0;    // DEFAULT (resolves to SUBPIX_OFFSET)
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light
 	int _font_antialiasing = 1;   // Gray
-	int _font_subpixel = 0;       // Disabled
+	int _font_subpixel = 1;       // Auto
 	float _font_oversampling = 0.0f;
 	bool _font_pixel_snap = true;
 	int _font_layout_mode = 0;    // Manual
@@ -278,8 +306,13 @@ private:
 	godot::Ref<godot::Material> _active_material;
 
 	bool _gpu_scissor = false;
+	bool _use_default_rcss = true;
+	std::string _local_base_rcss;
+	bool _has_local_base_rcss = false;
 	godot::Ref<godot::ShaderMaterial> _scissor_material;
 	void _ensure_scissor_material();
+	void _apply_base_stylesheet(Rml::ElementDocument* doc);
+	Rml::SharedPtr<Rml::StyleSheetContainer> _get_effective_base_sheet();
 
 	struct ListenerRecord {
 		Rml::Element* element = nullptr;

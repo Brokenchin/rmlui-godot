@@ -5,8 +5,11 @@
 #include <RmlUi/Core/StringUtilities.h>
 #include <RmlUi/Core/TextShapingContext.h>
 
+#include <cmath>
+
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/image.hpp>
+#include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/resource_uid.hpp>
 #include <godot_cpp/classes/text_server.hpp>
 #include <godot_cpp/classes/text_server_manager.hpp>
@@ -63,6 +66,50 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 	if (static_cast<int64_t>(ts->font_get_style(font_rid)) & godot::TextServer::FONT_ITALIC)
 		style = Rml::Style::FontStyle::Italic;
 
+	if (weight == Rml::Style::FontWeight::Auto || weight == Rml::Style::FontWeight::Normal) {
+		int ts_weight = static_cast<int>(ts->font_get_weight(font_rid));
+		if (ts_weight > 0 && ts_weight <= 1000)
+			weight = static_cast<Rml::Style::FontWeight>(ts_weight);
+	}
+
+	return _register_font(font_rid, family, style, weight, fallback_face);
+}
+
+bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_index*/,
+	const Rml::String& family, Rml::Style::FontStyle style,
+	Rml::Style::FontWeight weight, bool fallback_face) {
+
+	godot::String path = godot::String(file_name.c_str());
+	if (path.begins_with("uid://")) {
+		auto* uid_mgr = godot::ResourceUID::get_singleton();
+		int64_t uid = uid_mgr->text_to_id(path);
+		if (uid_mgr->has_id(uid))
+			path = uid_mgr->get_id_path(uid);
+	}
+	if (!path.begins_with("res://") && !path.begins_with("user://"))
+		path = godot::String("res://") + path;
+
+	godot::Ref<godot::FileAccess> f = godot::FileAccess::open(path, godot::FileAccess::READ);
+	if (!f.is_valid()) {
+		godot::UtilityFunctions::push_warning(
+			godot::String("[RmlUi Font] Cannot open font file: ") + path);
+		return false;
+	}
+
+	godot::PackedByteArray data = f->get_buffer(f->get_length());
+	f->close();
+
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	godot::RID font_rid = ts->create_font();
+	ts->font_set_data(font_rid, data);
+	_apply_font_settings(font_rid);
+
+	if (weight == Rml::Style::FontWeight::Auto) {
+		int ts_weight = static_cast<int>(ts->font_get_weight(font_rid));
+		if (ts_weight > 0 && ts_weight <= 1000)
+			weight = static_cast<Rml::Style::FontWeight>(ts_weight);
+	}
+
 	return _register_font(font_rid, family, style, weight, fallback_face);
 }
 
@@ -83,17 +130,25 @@ bool GodotFontInterface::LoadFontFace(Rml::Span<const Rml::byte> data, int /*fac
 }
 
 bool GodotFontInterface::LoadFontFromRID(godot::RID font_rid, bool fallback_face,
-	Rml::Style::FontWeight weight) {
+	Rml::Style::FontWeight weight, const Rml::String& family_override) {
 
 	if (!font_rid.is_valid()) return false;
 
 	godot::Ref<godot::TextServer> ts = get_text_server();
 
-	Rml::String family(ts->font_get_name(font_rid).utf8().get_data());
+	Rml::String family = family_override.empty()
+		? Rml::String(ts->font_get_name(font_rid).utf8().get_data())
+		: family_override;
 
 	Rml::Style::FontStyle style = Rml::Style::FontStyle::Normal;
 	if (static_cast<int64_t>(ts->font_get_style(font_rid)) & godot::TextServer::FONT_ITALIC)
 		style = Rml::Style::FontStyle::Italic;
+
+	if (weight == Rml::Style::FontWeight::Auto || weight == Rml::Style::FontWeight::Normal) {
+		int ts_weight = static_cast<int>(ts->font_get_weight(font_rid));
+		if (ts_weight > 0 && ts_weight <= 1000)
+			weight = static_cast<Rml::Style::FontWeight>(ts_weight);
+	}
 
 	if (!_register_font(font_rid, family, style, weight, fallback_face))
 		return false;
@@ -136,9 +191,16 @@ int GodotFontInterface::_find_font(const Rml::String& family, Rml::Style::FontSt
 		if (to_lower(_loaded_fonts[i].family) != family_lower)
 			continue;
 
-		int score = 0;
-		if (_loaded_fonts[i].style == style) score += 2;
-		if (_loaded_fonts[i].weight == weight) score += 1;
+		// Style must match exactly (CSS spec: style takes priority, no
+		// cross-style fallback within a family).
+		if (_loaded_fonts[i].style != style)
+			continue;
+
+		// Weight scored by closeness: max distance is 999 (1 to 1000), so
+		// 1000 - distance gives higher scores for closer weights.
+		int weight_dist = std::abs(
+			static_cast<int>(_loaded_fonts[i].weight) - static_cast<int>(weight));
+		int score = 1000 - weight_dist;
 
 		if (score > best_score) {
 			best_score = score;
@@ -151,7 +213,34 @@ int GodotFontInterface::_find_font(const Rml::String& family, Rml::Style::FontSt
 Rml::FontFaceHandle GodotFontInterface::GetFontFaceHandle(const Rml::String& family,
 	Rml::Style::FontStyle style, Rml::Style::FontWeight weight, int size) {
 
-	int font_idx = _find_font(family, style, weight);
+	int font_idx = -1;
+
+	// Parse comma-separated family list (e.g. "\"Noto Sans\", Arial, sans-serif").
+	Rml::StringList families;
+	Rml::StringUtilities::ExpandString(families, family, ',');
+	for (auto& fam : families) {
+		Rml::String trimmed = Rml::StringUtilities::StripWhitespace(fam);
+		if (trimmed.size() >= 2 &&
+			(trimmed.front() == '"' || trimmed.front() == '\'')) {
+			trimmed = trimmed.substr(1, trimmed.size() - 2);
+		}
+		if (trimmed.empty())
+			continue;
+
+		font_idx = _find_font(trimmed, style, weight);
+		if (font_idx >= 0)
+			break;
+
+		// Check generic family mapping (sans-serif, serif, monospace).
+		std::string lower_key(to_lower(trimmed).c_str());
+		auto git = _generic_families.find(lower_key);
+		if (git != _generic_families.end()) {
+			font_idx = _find_font(Rml::String(git->second.c_str()), style, weight);
+			if (font_idx >= 0)
+				break;
+		}
+	}
+
 	if (font_idx < 0) {
 		font_idx = _fallback_font_index;
 		if (font_idx < 0) return 0;
@@ -177,7 +266,15 @@ Rml::FontFaceHandle GodotFontInterface::GetFontFaceHandle(const Rml::String& fam
 	face->metrics.descent = descent;
 	float leading = std::round(static_cast<float>(size) * 0.2f);
 	face->metrics.line_spacing = ascent + descent + leading;
-	face->metrics.x_height = ascent * 0.5f;
+	float x_height = ascent * 0.5f;
+	if (ts->font_has_char(font.font_rid, 'x')) {
+		int64_t x_idx = ts->font_get_glyph_index(font.font_rid, size, 'x', 0);
+		godot::Vector2 x_offset = ts->font_get_glyph_offset(font.font_rid, godot::Vector2i(size, 0), x_idx);
+		godot::Vector2 x_size = ts->font_get_glyph_size(font.font_rid, godot::Vector2i(size, 0), x_idx);
+		if (x_size.y > 0)
+			x_height = static_cast<float>(x_size.y);
+	}
+	face->metrics.x_height = x_height;
 	face->metrics.underline_position = static_cast<float>(ts->font_get_underline_position(font.font_rid, size));
 	face->metrics.underline_thickness = static_cast<float>(ts->font_get_underline_thickness(font.font_rid, size));
 	if (face->metrics.underline_thickness < 1.0f) face->metrics.underline_thickness = 1.0f;
@@ -188,9 +285,68 @@ Rml::FontFaceHandle GodotFontInterface::GetFontFaceHandle(const Rml::String& fam
 	return static_cast<Rml::FontFaceHandle>(_faces.size());
 }
 
-Rml::FontEffectsHandle GodotFontInterface::PrepareFontEffects(Rml::FontFaceHandle /*handle*/,
-	const Rml::FontEffectList& /*font_effects*/) {
-	return 0;
+Rml::FontEffectsHandle GodotFontInterface::PrepareFontEffects(Rml::FontFaceHandle handle,
+	const Rml::FontEffectList& font_effects) {
+	if (handle == 0 || handle > static_cast<Rml::FontFaceHandle>(_faces.size()))
+		return 0;
+	if (font_effects.empty())
+		return 0;
+
+	FontFace& face = *_faces[handle - 1];
+
+	if (face.layer_configs.empty())
+		face.layer_configs.push_back({-1});
+
+	for (size_t ci = 1; ci < face.layer_configs.size(); ci++) {
+		const auto& config = face.layer_configs[ci];
+		if (config.size() != font_effects.size() + 1)
+			continue;
+		size_t ei = 0;
+		bool match = true;
+		for (int idx : config) {
+			if (idx == -1) continue;
+			if (static_cast<size_t>(idx) >= face.effect_layers.size() ||
+				face.effect_layers[idx]->effect.get() != font_effects[ei].get()) {
+				match = false;
+				break;
+			}
+			ei++;
+		}
+		if (match && ei == font_effects.size())
+			return static_cast<Rml::FontEffectsHandle>(ci);
+	}
+
+	std::vector<int> config;
+	bool added_base = false;
+
+	for (size_t i = 0; i < font_effects.size(); i++) {
+		if (!added_base && font_effects[i]->GetLayer() == Rml::FontEffect::Layer::Front) {
+			config.push_back(-1);
+			added_base = true;
+		}
+
+		int layer_idx = -1;
+		for (size_t j = 0; j < face.effect_layers.size(); j++) {
+			if (face.effect_layers[j]->effect.get() == font_effects[i].get()) {
+				layer_idx = static_cast<int>(j);
+				break;
+			}
+		}
+		if (layer_idx < 0) {
+			auto layer = std::make_unique<EffectLayer>();
+			layer->effect = font_effects[i];
+			layer->uses_base_textures = !font_effects[i]->HasUniqueTexture();
+			layer_idx = static_cast<int>(face.effect_layers.size());
+			face.effect_layers.push_back(std::move(layer));
+		}
+		config.push_back(layer_idx);
+	}
+
+	if (!added_base)
+		config.push_back(-1);
+
+	face.layer_configs.push_back(std::move(config));
+	return static_cast<Rml::FontEffectsHandle>(face.layer_configs.size() - 1);
 }
 
 const Rml::FontMetrics& GodotFontInterface::GetFontMetrics(Rml::FontFaceHandle handle) {
@@ -262,9 +418,9 @@ int GodotFontInterface::GetStringWidth(Rml::FontFaceHandle handle, Rml::StringVi
 }
 
 int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
-	Rml::FontFaceHandle face_handle, Rml::FontEffectsHandle /*font_effects_handle*/,
+	Rml::FontFaceHandle face_handle, Rml::FontEffectsHandle font_effects_handle,
 	Rml::StringView string, Rml::Vector2f position, Rml::ColourbPremultiplied colour,
-	float /*opacity*/, const Rml::TextShapingContext& text_shaping_context,
+	float opacity, const Rml::TextShapingContext& text_shaping_context,
 	Rml::TexturedMeshList& mesh_list) {
 
 	if (face_handle == 0 || face_handle > static_cast<Rml::FontFaceHandle>(_faces.size()))
@@ -277,7 +433,8 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 	if (ts.is_null()) return 0;
 
 	if (_layout_mode == LayoutMode::SHAPED)
-		return _generate_shaped(render_manager, face, string, position, colour, text_shaping_context, mesh_list);
+		return _generate_shaped(render_manager, face, string, position, colour, opacity,
+			font_effects_handle, text_shaping_context, mesh_list);
 
 	const bool integer_advance = (_layout_mode == LayoutMode::INTEGER_ADVANCE);
 	bool use_kerning = (text_shaping_context.font_kerning != Rml::Style::FontKerning::None);
@@ -285,14 +442,14 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 	const int rsize = _render_size(face.size);
 	const int subpx_mode = _effective_subpixel_mode(font, rsize);
 
-	// Phase 1: ensure base glyphs are cached (for advances + triggers font_render_glyph
-	// which pre-renders all subpixel variants into the TextServer atlas).
+	// Phase 1: ensure base glyphs are cached.
 	for (auto it = Rml::StringIteratorU8(string); it; ++it)
 		_ensure_glyph(face, static_cast<uint32_t>(*it));
 
 	// Phase 2: pre-compute positions and ensure subpixel-shifted variants.
-	struct GlyphEntry { uint32_t composite_key; float kern_adj; float advance; };
+	struct GlyphEntry { uint32_t composite_key; uint32_t codepoint; float kern_adj; float advance; float cursor_x; };
 	std::vector<GlyphEntry> entries;
+	float total_width = 0;
 	{
 		float cursor_x = 0;
 		float adv_rem_pre = 0;
@@ -318,7 +475,7 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 
 			_ensure_glyph_index(face, composite);
 
-			entries.push_back({key, kern_adj, base.advance});
+			entries.push_back({key, cp, kern_adj, base.advance, cursor_x});
 
 			float raw = kern_adj + base.advance + text_shaping_context.letter_spacing;
 			if (integer_advance) {
@@ -331,79 +488,183 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 			}
 			prev_cp = cp;
 		}
+		total_width = cursor_x;
 	}
 
-	// Phase 3: rebuild atlas textures (now includes all subpixel variants).
+	// Phase 3: rebuild base atlas textures.
 	_rebuild_dirty_atlases(face);
 
-	// Phase 4: collect unique texture pages from the variants we'll actually use.
-	std::set<int> used_pages;
-	for (auto& e : entries) {
-		auto it = face.glyph_index_cache.find(e.composite_key);
-		if (it != face.glyph_index_cache.end() && it->second.has_geometry)
-			used_pages.insert(it->second.texture_page);
-	}
+	// Resolve layer configuration.
+	const std::vector<int>* config = nullptr;
+	if (font_effects_handle > 0 &&
+		static_cast<size_t>(font_effects_handle) < face.layer_configs.size())
+		config = &face.layer_configs[static_cast<size_t>(font_effects_handle)];
 
-	if (used_pages.empty()) {
-		float width = 0;
+	// Default: base-only
+	std::vector<int> base_only = {-1};
+	if (!config) config = &base_only;
+
+	// Phase 4: ensure effect glyphs for unique-texture layers.
+	for (int layer_idx : *config) {
+		if (layer_idx < 0) continue;
+		auto& layer = *face.effect_layers[layer_idx];
+		if (layer.uses_base_textures) continue;
 		for (auto& e : entries)
-			width += e.kern_adj + e.advance + text_shaping_context.letter_spacing;
-		return Rml::Math::Max(static_cast<int>(width), 0);
+			_ensure_effect_glyph(face, layer, e.codepoint);
+		_rebuild_effect_atlases(layer);
 	}
 
-	// Phase 5: assign mesh_list entries.
-	mesh_list.resize(static_cast<int>(used_pages.size()));
-	std::unordered_map<int, int> page_to_mesh;
-	int mesh_idx = 0;
-	for (int page : used_pages) {
-		page_to_mesh[page] = mesh_idx;
-		auto tex_it = face.atlas_textures.find(page);
-		if (tex_it != face.atlas_textures.end() && tex_it->second)
-			mesh_list[mesh_idx].texture = tex_it->second->GetTexture(render_manager);
-		mesh_idx++;
-	}
-	if (!mesh_list.empty()) {
-		mesh_list[0].mesh.vertices.reserve(entries.size() * 4);
-		mesh_list[0].mesh.indices.reserve(entries.size() * 6);
-	}
+	// --- Compositing: mode-specific position snap + UV padding ---
+	const auto mode = (_text_render_mode == TextRenderMode::DEFAULT)
+		? TextRenderMode::SUBPIX_OFFSET : _text_render_mode;
+	const bool snap_x = _pixel_snap || integer_advance;
 
-	// Phase 6: generate geometry using subpixel-shifted glyph data.
-	float cursor_x = 0;
-	float adv_rem = 0;
-	for (auto& e : entries) {
-		// Look up the shifted variant; fall back to glyph_index_cache base entry.
-		const GlyphData* gd = nullptr;
-		auto it = face.glyph_index_cache.find(e.composite_key);
-		if (it != face.glyph_index_cache.end()) gd = &it->second;
+	// Position snap: isolates mode-specific glyph placement.
+	// pen_x/y_off = pen offset from string origin (before glyph visual offset).
+	// origin_x/y  = glyph visual offset from baseline.
+	auto snap_pos = [&](float pen_x, float y_off, float origin_x, float origin_y) -> Rml::Vector2f {
+		if (mode == TextRenderMode::SUBPIX_OFFSET) {
+			float px = position.x + pen_x;
+			float py = position.y + y_off;
+			if (subpx_mode >= 3)     px += 0.125f; // ONE_QUARTER bias
+			else if (subpx_mode == 2) px += 0.25f;  // ONE_HALF bias
+			return {std::floor(px) + origin_x, std::floor(py) + origin_y};
+		}
+		// RMLUI_NATIVE
+		float gx = position.x + pen_x + origin_x;
+		float gy = Rml::Math::RoundDown(position.y + y_off + origin_y);
+		if (subpx_mode == 0 && snap_x) gx = std::round(gx);
+		return {gx, gy};
+	};
 
-		if (gd && gd->has_geometry) {
-			auto pit = page_to_mesh.find(gd->texture_page);
-			if (pit != page_to_mesh.end()) {
-				int mi = pit->second;
-				float gx = position.x + cursor_x + e.kern_adj + gd->origin.x;
-				float gy = position.y + gd->origin.y;
-				if (_pixel_snap || integer_advance) {
-					gx = Rml::Math::RoundDown(gx);
-					gy = Rml::Math::RoundDown(gy);
-				}
-				Rml::MeshUtilities::GenerateQuad(
-					mesh_list[mi].mesh, Rml::Vector2f(gx, gy), gd->dimensions,
-					colour, gd->uv_min, gd->uv_max);
+	// UV padding: shrink by half-texel to prevent bilinear bleed between
+	// adjacent glyphs in the atlas. Only active in SUBPIX_OFFSET mode.
+	auto pad_uv = [&](Rml::Vector2f uv0, Rml::Vector2f uv1, float tw, float th) {
+		if (mode == TextRenderMode::SUBPIX_OFFSET && tw > 0 && th > 0) {
+			float hx = 0.5f / tw, hy = 0.5f / th;
+			uv0.x += hx; uv0.y += hy;
+			uv1.x -= hx; uv1.y -= hy;
+		}
+		return std::pair{uv0, uv1};
+	};
+
+	// Phase 5+6: generate mesh_list per layer.
+	mesh_list.clear();
+	int mesh_offset = 0;
+
+	for (int layer_idx : *config) {
+		bool is_base = (layer_idx == -1);
+		EffectLayer* elayer = (!is_base && layer_idx >= 0 &&
+			static_cast<size_t>(layer_idx) < face.effect_layers.size())
+			? face.effect_layers[layer_idx].get() : nullptr;
+		bool is_shadow = (elayer && elayer->uses_base_textures);
+		bool is_unique = (elayer && !elayer->uses_base_textures);
+
+		Rml::ColourbPremultiplied layer_colour = colour;
+		if (elayer)
+			layer_colour = elayer->effect->GetColour().ToPremultiplied(opacity);
+
+		if (is_base || is_shadow) {
+			std::set<int> used_pages;
+			for (auto& e : entries) {
+				auto it = face.glyph_index_cache.find(e.composite_key);
+				if (it != face.glyph_index_cache.end() && it->second.has_geometry)
+					used_pages.insert(it->second.texture_page);
 			}
-		}
+			if (used_pages.empty()) continue;
 
-		float raw = e.kern_adj + e.advance + text_shaping_context.letter_spacing;
-		if (integer_advance) {
-			raw += adv_rem;
-			float rounded = Rml::Math::Round(raw);
-			adv_rem = raw - rounded;
-			cursor_x += rounded;
-		} else {
-			cursor_x += raw;
+			int layer_start = mesh_offset;
+			int layer_count = static_cast<int>(used_pages.size());
+			mesh_list.resize(mesh_offset + layer_count);
+
+			std::unordered_map<int, int> page_to_mesh;
+			int mi = 0;
+			for (int page : used_pages) {
+				page_to_mesh[page] = layer_start + mi;
+				auto tex_it = face.atlas_textures.find(page);
+				if (tex_it != face.atlas_textures.end() && tex_it->second)
+					mesh_list[layer_start + mi].texture = tex_it->second->GetTexture(render_manager);
+				mi++;
+			}
+			mesh_list[layer_start].mesh.vertices.reserve(entries.size() * 4);
+			mesh_list[layer_start].mesh.indices.reserve(entries.size() * 6);
+
+			Rml::FontGlyph dummy_fg;
+			dummy_fg.color_format = Rml::ColorFormat::A8;
+			dummy_fg.bitmap_dimensions = Rml::Vector2i(1, 1);
+
+			for (auto& e : entries) {
+				const GlyphData* gd = nullptr;
+				auto it = face.glyph_index_cache.find(e.composite_key);
+				if (it != face.glyph_index_cache.end()) gd = &it->second;
+				if (!gd || !gd->has_geometry) continue;
+
+				auto pit = page_to_mesh.find(gd->texture_page);
+				if (pit == page_to_mesh.end()) continue;
+
+				auto pos = snap_pos(e.cursor_x + e.kern_adj, 0, gd->origin.x, gd->origin.y);
+
+				if (is_shadow) {
+					Rml::Vector2i eo(0, 0);
+					Rml::Vector2i ed(static_cast<int>(gd->dimensions.x), static_cast<int>(gd->dimensions.y));
+					if (!elayer->effect->GetGlyphMetrics(eo, ed, dummy_fg))
+						continue;
+					pos.x += static_cast<float>(eo.x);
+					pos.y += static_cast<float>(eo.y);
+				}
+
+				auto [uv0, uv1] = pad_uv(gd->uv_min, gd->uv_max, gd->tex_w, gd->tex_h);
+				Rml::MeshUtilities::GenerateQuad(
+					mesh_list[pit->second].mesh, pos, gd->dimensions,
+					layer_colour, uv0, uv1);
+			}
+			mesh_offset += layer_count;
+
+		} else if (is_unique) {
+			std::set<int> used_pages;
+			for (auto& e : entries) {
+				auto eg_it = elayer->glyph_cache.find(e.codepoint);
+				if (eg_it != elayer->glyph_cache.end() && eg_it->second.has_geometry)
+					used_pages.insert(eg_it->second.atlas_page);
+			}
+			if (used_pages.empty()) continue;
+
+			int layer_start = mesh_offset;
+			int layer_count = static_cast<int>(used_pages.size());
+			mesh_list.resize(mesh_offset + layer_count);
+
+			std::unordered_map<int, int> page_to_mesh;
+			int mi = 0;
+			for (int page : used_pages) {
+				page_to_mesh[page] = layer_start + mi;
+				auto tex_it = elayer->atlas_textures.find(page);
+				if (tex_it != elayer->atlas_textures.end() && tex_it->second)
+					mesh_list[layer_start + mi].texture = tex_it->second->GetTexture(render_manager);
+				mi++;
+			}
+			mesh_list[layer_start].mesh.vertices.reserve(entries.size() * 4);
+			mesh_list[layer_start].mesh.indices.reserve(entries.size() * 6);
+
+			for (auto& e : entries) {
+				auto eg_it = elayer->glyph_cache.find(e.codepoint);
+				if (eg_it == elayer->glyph_cache.end() || !eg_it->second.has_geometry) continue;
+				const auto& eg = eg_it->second;
+
+				auto pit = page_to_mesh.find(eg.atlas_page);
+				if (pit == page_to_mesh.end()) continue;
+
+				auto pos = snap_pos(e.cursor_x + e.kern_adj, 0, eg.origin.x, eg.origin.y);
+				constexpr float eff_atlas = static_cast<float>(EffectAtlasPage::SIZE);
+				auto [uv0, uv1] = pad_uv(eg.uv_min, eg.uv_max, eff_atlas, eff_atlas);
+				Rml::MeshUtilities::GenerateQuad(
+					mesh_list[pit->second].mesh, pos, eg.dimensions,
+					layer_colour, uv0, uv1);
+			}
+			mesh_offset += layer_count;
 		}
 	}
 
-	return Rml::Math::Max(static_cast<int>(cursor_x), 0);
+	return Rml::Math::Max(static_cast<int>(total_width), 0);
 }
 
 // Lay out + emit geometry using Godot's TextServer shaped-text pipeline. Glyph
@@ -412,6 +673,7 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 // oversampled atlas as the other modes (cached by glyph index).
 int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, FontFace& face,
 	Rml::StringView string, Rml::Vector2f position, Rml::ColourbPremultiplied colour,
+	float opacity, Rml::FontEffectsHandle font_effects_handle,
 	const Rml::TextShapingContext& text_shaping_context, Rml::TexturedMeshList& mesh_list) {
 
 	godot::Ref<godot::TextServer> ts = get_text_server();
@@ -426,90 +688,215 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 	godot::Array glyphs = ts->shaped_text_get_glyphs(shaped);
 	const int glyph_count = static_cast<int>(glyphs.size());
 
-	// Phase 1: ensure base glyph indices are rasterized (triggers font_render_glyph
-	// which pre-renders all subpixel variants).
+	const godot::RID primary_rid = (face.loaded_font_index >= 0 &&
+		face.loaded_font_index < static_cast<int>(_loaded_fonts.size()))
+		? _loaded_fonts[face.loaded_font_index].font_rid : godot::RID();
+
+	// Phase 1: ensure base glyph indices are rasterized (with correct font RID).
 	for (int i = 0; i < glyph_count; i++) {
 		godot::Dictionary g = glyphs[i];
-		_ensure_glyph_index(face, static_cast<int64_t>(g["index"]));
+		godot::RID glyph_font = g["font_rid"];
+		if (!glyph_font.is_valid()) continue;
+		_ensure_glyph_index(face, static_cast<int64_t>(g["index"]), glyph_font);
 	}
 
 	// Phase 2: pre-compute positions and ensure subpixel-shifted variants.
-	struct ShapedEntry { uint32_t composite_key; float x_off; float y_off; float advance; };
+	struct ShapedEntry { uint32_t composite_key; int64_t base_idx; godot::RID glyph_font; float x_off; float y_off; float advance; float pen_x; };
 	std::vector<ShapedEntry> entries;
 	entries.reserve(glyph_count);
+	float total_width = 0;
 	{
-		float pen_x = position.x;
+		float pen_x = 0;
 		for (int i = 0; i < glyph_count; i++) {
 			godot::Dictionary g = glyphs[i];
 			float x_off = static_cast<float>(static_cast<double>(g["x_off"])) / os;
 			float y_off = static_cast<float>(static_cast<double>(g["y_off"])) / os;
 			float advance = static_cast<float>(static_cast<double>(g["advance"])) / os;
 			int64_t base_idx = static_cast<int64_t>(g["index"]);
+			godot::RID glyph_font = g["font_rid"];
 
-			int shift = _compute_subpixel_shift(subpx_mode, pen_x + x_off);
+			if (!glyph_font.is_valid()) { pen_x += advance; continue; }
+
+			bool is_fallback = (glyph_font != primary_rid);
+			int shift = _compute_subpixel_shift(subpx_mode, position.x + pen_x + x_off);
 			int64_t composite = base_idx | (static_cast<int64_t>(shift) << 27);
-			_ensure_glyph_index(face, composite);
+			if (is_fallback) composite |= (1LL << 29);
+			_ensure_glyph_index(face, composite, glyph_font);
 
-			entries.push_back({static_cast<uint32_t>(composite), x_off, y_off, advance});
+			entries.push_back({static_cast<uint32_t>(composite), base_idx, glyph_font, x_off, y_off, advance, pen_x});
 			pen_x += advance + text_shaping_context.letter_spacing;
 		}
+		total_width = pen_x;
 	}
 
-	// Phase 3: rebuild atlas (includes all subpixel variants).
+	// Phase 3: rebuild atlas.
 	_rebuild_dirty_atlases(face);
 
-	// Phase 4: collect unique texture pages.
-	std::set<int> used_pages;
-	for (auto& e : entries) {
-		auto it = face.glyph_index_cache.find(e.composite_key);
-		if (it != face.glyph_index_cache.end() && it->second.has_geometry)
-			used_pages.insert(it->second.texture_page);
+	// Resolve layer configuration.
+	const std::vector<int>* config = nullptr;
+	if (font_effects_handle > 0 &&
+		static_cast<size_t>(font_effects_handle) < face.layer_configs.size())
+		config = &face.layer_configs[static_cast<size_t>(font_effects_handle)];
+
+	std::vector<int> base_only = {-1};
+	if (!config) config = &base_only;
+
+	// Phase 4: ensure effect glyphs for unique-texture layers.
+	for (int layer_idx : *config) {
+		if (layer_idx < 0) continue;
+		auto& layer = *face.effect_layers[layer_idx];
+		if (layer.uses_base_textures) continue;
+		for (auto& e : entries)
+			_ensure_effect_glyph_index(face, layer, e.base_idx);
+		_rebuild_effect_atlases(layer);
 	}
 
-	if (used_pages.empty()) {
-		float total = 0;
-		for (auto& e : entries) total += e.advance + text_shaping_context.letter_spacing;
-		ts->free_rid(shaped);
-		return Rml::Math::Max(static_cast<int>(total), 0);
-	}
+	// --- Compositing: mode-specific position snap + UV padding ---
+	const auto mode = (_text_render_mode == TextRenderMode::DEFAULT)
+		? TextRenderMode::SUBPIX_OFFSET : _text_render_mode;
 
-	// Phase 5: assign mesh_list entries per page.
-	mesh_list.resize(static_cast<int>(used_pages.size()));
-	std::unordered_map<int, int> page_to_mesh;
-	int mesh_idx = 0;
-	for (int page : used_pages) {
-		page_to_mesh[page] = mesh_idx;
-		auto tex_it = face.atlas_textures.find(page);
-		if (tex_it != face.atlas_textures.end() && tex_it->second)
-			mesh_list[mesh_idx].texture = tex_it->second->GetTexture(render_manager);
-		mesh_idx++;
-	}
-	mesh_list[0].mesh.vertices.reserve(glyph_count * 4);
-	mesh_list[0].mesh.indices.reserve(glyph_count * 6);
-
-	// Phase 6: emit quads using subpixel-shifted glyph data.
-	float pen_x = position.x;
-	for (auto& e : entries) {
-		auto it = face.glyph_index_cache.find(e.composite_key);
-		if (it != face.glyph_index_cache.end() && it->second.has_geometry) {
-			const GlyphData& gd = it->second;
-			int mi = page_to_mesh[gd.texture_page];
-			float gx = pen_x + e.x_off + gd.origin.x;
-			float gy = position.y + e.y_off + gd.origin.y;
-			if (_pixel_snap) {
-				gx = Rml::Math::RoundDown(gx);
-				gy = Rml::Math::RoundDown(gy);
-			}
-			Rml::MeshUtilities::GenerateQuad(
-				mesh_list[mi].mesh, Rml::Vector2f(gx, gy), gd.dimensions,
-				colour, gd.uv_min, gd.uv_max);
+	auto snap_pos = [&](float pen_x, float y_off, float origin_x, float origin_y) -> Rml::Vector2f {
+		if (mode == TextRenderMode::SUBPIX_OFFSET) {
+			float px = position.x + pen_x;
+			float py = position.y + y_off;
+			if (subpx_mode >= 3)     px += 0.125f;
+			else if (subpx_mode == 2) px += 0.25f;
+			return {std::floor(px) + origin_x, std::floor(py) + origin_y};
 		}
+		float gx = position.x + pen_x + origin_x;
+		float gy = Rml::Math::RoundDown(position.y + y_off + origin_y);
+		if (subpx_mode == 0 && _pixel_snap) gx = std::round(gx);
+		return {gx, gy};
+	};
 
-		pen_x += e.advance + text_shaping_context.letter_spacing;
+	auto pad_uv = [&](Rml::Vector2f uv0, Rml::Vector2f uv1, float tw, float th) {
+		if (mode == TextRenderMode::SUBPIX_OFFSET && tw > 0 && th > 0) {
+			float hx = 0.5f / tw, hy = 0.5f / th;
+			uv0.x += hx; uv0.y += hy;
+			uv1.x -= hx; uv1.y -= hy;
+		}
+		return std::pair{uv0, uv1};
+	};
+
+	// Phase 5+6: generate mesh_list per layer.
+	mesh_list.clear();
+	int mesh_offset = 0;
+
+	for (int layer_idx : *config) {
+		bool is_base = (layer_idx == -1);
+		EffectLayer* elayer = (!is_base && layer_idx >= 0 &&
+			static_cast<size_t>(layer_idx) < face.effect_layers.size())
+			? face.effect_layers[layer_idx].get() : nullptr;
+		bool is_shadow = (elayer && elayer->uses_base_textures);
+		bool is_unique = (elayer && !elayer->uses_base_textures);
+
+		Rml::ColourbPremultiplied layer_colour = colour;
+		if (elayer)
+			layer_colour = elayer->effect->GetColour().ToPremultiplied(opacity);
+
+		if (is_base || is_shadow) {
+			std::set<int> used_pages;
+			for (auto& e : entries) {
+				auto it = face.glyph_index_cache.find(e.composite_key);
+				if (it != face.glyph_index_cache.end() && it->second.has_geometry)
+					used_pages.insert(it->second.texture_page);
+			}
+			if (used_pages.empty()) continue;
+
+			int layer_start = mesh_offset;
+			int layer_count = static_cast<int>(used_pages.size());
+			mesh_list.resize(mesh_offset + layer_count);
+
+			std::unordered_map<int, int> page_to_mesh;
+			int mi = 0;
+			for (int page : used_pages) {
+				page_to_mesh[page] = layer_start + mi;
+				auto tex_it = face.atlas_textures.find(page);
+				if (tex_it != face.atlas_textures.end() && tex_it->second)
+					mesh_list[layer_start + mi].texture = tex_it->second->GetTexture(render_manager);
+				mi++;
+			}
+			mesh_list[layer_start].mesh.vertices.reserve(glyph_count * 4);
+			mesh_list[layer_start].mesh.indices.reserve(glyph_count * 6);
+
+			Rml::FontGlyph dummy_fg;
+			dummy_fg.color_format = Rml::ColorFormat::A8;
+			dummy_fg.bitmap_dimensions = Rml::Vector2i(1, 1);
+
+			for (auto& e : entries) {
+				auto it = face.glyph_index_cache.find(e.composite_key);
+				if (it == face.glyph_index_cache.end() || !it->second.has_geometry) continue;
+				const GlyphData& gd = it->second;
+
+				auto pit = page_to_mesh.find(gd.texture_page);
+				if (pit == page_to_mesh.end()) continue;
+
+				auto pos = snap_pos(e.pen_x + e.x_off, e.y_off, gd.origin.x, gd.origin.y);
+
+				if (is_shadow) {
+					Rml::Vector2i eo(0, 0);
+					Rml::Vector2i ed(static_cast<int>(gd.dimensions.x), static_cast<int>(gd.dimensions.y));
+					if (!elayer->effect->GetGlyphMetrics(eo, ed, dummy_fg))
+						continue;
+					pos.x += static_cast<float>(eo.x);
+					pos.y += static_cast<float>(eo.y);
+				}
+
+				auto [uv0, uv1] = pad_uv(gd.uv_min, gd.uv_max, gd.tex_w, gd.tex_h);
+				Rml::MeshUtilities::GenerateQuad(
+					mesh_list[pit->second].mesh, pos, gd.dimensions,
+					layer_colour, uv0, uv1);
+			}
+			mesh_offset += layer_count;
+
+		} else if (is_unique) {
+			std::set<int> used_pages;
+			for (auto& e : entries) {
+				uint32_t key = static_cast<uint32_t>(e.base_idx);
+				auto eg_it = elayer->glyph_index_cache.find(key);
+				if (eg_it != elayer->glyph_index_cache.end() && eg_it->second.has_geometry)
+					used_pages.insert(eg_it->second.atlas_page);
+			}
+			if (used_pages.empty()) continue;
+
+			int layer_start = mesh_offset;
+			int layer_count = static_cast<int>(used_pages.size());
+			mesh_list.resize(mesh_offset + layer_count);
+
+			std::unordered_map<int, int> page_to_mesh;
+			int mi = 0;
+			for (int page : used_pages) {
+				page_to_mesh[page] = layer_start + mi;
+				auto tex_it = elayer->atlas_textures.find(page);
+				if (tex_it != elayer->atlas_textures.end() && tex_it->second)
+					mesh_list[layer_start + mi].texture = tex_it->second->GetTexture(render_manager);
+				mi++;
+			}
+			mesh_list[layer_start].mesh.vertices.reserve(glyph_count * 4);
+			mesh_list[layer_start].mesh.indices.reserve(glyph_count * 6);
+
+			for (auto& e : entries) {
+				uint32_t key = static_cast<uint32_t>(e.base_idx);
+				auto eg_it = elayer->glyph_index_cache.find(key);
+				if (eg_it == elayer->glyph_index_cache.end() || !eg_it->second.has_geometry) continue;
+				const auto& eg = eg_it->second;
+
+				auto pit = page_to_mesh.find(eg.atlas_page);
+				if (pit == page_to_mesh.end()) continue;
+
+				auto pos = snap_pos(e.pen_x + e.x_off, e.y_off, eg.origin.x, eg.origin.y);
+				constexpr float eff_atlas = static_cast<float>(EffectAtlasPage::SIZE);
+				auto [uv0, uv1] = pad_uv(eg.uv_min, eg.uv_max, eff_atlas, eff_atlas);
+				Rml::MeshUtilities::GenerateQuad(
+					mesh_list[pit->second].mesh, pos, eg.dimensions,
+					layer_colour, uv0, uv1);
+			}
+			mesh_offset += layer_count;
+		}
 	}
 
 	ts->free_rid(shaped);
-	return Rml::Math::Max(static_cast<int>(pen_x - position.x), 0);
+	return Rml::Math::Max(static_cast<int>(total_width), 0);
 }
 
 int GodotFontInterface::GetVersion(Rml::FontFaceHandle handle) {
@@ -525,35 +912,50 @@ int GodotFontInterface::GetVersion(Rml::FontFaceHandle handle) {
 // unchanged but the quad is textured with a higher-res glyph (minified on draw
 // → crisp + bright, matching Godot's Label).
 GodotFontInterface::GlyphData GodotFontInterface::_build_glyph_data(FontFace& face, int64_t glyph_index) {
+	if (face.loaded_font_index < 0 || face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return GlyphData{};
+	return _build_glyph_data(face, glyph_index, _loaded_fonts[face.loaded_font_index].font_rid);
+}
+
+GodotFontInterface::GlyphData GodotFontInterface::_build_glyph_data(FontFace& face, int64_t glyph_index, godot::RID font_rid) {
 	GlyphData glyph;
 	godot::Ref<godot::TextServer> ts = get_text_server();
-	if (ts.is_null() || face.loaded_font_index < 0 ||
-		face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+	if (ts.is_null() || !font_rid.is_valid())
 		return glyph;
 
-	const auto& font = _loaded_fonts[face.loaded_font_index];
+	const godot::RID primary_rid = (face.loaded_font_index >= 0 &&
+		face.loaded_font_index < static_cast<int>(_loaded_fonts.size()))
+		? _loaded_fonts[face.loaded_font_index].font_rid : godot::RID();
+	const bool is_fallback = font_rid != primary_rid;
+
 	const float os = _oversample_factor();
 	const int rsize = _render_size(face.size);
 	godot::Vector2i size_v(rsize, 0);
 
-	glyph.advance = static_cast<float>(ts->font_get_glyph_advance(font.font_rid, rsize, glyph_index).x) / os;
+	glyph.advance = static_cast<float>(ts->font_get_glyph_advance(font_rid, rsize, glyph_index).x) / os;
 
-	godot::Vector2 glyph_size = ts->font_get_glyph_size(font.font_rid, size_v, glyph_index);
+	godot::Vector2 glyph_size = ts->font_get_glyph_size(font_rid, size_v, glyph_index);
 	if (glyph_size.x < 1 || glyph_size.y < 1) {
 		glyph.has_geometry = false;
 		return glyph;
 	}
 
-	ts->font_render_glyph(font.font_rid, size_v, glyph_index);
+	ts->font_render_glyph(font_rid, size_v, glyph_index);
 
-	godot::Vector2 offset = ts->font_get_glyph_offset(font.font_rid, size_v, glyph_index);
-	godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(font.font_rid, size_v, glyph_index);
-	godot::Vector2 tex_size = ts->font_get_glyph_texture_size(font.font_rid, size_v, glyph_index);
-	int64_t tex_idx = ts->font_get_glyph_texture_idx(font.font_rid, size_v, glyph_index);
+	godot::Vector2 offset = ts->font_get_glyph_offset(font_rid, size_v, glyph_index);
+	godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(font_rid, size_v, glyph_index);
+	godot::Vector2 tex_size = ts->font_get_glyph_texture_size(font_rid, size_v, glyph_index);
+	int64_t tex_idx = ts->font_get_glyph_texture_idx(font_rid, size_v, glyph_index);
 
-	glyph.texture_page = static_cast<int>(tex_idx);
+	int page = static_cast<int>(tex_idx);
+	if (is_fallback) page += FALLBACK_PAGE_OFFSET;
+
+	glyph.texture_page = page;
+	glyph.font_rid = font_rid;
 	glyph.origin = Rml::Vector2f(static_cast<float>(offset.x) / os, static_cast<float>(offset.y) / os);
 	glyph.dimensions = Rml::Vector2f(static_cast<float>(glyph_size.x) / os, static_cast<float>(glyph_size.y) / os);
+	glyph.tex_w = static_cast<float>(tex_size.x);
+	glyph.tex_h = static_cast<float>(tex_size.y);
 	glyph.has_geometry = true;
 
 	if (tex_size.x > 0 && tex_size.y > 0) {
@@ -563,7 +965,8 @@ GodotFontInterface::GlyphData GodotFontInterface::_build_glyph_data(FontFace& fa
 		glyph.uv_max.y = static_cast<float>((uv_rect.position.y + uv_rect.size.y) / tex_size.y);
 	}
 
-	face.dirty_pages.insert(glyph.texture_page);
+	face.dirty_pages.insert(page);
+	face.page_font_rid[page] = font_rid;
 	return glyph;
 }
 
@@ -596,6 +999,24 @@ const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph_index(Fon
 	return inserted->second;
 }
 
+const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph_index(FontFace& face, int64_t glyph_index, godot::RID font_rid) {
+	const godot::RID primary_rid = (face.loaded_font_index >= 0 &&
+		face.loaded_font_index < static_cast<int>(_loaded_fonts.size()))
+		? _loaded_fonts[face.loaded_font_index].font_rid : godot::RID();
+	const bool is_fallback = font_rid != primary_rid;
+
+	int64_t keyed = glyph_index;
+	if (is_fallback) keyed |= (1LL << 29);
+	uint32_t key = static_cast<uint32_t>(keyed);
+
+	auto it = face.glyph_index_cache.find(key);
+	if (it != face.glyph_index_cache.end())
+		return it->second;
+	GlyphData glyph = _build_glyph_data(face, glyph_index, font_rid);
+	auto [inserted, _] = face.glyph_index_cache.emplace(key, glyph);
+	return inserted->second;
+}
+
 godot::RID GodotFontInterface::_shape_string(const FontFace& face, Rml::StringView string) const {
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	if (ts.is_null() || face.loaded_font_index < 0 ||
@@ -616,29 +1037,216 @@ godot::RID GodotFontInterface::_shape_string(const FontFace& face, Rml::StringVi
 	return shaped;
 }
 
+// --- Private: effect atlas ---
+
+std::pair<int, int> GodotFontInterface::EffectAtlasPage::place(int w, int h, const uint8_t* rgba) {
+	if (w <= 0 || h <= 0) return {-1, -1};
+	if (cursor_x + w + 1 > SIZE) {
+		cursor_y += row_height + 1;
+		cursor_x = 1;
+		row_height = 0;
+	}
+	if (cursor_y + h + 1 > SIZE)
+		return {-1, -1};
+
+	int x = cursor_x;
+	int y = cursor_y;
+	for (int row = 0; row < h; row++)
+		memcpy(&pixels[((y + row) * SIZE + x) * 4], &rgba[row * w * 4], w * 4);
+	cursor_x += w + 1;
+	if (h > row_height) row_height = h;
+	return {x, y};
+}
+
+std::vector<uint8_t> GodotFontInterface::_extract_glyph_alpha(const FontFace& face, int64_t glyph_index) const {
+	if (face.loaded_font_index < 0 || face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return {};
+	const auto& font = _loaded_fonts[face.loaded_font_index];
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	if (ts.is_null()) return {};
+
+	const int rsize = _render_size(face.size);
+	godot::Vector2i size_v(rsize, 0);
+
+	ts->font_render_glyph(font.font_rid, size_v, glyph_index);
+
+	godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(font.font_rid, size_v, glyph_index);
+	int64_t tex_idx = ts->font_get_glyph_texture_idx(font.font_rid, size_v, glyph_index);
+	if (tex_idx < 0)
+		return {};
+
+	godot::Ref<godot::Image> atlas = ts->font_get_texture_image(font.font_rid, size_v, static_cast<int>(tex_idx));
+	if (!atlas.is_valid() || atlas->is_empty())
+		return {};
+
+	int gw = static_cast<int>(uv_rect.size.x);
+	int gh = static_cast<int>(uv_rect.size.y);
+	if (gw <= 0 || gh <= 0)
+		return {};
+
+	int sx = static_cast<int>(uv_rect.position.x);
+	int sy = static_cast<int>(uv_rect.position.y);
+	int atlas_w = atlas->get_width();
+	int atlas_h = atlas->get_height();
+	auto format = atlas->get_format();
+
+	godot::PackedByteArray src = atlas->get_data();
+	const uint8_t* sp = src.ptr();
+
+	std::vector<uint8_t> alpha(gw * gh, 0);
+	for (int y = 0; y < gh; y++) {
+		for (int x = 0; x < gw; x++) {
+			int ax = sx + x;
+			int ay = sy + y;
+			if (ax < 0 || ax >= atlas_w || ay < 0 || ay >= atlas_h) continue;
+			int pixel = ay * atlas_w + ax;
+			uint8_t a = 0;
+			if (format == godot::Image::FORMAT_L8)
+				a = sp[pixel];
+			else if (format == godot::Image::FORMAT_LA8)
+				a = sp[pixel * 2 + 1];
+			else if (format == godot::Image::FORMAT_RGBA8)
+				a = sp[pixel * 4 + 3];
+			alpha[y * gw + x] = a;
+		}
+	}
+	return alpha;
+}
+
+GodotFontInterface::EffectGlyph GodotFontInterface::_build_effect_glyph(
+	FontFace& face, EffectLayer& layer, int64_t glyph_index) {
+
+	EffectGlyph eg;
+	if (!layer.effect || layer.uses_base_textures) return eg;
+
+	const auto& font = _loaded_fonts[face.loaded_font_index];
+	godot::Ref<godot::TextServer> ts = get_text_server();
+	const int rsize = _render_size(face.size);
+	godot::Vector2i size_v(rsize, 0);
+
+	std::vector<uint8_t> alpha = _extract_glyph_alpha(face, glyph_index);
+	if (alpha.empty()) return eg;
+
+	godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(font.font_rid, size_v, glyph_index);
+	int bw = static_cast<int>(uv_rect.size.x);
+	int bh = static_cast<int>(uv_rect.size.y);
+	if (bw <= 0 || bh <= 0) return eg;
+
+	godot::Vector2 offset = ts->font_get_glyph_offset(font.font_rid, size_v, glyph_index);
+	float os = _oversample_factor();
+
+	Rml::FontGlyph fg;
+	fg.bearing = Rml::Vector2i(static_cast<int>(offset.x), static_cast<int>(-offset.y));
+	fg.advance = static_cast<int>(ts->font_get_glyph_advance(font.font_rid, rsize, glyph_index).x);
+	fg.bitmap_data = alpha.data();
+	fg.bitmap_dimensions = Rml::Vector2i(bw, bh);
+	fg.color_format = Rml::ColorFormat::A8;
+
+	Rml::Vector2i effect_origin(0, 0);
+	Rml::Vector2i effect_dims = fg.bitmap_dimensions;
+	if (!layer.effect->GetGlyphMetrics(effect_origin, effect_dims, fg))
+		return eg;
+
+	if (effect_dims.x <= 0 || effect_dims.y <= 0) return eg;
+
+	std::vector<uint8_t> effect_rgba(effect_dims.x * effect_dims.y * 4, 0);
+	int stride = effect_dims.x * 4;
+	layer.effect->GenerateGlyphTexture(effect_rgba.data(), effect_dims, stride, fg);
+
+	if (layer.atlas_pages.empty())
+		layer.atlas_pages.emplace_back();
+
+	int page_idx = static_cast<int>(layer.atlas_pages.size()) - 1;
+	auto [px, py] = layer.atlas_pages[page_idx].place(effect_dims.x, effect_dims.y, effect_rgba.data());
+	if (px < 0) {
+		layer.atlas_pages.emplace_back();
+		page_idx++;
+		auto [px2, py2] = layer.atlas_pages[page_idx].place(effect_dims.x, effect_dims.y, effect_rgba.data());
+		px = px2; py = py2;
+	}
+	if (px < 0) return eg;
+
+	const auto& page = layer.atlas_pages[page_idx];
+	eg.atlas_page = page_idx;
+	eg.has_geometry = true;
+	eg.uv_min.x = static_cast<float>(px) / static_cast<float>(EffectAtlasPage::SIZE);
+	eg.uv_min.y = static_cast<float>(py) / static_cast<float>(EffectAtlasPage::SIZE);
+	eg.uv_max.x = static_cast<float>(px + effect_dims.x) / static_cast<float>(EffectAtlasPage::SIZE);
+	eg.uv_max.y = static_cast<float>(py + effect_dims.y) / static_cast<float>(EffectAtlasPage::SIZE);
+
+	eg.origin.x = static_cast<float>(effect_origin.x + fg.bearing.x) / os;
+	eg.origin.y = static_cast<float>(effect_origin.y - fg.bearing.y) / os;
+	eg.dimensions.x = static_cast<float>(effect_dims.x) / os;
+	eg.dimensions.y = static_cast<float>(effect_dims.y) / os;
+
+	layer.dirty_pages.insert(page_idx);
+	return eg;
+}
+
+void GodotFontInterface::_ensure_effect_glyph(FontFace& face, EffectLayer& layer, uint32_t codepoint) {
+	if (layer.uses_base_textures) return;
+	if (layer.glyph_cache.count(codepoint)) return;
+
+	auto idx_it = face.codepoint_to_index.find(codepoint);
+	if (idx_it == face.codepoint_to_index.end()) {
+		layer.glyph_cache[codepoint] = EffectGlyph{};
+		return;
+	}
+	layer.glyph_cache[codepoint] = _build_effect_glyph(face, layer, idx_it->second);
+}
+
+void GodotFontInterface::_ensure_effect_glyph_index(FontFace& face, EffectLayer& layer, int64_t glyph_index) {
+	if (layer.uses_base_textures) return;
+	uint32_t key = static_cast<uint32_t>(glyph_index);
+	if (layer.glyph_index_cache.count(key)) return;
+	int64_t base_idx = glyph_index & 0x07FFFFFF;
+	layer.glyph_index_cache[key] = _build_effect_glyph(face, layer, base_idx);
+}
+
+void GodotFontInterface::_rebuild_effect_atlases(EffectLayer& layer) {
+	if (layer.dirty_pages.empty()) return;
+
+	for (int page_idx : layer.dirty_pages) {
+		if (page_idx < 0 || page_idx >= static_cast<int>(layer.atlas_pages.size()))
+			continue;
+		auto pixel_data = std::make_shared<std::vector<uint8_t>>(
+			layer.atlas_pages[page_idx].pixels);
+
+		Rml::CallbackTextureFunction callback = [pixel_data](
+			const Rml::CallbackTextureInterface& tex_interface) -> bool {
+			return tex_interface.GenerateTexture(
+				Rml::Span<const Rml::byte>(pixel_data->data(), pixel_data->size()),
+				Rml::Vector2i(EffectAtlasPage::SIZE, EffectAtlasPage::SIZE));
+		};
+		layer.atlas_textures[page_idx] = std::make_unique<Rml::CallbackTextureSource>(std::move(callback));
+	}
+	layer.dirty_pages.clear();
+}
+
 // --- Private: atlas texture rebuild ---
 
 void GodotFontInterface::_rebuild_dirty_atlases(FontFace& face) {
 	if (face.dirty_pages.empty())
 		return;
 
-	const auto& font = _loaded_fonts[face.loaded_font_index];
-	godot::RID font_rid = font.font_rid;
+	const auto& primary_font = _loaded_fonts[face.loaded_font_index];
 	// Must match the size used in _ensure_glyph so the atlas page indices and
 	// glyph UVs line up with the oversampled rasterization.
 	godot::Vector2i size_v(_render_size(face.size), 0);
 
 	for (int page : face.dirty_pages) {
-		int page_idx = page;
+		auto rid_it = face.page_font_rid.find(page);
+		godot::RID font_rid = (rid_it != face.page_font_rid.end()) ? rid_it->second : primary_font.font_rid;
+		int real_page = (page >= FALLBACK_PAGE_OFFSET) ? (page - FALLBACK_PAGE_OFFSET) : page;
 
-		Rml::CallbackTextureFunction callback = [font_rid, size_v, page_idx](
+		Rml::CallbackTextureFunction callback = [font_rid, size_v, real_page](
 			const Rml::CallbackTextureInterface& tex_interface) -> bool {
 
 			godot::Ref<godot::TextServer> ts = get_text_server();
-			godot::Ref<godot::Image> atlas = ts->font_get_texture_image(font_rid, size_v, page_idx);
+			godot::Ref<godot::Image> atlas = ts->font_get_texture_image(font_rid, size_v, real_page);
 			if (!atlas.is_valid() || atlas->is_empty()) {
 				godot::UtilityFunctions::push_warning(
-					godot::String("[RmlUi Atlas] Empty/invalid atlas for page=") + godot::String::num_int64(page_idx));
+					godot::String("[RmlUi Atlas] Empty/invalid atlas for page=") + godot::String::num_int64(real_page));
 				return false;
 			}
 
@@ -677,7 +1285,7 @@ void GodotFontInterface::_rebuild_dirty_atlases(FontFace& face) {
 				Rml::Vector2i(w, h));
 		};
 
-		face.atlas_textures[page_idx] = std::make_unique<Rml::CallbackTextureSource>(std::move(callback));
+		face.atlas_textures[page] = std::make_unique<Rml::CallbackTextureSource>(std::move(callback));
 	}
 
 	face.dirty_pages.clear();
@@ -689,6 +1297,12 @@ void GodotFontInterface::ReleaseTexturesForRenderManager(Rml::RenderManager* rm)
 		for (auto& [page, tex_source] : face->atlas_textures) {
 			if (tex_source)
 				tex_source->ReleaseForRenderManager(rm);
+		}
+		for (auto& layer : face->effect_layers) {
+			for (auto& [page, tex_source] : layer->atlas_textures) {
+				if (tex_source)
+					tex_source->ReleaseForRenderManager(rm);
+			}
 		}
 	}
 }
@@ -755,8 +1369,13 @@ void GodotFontInterface::set_font_oversampling(float oversampling) {
 void GodotFontInterface::set_pixel_snap(bool snap) {
 	if (_pixel_snap == snap) return;
 	_pixel_snap = snap;
-	// Only affects quad geometry in GenerateString; bump version so RmlUi
-	// regenerates the cached strings.
+	_invalidate_all_caches();
+}
+
+void GodotFontInterface::set_text_render_mode(int mode) {
+	auto m = static_cast<TextRenderMode>(mode);
+	if (_text_render_mode == m) return;
+	_text_render_mode = m;
 	_invalidate_all_caches();
 }
 
@@ -767,6 +1386,14 @@ void GodotFontInterface::_invalidate_all_caches() {
 		face->codepoint_to_index.clear();
 		face->atlas_textures.clear();
 		face->dirty_pages.clear();
+		face->page_font_rid.clear();
+		for (auto& layer : face->effect_layers) {
+			layer->glyph_cache.clear();
+			layer->glyph_index_cache.clear();
+			layer->atlas_pages.clear();
+			layer->atlas_textures.clear();
+			layer->dirty_pages.clear();
+		}
 		face->version++;
 	}
 }
@@ -812,27 +1439,22 @@ void GodotFontInterface::set_layout_mode(int mode) {
 		godot::String("[RmlUi Font] Layout mode: ") + godot::String(mode_names[idx]));
 }
 
-void GodotFontInterface::set_text_render_mode(TextRenderMode mode) {
-	_text_render_mode = mode;
-
-	// Map the preset onto the granular fields. Hinting/antialiasing stay at
-	// their Label-matching defaults; the presets only toggle subpixel +
-	// oversampling. Granular setters can still override afterwards.
-	bool subpixel = (mode == TextRenderMode::SUBPIXEL || mode == TextRenderMode::HIGH_QUALITY);
-	bool oversampled = (mode == TextRenderMode::OVERSAMPLED || mode == TextRenderMode::HIGH_QUALITY);
-	_subpixel = subpixel ? godot::TextServer::SUBPIXEL_POSITIONING_ONE_QUARTER
-	                     : godot::TextServer::SUBPIXEL_POSITIONING_DISABLED;
-	_oversampling = oversampled ? 2.0f : 0.0f;
-
-	for (auto& font : _loaded_fonts) {
-		if (!font.externally_owned) _apply_font_settings(font.font_rid);
+void GodotFontInterface::set_generic_family(const Rml::String& generic, const Rml::String& mapped) {
+	std::string key(to_lower(generic).c_str());
+	if (mapped.empty()) {
+		_generic_families.erase(key);
+	} else {
+		_generic_families[key] = std::string(mapped.c_str());
 	}
-	_invalidate_all_caches();
+}
 
-	const char* mode_names[] = {"Default", "Subpixel", "Oversampled", "High Quality"};
-	godot::UtilityFunctions::print(
-		godot::String("[RmlUi Font] Text render mode: ") +
-		godot::String(mode_names[static_cast<int>(mode)]));
+Rml::String GodotFontInterface::get_generic_family(const Rml::String& generic) const {
+	std::string key(to_lower(generic).c_str());
+	auto it = _generic_families.find(key);
+	if (it != _generic_families.end())
+		return Rml::String(it->second.c_str());
+	return {};
+
 }
 
 } // namespace RmlGodot

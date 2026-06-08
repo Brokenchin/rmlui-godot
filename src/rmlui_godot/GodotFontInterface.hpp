@@ -1,10 +1,14 @@
 #pragma once
 
 #include <RmlUi/Core/FontEngineInterface.h>
+#include <RmlUi/Core/FontEffect.h>
+#include <RmlUi/Core/FontGlyph.h>
 #include <RmlUi/Core/FontMetrics.h>
 #include <RmlUi/Core/CallbackTexture.h>
 
+#include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/rid.hpp>
+#include <godot_cpp/variant/vector2.hpp>
 
 #include <memory>
 #include <unordered_map>
@@ -15,13 +19,6 @@ namespace RmlGodot {
 
 class GodotFontInterface final : public Rml::FontEngineInterface {
 public:
-	enum class TextRenderMode : int {
-		DEFAULT = 0,
-		SUBPIXEL = 1,
-		OVERSAMPLED = 2,
-		HIGH_QUALITY = 3,
-	};
-
 	// How glyphs are laid out horizontally.
 	enum class LayoutMode : int {
 		// Fractional advance accumulated, each glyph floored independently when
@@ -37,11 +34,27 @@ public:
 		SHAPED = 2,
 	};
 
-	void set_text_render_mode(TextRenderMode mode);
-	TextRenderMode get_text_render_mode() const { return _text_render_mode; }
-
 	void set_layout_mode(int mode);
 	int get_layout_mode() const { return static_cast<int>(_layout_mode); }
+
+	// How glyphs are composited to the screen. Separate from LayoutMode which
+	// controls position computation; this controls the final draw method.
+	enum class TextRenderMode : int {
+		// Resolves to SUBPIX_OFFSET — the recommended production default.
+		DEFAULT = 0,
+		// Position-corrected quads + UV padding. Matches font_draw_glyph's
+		// floor-before-offset positioning. Full shader/effect/scissor support.
+		SUBPIX_OFFSET = 1,
+		// Calls font_draw_glyph / font_draw_glyph_outline per glyph. Pixel-
+		// perfect fidelity. No decorator shaders, no GPU scissor.
+		GODOT_NATIVE = 2,
+		// Original mesh pipeline: our atlas textures + GenerateQuad. Full shader
+		// and effect support. May show gaps/smushing at small sizes (<=12px).
+		RMLUI_NATIVE = 3,
+	};
+
+	void set_text_render_mode(int mode);
+	int get_text_render_mode() const { return static_cast<int>(_text_render_mode); }
 
 	// Granular font tuning (mirrors godot::TextServer enums; stored as int to
 	// keep this header free of the TextServer include). Each setter re-applies
@@ -58,10 +71,16 @@ public:
 	void set_pixel_snap(bool snap);
 	bool get_pixel_snap() const { return _pixel_snap; }
 
+	void set_generic_family(const Rml::String& generic, const Rml::String& mapped);
+	Rml::String get_generic_family(const Rml::String& generic) const;
+
 	bool LoadFontFace(const Rml::String& file_name, int face_index, bool fallback_face, Rml::Style::FontWeight weight) override;
+	bool LoadFontFace(const Rml::String& file_name, int face_index, const Rml::String& family,
+		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face) override;
 	bool LoadFontFace(Rml::Span<const Rml::byte> data, int face_index, const Rml::String& family,
 		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face) override;
-	bool LoadFontFromRID(godot::RID font_rid, bool fallback_face, Rml::Style::FontWeight weight);
+	bool LoadFontFromRID(godot::RID font_rid, bool fallback_face, Rml::Style::FontWeight weight,
+		const Rml::String& family_override = {});
 	Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle style,
 		Rml::Style::FontWeight weight, int size) override;
 	Rml::FontEffectsHandle PrepareFontEffects(Rml::FontFaceHandle handle, const Rml::FontEffectList& font_effects) override;
@@ -89,13 +108,47 @@ private:
 
 	struct GlyphData {
 		int texture_page = -1;
+		godot::RID font_rid;
 		Rml::Vector2f origin;
 		Rml::Vector2f dimensions;
 		Rml::Vector2f uv_min;
 		Rml::Vector2f uv_max;
 		float advance = 0;
+		float tex_w = 0;
+		float tex_h = 0;
 		bool has_geometry = false;
 	};
+
+	struct EffectGlyph {
+		Rml::Vector2f origin;
+		Rml::Vector2f dimensions;
+		Rml::Vector2f uv_min;
+		Rml::Vector2f uv_max;
+		int atlas_page = -1;
+		bool has_geometry = false;
+	};
+
+	struct EffectAtlasPage {
+		static constexpr int SIZE = 1024;
+		std::vector<uint8_t> pixels;
+		int cursor_x = 1;
+		int cursor_y = 1;
+		int row_height = 0;
+		EffectAtlasPage() : pixels(SIZE * SIZE * 4, 0) {}
+		std::pair<int, int> place(int w, int h, const uint8_t* rgba);
+	};
+
+	struct EffectLayer {
+		Rml::SharedPtr<const Rml::FontEffect> effect;
+		bool uses_base_textures = false;
+		std::unordered_map<uint32_t, EffectGlyph> glyph_cache;
+		std::unordered_map<uint32_t, EffectGlyph> glyph_index_cache;
+		std::vector<EffectAtlasPage> atlas_pages;
+		std::unordered_map<int, std::unique_ptr<Rml::CallbackTextureSource>> atlas_textures;
+		std::set<int> dirty_pages;
+	};
+
+	static constexpr int FALLBACK_PAGE_OFFSET = 10000;
 
 	struct FontFace {
 		int loaded_font_index = -1;
@@ -107,19 +160,23 @@ private:
 		std::unordered_map<uint32_t, int64_t> codepoint_to_index;  // codepoint → raw glyph index (no shift bits)
 		std::unordered_map<int, std::unique_ptr<Rml::CallbackTextureSource>> atlas_textures;
 		std::set<int> dirty_pages;
+		std::unordered_map<int, godot::RID> page_font_rid; // page index → owning font RID (for fallback support)
+		std::vector<std::unique_ptr<EffectLayer>> effect_layers;
+		std::vector<std::vector<int>> layer_configs; // -1 = base layer
 	};
 
 	std::vector<LoadedFont> _loaded_fonts;
 	std::vector<std::unique_ptr<FontFace>> _faces;
 	int _fallback_font_index = -1;
-	TextRenderMode _text_render_mode = TextRenderMode::DEFAULT;
+	std::unordered_map<std::string, std::string> _generic_families;
 	LayoutMode _layout_mode = LayoutMode::MANUAL;
+	TextRenderMode _text_render_mode = TextRenderMode::DEFAULT;
 
-	// Defaults chosen to match Godot's default FontFile import + Label render:
-	// HINTING_LIGHT(1), FONT_ANTIALIASING_GRAY(1), SUBPIXEL_POSITIONING_DISABLED(0).
+	// Defaults match Godot's FontFile defaults:
+	// HINTING_LIGHT(1), FONT_ANTIALIASING_GRAY(1), SUBPIXEL_POSITIONING_AUTO(1).
 	int _hinting = 1;
 	int _antialiasing = 1;
-	int _subpixel = 0;
+	int _subpixel = 1;
 	float _oversampling = 0.0f;
 	bool _pixel_snap = true;
 
@@ -127,15 +184,23 @@ private:
 	bool _register_font(godot::RID font_rid, const Rml::String& family_override,
 		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face);
 	GlyphData _build_glyph_data(FontFace& face, int64_t glyph_index);
+	GlyphData _build_glyph_data(FontFace& face, int64_t glyph_index, godot::RID font_rid);
 	const GlyphData& _ensure_glyph(FontFace& face, uint32_t codepoint);
 	const GlyphData& _ensure_glyph_index(FontFace& face, int64_t glyph_index);
+	const GlyphData& _ensure_glyph_index(FontFace& face, int64_t glyph_index, godot::RID font_rid);
 	// Builds + shapes a TextServer shaped-text RID for the string at the
 	// (oversampled) render size. Caller owns the RID and must free_rid it.
 	godot::RID _shape_string(const FontFace& face, Rml::StringView string) const;
 	int _generate_shaped(Rml::RenderManager& render_manager, FontFace& face, Rml::StringView string,
-		Rml::Vector2f position, Rml::ColourbPremultiplied colour,
+		Rml::Vector2f position, Rml::ColourbPremultiplied colour, float opacity,
+		Rml::FontEffectsHandle font_effects_handle,
 		const Rml::TextShapingContext& text_shaping_context, Rml::TexturedMeshList& mesh_list);
 	void _rebuild_dirty_atlases(FontFace& face);
+	void _rebuild_effect_atlases(EffectLayer& layer);
+	void _ensure_effect_glyph(FontFace& face, EffectLayer& layer, uint32_t codepoint);
+	void _ensure_effect_glyph_index(FontFace& face, EffectLayer& layer, int64_t glyph_index);
+	std::vector<uint8_t> _extract_glyph_alpha(const FontFace& face, int64_t glyph_index) const;
+	EffectGlyph _build_effect_glyph(FontFace& face, EffectLayer& layer, int64_t glyph_index);
 	void _apply_font_settings(godot::RID font_rid) const;
 	void _invalidate_all_caches();
 	int _effective_subpixel_mode(const LoadedFont& font, int render_size) const;

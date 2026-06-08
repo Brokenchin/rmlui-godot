@@ -253,9 +253,9 @@ void RmlContext::_ready() {
 	_create_context();
 
 	// Push granular font settings before loading faces so the first glyph
-	// rasterization already uses them. These are authoritative; text_render_mode
-	// remains a convenience preset that maps onto the same interface fields.
+	// rasterization already uses them.
 	auto& font_iface = manager->get_font_interface();
+	font_iface.set_text_render_mode(_text_render_mode);
 	font_iface.set_hinting(_font_hinting);
 	font_iface.set_font_antialiasing(_font_antialiasing);
 	font_iface.set_subpixel_positioning(_font_subpixel);
@@ -300,6 +300,7 @@ void RmlContext::_draw() {
 	if (_gpu_scissor) _ensure_scissor_material();
 	const bool use_gpu = _gpu_scissor && _scissor_material.is_valid();
 	godot::RID scissor_mat_rid = use_gpu ? _scissor_material->get_rid() : godot::RID();
+	godot::Vector2 global_pos = get_global_position();
 
 	ClipResult clip_buf;
 
@@ -351,7 +352,7 @@ void RmlContext::_draw() {
 		rs->canvas_item_set_draw_index(item, run_draw_index++);
 		if (material == scissor_mat_rid) {
 			godot::Vector4 rv = scissored
-				? godot::Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y)
+				? godot::Vector4(rect.position.x + global_pos.x, rect.position.y + global_pos.y, rect.size.x, rect.size.y)
 				: godot::Vector4(-1000000.0f, -1000000.0f, 2000000.0f, 2000000.0f);
 			rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", rv);
 		}
@@ -534,6 +535,7 @@ void RmlContext::_draw() {
 
 		} // switch
 	}
+
 }
 
 void RmlContext::_notification(int p_what) {
@@ -555,6 +557,60 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 	_forward_key_event(event);
 }
 
+Rml::SharedPtr<Rml::StyleSheetContainer> RmlContext::_get_effective_base_sheet() {
+	if (_has_local_base_rcss) {
+		if (_local_base_rcss.empty()) return nullptr;
+		return Rml::Factory::InstanceStyleSheetString(Rml::String(_local_base_rcss.c_str()));
+	}
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (!manager) return nullptr;
+	return manager->get_default_sheet();
+}
+
+void RmlContext::_apply_base_stylesheet(Rml::ElementDocument* doc) {
+	if (!_use_default_rcss || doc == nullptr) return;
+
+	auto base = _get_effective_base_sheet();
+	if (!base) return;
+
+	const Rml::StyleSheetContainer* doc_sheet = doc->GetStyleSheetContainer();
+	if (doc_sheet) {
+		auto combined = base->CombineStyleSheetContainer(*doc_sheet);
+		doc->SetStyleSheetContainer(std::move(combined));
+	} else {
+		doc->SetStyleSheetContainer(base);
+	}
+}
+
+void RmlContext::set_base_rcss(const godot::String& rcss) {
+	_local_base_rcss = std::string(rcss.utf8().get_data());
+	_has_local_base_rcss = true;
+}
+
+godot::String RmlContext::get_base_rcss() const {
+	if (_has_local_base_rcss)
+		return godot::String(_local_base_rcss.c_str());
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager) return manager->get_default_rcss();
+	return {};
+}
+
+void RmlContext::append_base_rcss(const godot::String& rcss) {
+	if (!_has_local_base_rcss) {
+		auto* manager = RmlGodot::RmlManager::get_singleton();
+		if (manager)
+			_local_base_rcss = std::string(manager->get_default_rcss().utf8().get_data());
+	}
+	_local_base_rcss += "\n";
+	_local_base_rcss += std::string(rcss.utf8().get_data());
+	_has_local_base_rcss = true;
+}
+
+void RmlContext::reset_base_rcss() {
+	_local_base_rcss.clear();
+	_has_local_base_rcss = false;
+}
+
 void RmlContext::load_document(const godot::String& path) {
 	if (_rml_context == nullptr) {
 		godot::UtilityFunctions::push_error("[RmlUi] Cannot load document — context not initialized");
@@ -570,6 +626,7 @@ void RmlContext::load_document(const godot::String& path) {
 
 	Rml::ElementDocument* doc = _rml_context->LoadDocument(rml_path);
 	if (doc != nullptr) {
+		_apply_base_stylesheet(doc);
 		doc->Show();
 		_sync_dimensions();
 		_rml_context->Update();
@@ -618,6 +675,7 @@ bool RmlContext::reload_document(const godot::String& path) {
 	}
 
 	it->document = new_doc;
+	_apply_base_stylesheet(new_doc);
 	new_doc->Show();
 
 	for (auto& [name, entry] : _data_models) {
@@ -651,6 +709,7 @@ void RmlContext::reload_all_documents() {
 	for (auto& ld : _loaded_documents) {
 		Rml::ElementDocument* doc = _rml_context->LoadDocument(Rml::String(ld.path));
 		if (doc != nullptr) {
+			_apply_base_stylesheet(doc);
 			doc->Show();
 			ld.document = doc;
 		} else {
@@ -718,6 +777,37 @@ bool RmlContext::load_font_face(const godot::String& path) {
 	return ok;
 }
 
+bool RmlContext::load_font_face_ex(const godot::String& path, const godot::String& family,
+	int style, int weight, bool fallback) {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager == nullptr || !manager->is_initialized()) {
+		godot::UtilityFunctions::push_error("[RmlUi] Cannot load font — RmlUI not initialized");
+		return false;
+	}
+	if (path.is_empty() || family.is_empty()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] load_font_face_ex: path and family are required");
+		return false;
+	}
+
+	Rml::String rml_path(path.utf8().get_data());
+	Rml::String rml_family(family.utf8().get_data());
+	auto rml_style = (style == 1) ? Rml::Style::FontStyle::Italic : Rml::Style::FontStyle::Normal;
+	auto rml_weight = (weight > 0 && weight <= 1000)
+		? static_cast<Rml::Style::FontWeight>(weight)
+		: Rml::Style::FontWeight::Auto;
+
+	bool ok = Rml::LoadFontFace(rml_path, rml_family, rml_style, rml_weight, fallback);
+	if (ok) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Font loaded: ") + family +
+			godot::String(" (from ") + path + godot::String(")"));
+	} else {
+		godot::UtilityFunctions::push_error(
+			godot::String("[RmlUi] Failed to load font: ") + path);
+	}
+	return ok;
+}
+
 bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager == nullptr || !manager->is_initialized()) {
@@ -740,7 +830,7 @@ bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 	bool any_ok = false;
 	for (int i = 0; i < rids.size(); i++) {
 		godot::RID rid = rids[i];
-		if (fi.LoadFontFromRID(rid, false, Rml::Style::FontWeight::Normal))
+		if (fi.LoadFontFromRID(rid, false, Rml::Style::FontWeight::Auto))
 			any_ok = true;
 	}
 
@@ -751,6 +841,65 @@ bool RmlContext::load_font_resource(const godot::Ref<godot::Font>& font) {
 		godot::UtilityFunctions::push_error("[RmlUi] Failed to load font resource");
 	}
 	return any_ok;
+}
+
+bool RmlContext::load_font_resource_ex(const godot::Ref<godot::Font>& font,
+	const godot::String& family, int weight, bool fallback) {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager == nullptr || !manager->is_initialized()) {
+		godot::UtilityFunctions::push_error("[RmlUi] Cannot load font — RmlUI not initialized");
+		return false;
+	}
+	if (!font.is_valid()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] Cannot load font — null resource");
+		return false;
+	}
+
+	auto& fi = manager->get_font_interface();
+	godot::TypedArray<godot::RID> rids = font->get_rids();
+	if (rids.is_empty()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] Font resource has no TextServer RIDs");
+		return false;
+	}
+
+	Rml::String rml_family = family.is_empty()
+		? Rml::String() : Rml::String(family.utf8().get_data());
+	auto rml_weight = (weight > 0 && weight <= 1000)
+		? static_cast<Rml::Style::FontWeight>(weight)
+		: Rml::Style::FontWeight::Auto;
+
+	bool any_ok = false;
+	for (int i = 0; i < rids.size(); i++) {
+		godot::RID rid = rids[i];
+		if (fi.LoadFontFromRID(rid, fallback, rml_weight, rml_family))
+			any_ok = true;
+	}
+
+	godot::String display_name = family.is_empty() ? font->get_font_name() : family;
+	if (any_ok) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Font resource loaded: ") + display_name);
+	} else {
+		godot::UtilityFunctions::push_error(
+			godot::String("[RmlUi] Failed to load font resource: ") + display_name);
+	}
+	return any_ok;
+}
+
+void RmlContext::set_generic_family(const godot::String& generic_name, const godot::String& family_name) {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (!manager || !manager->is_initialized()) return;
+	manager->get_font_interface().set_generic_family(
+		Rml::String(generic_name.utf8().get_data()),
+		Rml::String(family_name.utf8().get_data()));
+}
+
+godot::String RmlContext::get_generic_family(const godot::String& generic_name) const {
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (!manager || !manager->is_initialized()) return {};
+	Rml::String result = manager->get_font_interface().get_generic_family(
+		Rml::String(generic_name.utf8().get_data()));
+	return godot::String(result.c_str());
 }
 
 // --- Private: Context lifecycle ---
@@ -836,13 +985,10 @@ void RmlContext::set_dp_ratio(float ratio) {
 }
 
 void RmlContext::set_text_render_mode(int mode) {
-	if (_text_render_mode == mode) return;
 	_text_render_mode = mode;
-
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
-		manager->get_font_interface().set_text_render_mode(
-			static_cast<RmlGodot::GodotFontInterface::TextRenderMode>(mode));
+		manager->get_font_interface().set_text_render_mode(mode);
 		queue_redraw();
 	}
 }
