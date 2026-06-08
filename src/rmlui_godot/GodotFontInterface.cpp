@@ -515,8 +515,8 @@ int GodotFontInterface::GenerateString(Rml::RenderManager& render_manager,
 	}
 
 	// --- Compositing: mode-specific position snap + UV padding ---
-	const auto mode = (_text_render_mode == TextRenderMode::NONE)
-		? TextRenderMode::RMLUI_NATIVE : _text_render_mode;
+	const auto mode = (_text_render_mode == TextRenderMode::DEFAULT)
+		? TextRenderMode::SUBPIX_OFFSET : _text_render_mode;
 	const bool snap_x = _pixel_snap || integer_advance;
 
 	// Position snap: isolates mode-specific glyph placement.
@@ -752,8 +752,8 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 	}
 
 	// --- Compositing: mode-specific position snap + UV padding ---
-	const auto mode = (_text_render_mode == TextRenderMode::NONE)
-		? TextRenderMode::RMLUI_NATIVE : _text_render_mode;
+	const auto mode = (_text_render_mode == TextRenderMode::DEFAULT)
+		? TextRenderMode::SUBPIX_OFFSET : _text_render_mode;
 
 	auto snap_pos = [&](float pen_x, float y_off, float origin_x, float origin_y) -> Rml::Vector2f {
 		if (mode == TextRenderMode::SUBPIX_OFFSET) {

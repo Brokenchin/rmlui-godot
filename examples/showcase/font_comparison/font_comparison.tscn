@@ -58,7 +58,6 @@ text = "RmlUI (SubPixel + Shaped)"
 horizontal_alignment = 1
 
 [node name="RmlContext" type="RmlContext" parent="Columns/RmlSide"]
-text_render_mode = 1
 font_pixel_snap = false
 font_layout_mode = 2
 material = SubResource("CanvasItemMaterial_premul")

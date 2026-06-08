@@ -147,7 +147,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "use_default_rcss"), "set_use_default_rcss", "get_use_default_rcss");
 
 	ADD_GROUP("Text Rendering", "");
-	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "RmlUI Native,SubPixel Offset,Godot Native,None"), "set_text_render_mode", "get_text_render_mode");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "Default,SubPixel Offset,Godot Native,RmlUI Native"), "set_text_render_mode", "get_text_render_mode");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "font_pixel_snap"), "set_font_pixel_snap", "get_font_pixel_snap");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_layout_mode", godot::PROPERTY_HINT_ENUM, "Manual,Integer Advance,Shaped"), "set_font_layout_mode", "get_font_layout_mode");
 
@@ -286,7 +286,7 @@ private:
 	float _dp_ratio = 1.0f;
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
-	int _text_render_mode = 0;    // RMLUI_NATIVE
+	int _text_render_mode = 0;    // DEFAULT (resolves to SUBPIX_OFFSET)
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light
 	int _font_antialiasing = 1;   // Gray
