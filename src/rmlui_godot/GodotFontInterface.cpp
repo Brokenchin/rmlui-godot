@@ -688,14 +688,20 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 	godot::Array glyphs = ts->shaped_text_get_glyphs(shaped);
 	const int glyph_count = static_cast<int>(glyphs.size());
 
-	// Phase 1: ensure base glyph indices are rasterized.
+	const godot::RID primary_rid = (face.loaded_font_index >= 0 &&
+		face.loaded_font_index < static_cast<int>(_loaded_fonts.size()))
+		? _loaded_fonts[face.loaded_font_index].font_rid : godot::RID();
+
+	// Phase 1: ensure base glyph indices are rasterized (with correct font RID).
 	for (int i = 0; i < glyph_count; i++) {
 		godot::Dictionary g = glyphs[i];
-		_ensure_glyph_index(face, static_cast<int64_t>(g["index"]));
+		godot::RID glyph_font = g["font_rid"];
+		if (!glyph_font.is_valid()) continue;
+		_ensure_glyph_index(face, static_cast<int64_t>(g["index"]), glyph_font);
 	}
 
 	// Phase 2: pre-compute positions and ensure subpixel-shifted variants.
-	struct ShapedEntry { uint32_t composite_key; int64_t base_idx; float x_off; float y_off; float advance; float pen_x; };
+	struct ShapedEntry { uint32_t composite_key; int64_t base_idx; godot::RID glyph_font; float x_off; float y_off; float advance; float pen_x; };
 	std::vector<ShapedEntry> entries;
 	entries.reserve(glyph_count);
 	float total_width = 0;
@@ -707,12 +713,17 @@ int GodotFontInterface::_generate_shaped(Rml::RenderManager& render_manager, Fon
 			float y_off = static_cast<float>(static_cast<double>(g["y_off"])) / os;
 			float advance = static_cast<float>(static_cast<double>(g["advance"])) / os;
 			int64_t base_idx = static_cast<int64_t>(g["index"]);
+			godot::RID glyph_font = g["font_rid"];
 
+			if (!glyph_font.is_valid()) { pen_x += advance; continue; }
+
+			bool is_fallback = (glyph_font != primary_rid);
 			int shift = _compute_subpixel_shift(subpx_mode, position.x + pen_x + x_off);
 			int64_t composite = base_idx | (static_cast<int64_t>(shift) << 27);
-			_ensure_glyph_index(face, composite);
+			if (is_fallback) composite |= (1LL << 29);
+			_ensure_glyph_index(face, composite, glyph_font);
 
-			entries.push_back({static_cast<uint32_t>(composite), base_idx, x_off, y_off, advance, pen_x});
+			entries.push_back({static_cast<uint32_t>(composite), base_idx, glyph_font, x_off, y_off, advance, pen_x});
 			pen_x += advance + text_shaping_context.letter_spacing;
 		}
 		total_width = pen_x;
@@ -901,33 +912,46 @@ int GodotFontInterface::GetVersion(Rml::FontFaceHandle handle) {
 // unchanged but the quad is textured with a higher-res glyph (minified on draw
 // → crisp + bright, matching Godot's Label).
 GodotFontInterface::GlyphData GodotFontInterface::_build_glyph_data(FontFace& face, int64_t glyph_index) {
+	if (face.loaded_font_index < 0 || face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+		return GlyphData{};
+	return _build_glyph_data(face, glyph_index, _loaded_fonts[face.loaded_font_index].font_rid);
+}
+
+GodotFontInterface::GlyphData GodotFontInterface::_build_glyph_data(FontFace& face, int64_t glyph_index, godot::RID font_rid) {
 	GlyphData glyph;
 	godot::Ref<godot::TextServer> ts = get_text_server();
-	if (ts.is_null() || face.loaded_font_index < 0 ||
-		face.loaded_font_index >= static_cast<int>(_loaded_fonts.size()))
+	if (ts.is_null() || !font_rid.is_valid())
 		return glyph;
 
-	const auto& font = _loaded_fonts[face.loaded_font_index];
+	const godot::RID primary_rid = (face.loaded_font_index >= 0 &&
+		face.loaded_font_index < static_cast<int>(_loaded_fonts.size()))
+		? _loaded_fonts[face.loaded_font_index].font_rid : godot::RID();
+	const bool is_fallback = font_rid != primary_rid;
+
 	const float os = _oversample_factor();
 	const int rsize = _render_size(face.size);
 	godot::Vector2i size_v(rsize, 0);
 
-	glyph.advance = static_cast<float>(ts->font_get_glyph_advance(font.font_rid, rsize, glyph_index).x) / os;
+	glyph.advance = static_cast<float>(ts->font_get_glyph_advance(font_rid, rsize, glyph_index).x) / os;
 
-	godot::Vector2 glyph_size = ts->font_get_glyph_size(font.font_rid, size_v, glyph_index);
+	godot::Vector2 glyph_size = ts->font_get_glyph_size(font_rid, size_v, glyph_index);
 	if (glyph_size.x < 1 || glyph_size.y < 1) {
 		glyph.has_geometry = false;
 		return glyph;
 	}
 
-	ts->font_render_glyph(font.font_rid, size_v, glyph_index);
+	ts->font_render_glyph(font_rid, size_v, glyph_index);
 
-	godot::Vector2 offset = ts->font_get_glyph_offset(font.font_rid, size_v, glyph_index);
-	godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(font.font_rid, size_v, glyph_index);
-	godot::Vector2 tex_size = ts->font_get_glyph_texture_size(font.font_rid, size_v, glyph_index);
-	int64_t tex_idx = ts->font_get_glyph_texture_idx(font.font_rid, size_v, glyph_index);
+	godot::Vector2 offset = ts->font_get_glyph_offset(font_rid, size_v, glyph_index);
+	godot::Rect2 uv_rect = ts->font_get_glyph_uv_rect(font_rid, size_v, glyph_index);
+	godot::Vector2 tex_size = ts->font_get_glyph_texture_size(font_rid, size_v, glyph_index);
+	int64_t tex_idx = ts->font_get_glyph_texture_idx(font_rid, size_v, glyph_index);
 
-	glyph.texture_page = static_cast<int>(tex_idx);
+	int page = static_cast<int>(tex_idx);
+	if (is_fallback) page += FALLBACK_PAGE_OFFSET;
+
+	glyph.texture_page = page;
+	glyph.font_rid = font_rid;
 	glyph.origin = Rml::Vector2f(static_cast<float>(offset.x) / os, static_cast<float>(offset.y) / os);
 	glyph.dimensions = Rml::Vector2f(static_cast<float>(glyph_size.x) / os, static_cast<float>(glyph_size.y) / os);
 	glyph.tex_w = static_cast<float>(tex_size.x);
@@ -941,7 +965,8 @@ GodotFontInterface::GlyphData GodotFontInterface::_build_glyph_data(FontFace& fa
 		glyph.uv_max.y = static_cast<float>((uv_rect.position.y + uv_rect.size.y) / tex_size.y);
 	}
 
-	face.dirty_pages.insert(glyph.texture_page);
+	face.dirty_pages.insert(page);
+	face.page_font_rid[page] = font_rid;
 	return glyph;
 }
 
@@ -970,6 +995,24 @@ const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph_index(Fon
 	if (it != face.glyph_index_cache.end())
 		return it->second;
 	GlyphData glyph = _build_glyph_data(face, glyph_index);
+	auto [inserted, _] = face.glyph_index_cache.emplace(key, glyph);
+	return inserted->second;
+}
+
+const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph_index(FontFace& face, int64_t glyph_index, godot::RID font_rid) {
+	const godot::RID primary_rid = (face.loaded_font_index >= 0 &&
+		face.loaded_font_index < static_cast<int>(_loaded_fonts.size()))
+		? _loaded_fonts[face.loaded_font_index].font_rid : godot::RID();
+	const bool is_fallback = font_rid != primary_rid;
+
+	int64_t keyed = glyph_index;
+	if (is_fallback) keyed |= (1LL << 29);
+	uint32_t key = static_cast<uint32_t>(keyed);
+
+	auto it = face.glyph_index_cache.find(key);
+	if (it != face.glyph_index_cache.end())
+		return it->second;
+	GlyphData glyph = _build_glyph_data(face, glyph_index, font_rid);
 	auto [inserted, _] = face.glyph_index_cache.emplace(key, glyph);
 	return inserted->second;
 }
@@ -1186,23 +1229,24 @@ void GodotFontInterface::_rebuild_dirty_atlases(FontFace& face) {
 	if (face.dirty_pages.empty())
 		return;
 
-	const auto& font = _loaded_fonts[face.loaded_font_index];
-	godot::RID font_rid = font.font_rid;
+	const auto& primary_font = _loaded_fonts[face.loaded_font_index];
 	// Must match the size used in _ensure_glyph so the atlas page indices and
 	// glyph UVs line up with the oversampled rasterization.
 	godot::Vector2i size_v(_render_size(face.size), 0);
 
 	for (int page : face.dirty_pages) {
-		int page_idx = page;
+		auto rid_it = face.page_font_rid.find(page);
+		godot::RID font_rid = (rid_it != face.page_font_rid.end()) ? rid_it->second : primary_font.font_rid;
+		int real_page = (page >= FALLBACK_PAGE_OFFSET) ? (page - FALLBACK_PAGE_OFFSET) : page;
 
-		Rml::CallbackTextureFunction callback = [font_rid, size_v, page_idx](
+		Rml::CallbackTextureFunction callback = [font_rid, size_v, real_page](
 			const Rml::CallbackTextureInterface& tex_interface) -> bool {
 
 			godot::Ref<godot::TextServer> ts = get_text_server();
-			godot::Ref<godot::Image> atlas = ts->font_get_texture_image(font_rid, size_v, page_idx);
+			godot::Ref<godot::Image> atlas = ts->font_get_texture_image(font_rid, size_v, real_page);
 			if (!atlas.is_valid() || atlas->is_empty()) {
 				godot::UtilityFunctions::push_warning(
-					godot::String("[RmlUi Atlas] Empty/invalid atlas for page=") + godot::String::num_int64(page_idx));
+					godot::String("[RmlUi Atlas] Empty/invalid atlas for page=") + godot::String::num_int64(real_page));
 				return false;
 			}
 
@@ -1241,7 +1285,7 @@ void GodotFontInterface::_rebuild_dirty_atlases(FontFace& face) {
 				Rml::Vector2i(w, h));
 		};
 
-		face.atlas_textures[page_idx] = std::make_unique<Rml::CallbackTextureSource>(std::move(callback));
+		face.atlas_textures[page] = std::make_unique<Rml::CallbackTextureSource>(std::move(callback));
 	}
 
 	face.dirty_pages.clear();
@@ -1342,6 +1386,7 @@ void GodotFontInterface::_invalidate_all_caches() {
 		face->codepoint_to_index.clear();
 		face->atlas_textures.clear();
 		face->dirty_pages.clear();
+		face->page_font_rid.clear();
 		for (auto& layer : face->effect_layers) {
 			layer->glyph_cache.clear();
 			layer->glyph_index_cache.clear();
@@ -1409,6 +1454,7 @@ Rml::String GodotFontInterface::get_generic_family(const Rml::String& generic) c
 	if (it != _generic_families.end())
 		return Rml::String(it->second.c_str());
 	return {};
+
 }
 
 } // namespace RmlGodot

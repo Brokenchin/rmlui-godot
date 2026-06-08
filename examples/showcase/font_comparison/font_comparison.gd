@@ -5,6 +5,7 @@ extends Control
 ## only variable is the text rendering pipeline.
 
 const FONT_PATH := "res://addons/rmlui-godot/examples/fonts/NotoSans-Regular.ttf"
+const FONT_MATH_PATH := "res://addons/rmlui-godot/examples/fonts/NotoSansMath-Regular.ttf"
 const TEXT_COLOR := Color(0xe0 / 255.0, 0xe0 / 255.0, 0xe0 / 255.0)
 const HEADER_COLOR := Color(0x66 / 255.0, 0x88 / 255.0, 0xcc / 255.0)
 
@@ -13,18 +14,21 @@ const TESTS := {
 		"The quick brown fox jumps over the lazy dog",
 		"Tight: iiillllIIII mmmwww fiji ffl",
 		"Mixed: HP 1250/1250 | STR 42 DEX 38",
+		"Symbols: +–×÷ ≤≥≠ °©® €£¥ «»",
 		"all all all all all all all all",
 	],
 	10: [
 		"The quick brown fox jumps over the lazy dog",
 		"Tight: iiillllIIII mmmwww fiji ffl",
 		"Mixed: HP 1250/1250 | STR 42 DEX 38",
+		"Symbols: +–×÷ ≤≥≠ °©® €£¥ «»",
 		"all all all all all all all all",
 	],
 	12: [
 		"The quick brown fox jumps over the lazy dog",
 		"Tight: iiillllIIII mmmwww fiji ffl",
 		"Mixed: HP 1250/1250 | STR 42 DEX 38",
+		"Symbols: +–×÷ ≤≥≠ °©® €£¥ «»",
 		"Kerning: AVATAR WAV Type To fly",
 	],
 	14: [
@@ -38,9 +42,12 @@ const TESTS := {
 }
 
 var font_res: FontFile
+var font_math_res: FontFile
 
 func _ready() -> void:
 	font_res = load(FONT_PATH) as FontFile
+	font_math_res = load(FONT_MATH_PATH) as FontFile
+	font_res.fallbacks = [font_math_res]
 
 	var godot_vbox: VBoxContainer = $Columns/GodotSide/GodotScroll/GodotVBox
 	_add_title(godot_vbox, "Godot Label")
@@ -53,6 +60,7 @@ func _ready() -> void:
 
 	var rml: RmlContext = $Columns/RmlSide/RmlContext
 	rml.load_font_resource(font_res)
+	rml.load_font_resource_ex(font_math_res, "", 0, true)
 	rml.load_document(
 		"res://addons/rmlui-godot/examples/showcase/font_comparison/font_comparison.rml")
 

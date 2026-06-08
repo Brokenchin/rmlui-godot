@@ -108,6 +108,7 @@ private:
 
 	struct GlyphData {
 		int texture_page = -1;
+		godot::RID font_rid;
 		Rml::Vector2f origin;
 		Rml::Vector2f dimensions;
 		Rml::Vector2f uv_min;
@@ -147,6 +148,8 @@ private:
 		std::set<int> dirty_pages;
 	};
 
+	static constexpr int FALLBACK_PAGE_OFFSET = 10000;
+
 	struct FontFace {
 		int loaded_font_index = -1;
 		int size = 0;
@@ -157,6 +160,7 @@ private:
 		std::unordered_map<uint32_t, int64_t> codepoint_to_index;  // codepoint → raw glyph index (no shift bits)
 		std::unordered_map<int, std::unique_ptr<Rml::CallbackTextureSource>> atlas_textures;
 		std::set<int> dirty_pages;
+		std::unordered_map<int, godot::RID> page_font_rid; // page index → owning font RID (for fallback support)
 		std::vector<std::unique_ptr<EffectLayer>> effect_layers;
 		std::vector<std::vector<int>> layer_configs; // -1 = base layer
 	};
@@ -180,8 +184,10 @@ private:
 	bool _register_font(godot::RID font_rid, const Rml::String& family_override,
 		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face);
 	GlyphData _build_glyph_data(FontFace& face, int64_t glyph_index);
+	GlyphData _build_glyph_data(FontFace& face, int64_t glyph_index, godot::RID font_rid);
 	const GlyphData& _ensure_glyph(FontFace& face, uint32_t codepoint);
 	const GlyphData& _ensure_glyph_index(FontFace& face, int64_t glyph_index);
+	const GlyphData& _ensure_glyph_index(FontFace& face, int64_t glyph_index, godot::RID font_rid);
 	// Builds + shapes a TextServer shaped-text RID for the string at the
 	// (oversampled) render size. Caller owns the RID and must free_rid it.
 	godot::RID _shape_string(const FontFace& face, Rml::StringView string) const;

@@ -23,6 +23,7 @@ body {
 	<div class="row s8">The quick brown fox jumps over the lazy dog</div>
 	<div class="row s8">Tight: iiillllIIII mmmwww fiji ffl</div>
 	<div class="row s8">Mixed: HP 1250/1250 | STR 42 DEX 38</div>
+	<div class="row s8">Symbols: +–×÷ ≤≥≠ °©® €£¥ «»</div>
 	<div class="row s8">all all all all all all all all</div>
 </div>
 <div class="section">
@@ -30,6 +31,7 @@ body {
 	<div class="row s10">The quick brown fox jumps over the lazy dog</div>
 	<div class="row s10">Tight: iiillllIIII mmmwww fiji ffl</div>
 	<div class="row s10">Mixed: HP 1250/1250 | STR 42 DEX 38</div>
+	<div class="row s10">Symbols: +–×÷ ≤≥≠ °©® €£¥ «»</div>
 	<div class="row s10">all all all all all all all all</div>
 </div>
 <div class="section">
@@ -37,6 +39,7 @@ body {
 	<div class="row s12">The quick brown fox jumps over the lazy dog</div>
 	<div class="row s12">Tight: iiillllIIII mmmwww fiji ffl</div>
 	<div class="row s12">Mixed: HP 1250/1250 | STR 42 DEX 38</div>
+	<div class="row s12">Symbols: +–×÷ ≤≥≠ °©® €£¥ «»</div>
 	<div class="row s12">Kerning: AVATAR WAV Type To fly</div>
 </div>
 <div class="section">
