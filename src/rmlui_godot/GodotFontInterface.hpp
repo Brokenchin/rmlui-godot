@@ -74,6 +74,8 @@ public:
 	void set_generic_family(const Rml::String& generic, const Rml::String& mapped);
 	Rml::String get_generic_family(const Rml::String& generic) const;
 
+	int get_global_version() const { return _global_version; }
+
 	bool LoadFontFace(const Rml::String& file_name, int face_index, bool fallback_face, Rml::Style::FontWeight weight) override;
 	bool LoadFontFace(const Rml::String& file_name, int face_index, const Rml::String& family,
 		Rml::Style::FontStyle style, Rml::Style::FontWeight weight, bool fallback_face) override;
@@ -179,6 +181,10 @@ private:
 	int _subpixel = 1;
 	float _oversampling = 0.0f;
 	bool _pixel_snap = true;
+	int _global_version = 0;
+	// Old CallbackTextureSource objects kept alive until next invalidation cycle
+	// so in-flight canvas items from other contexts don't reference freed textures.
+	std::vector<std::unique_ptr<Rml::CallbackTextureSource>> _deferred_atlas_sources;
 
 	int _find_font(const Rml::String& family, Rml::Style::FontStyle style, Rml::Style::FontWeight weight) const;
 	bool _register_font(godot::RID font_rid, const Rml::String& family_override,

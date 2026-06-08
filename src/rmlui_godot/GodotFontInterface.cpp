@@ -1012,7 +1012,10 @@ const GodotFontInterface::GlyphData& GodotFontInterface::_ensure_glyph_index(Fon
 	auto it = face.glyph_index_cache.find(key);
 	if (it != face.glyph_index_cache.end())
 		return it->second;
-	GlyphData glyph = _build_glyph_data(face, glyph_index, font_rid);
+	// Strip the fallback flag before calling TextServer — bit 29 is only
+	// a cache key discriminator, not a valid glyph index component.
+	int64_t ts_index = glyph_index & ~(1LL << 29);
+	GlyphData glyph = _build_glyph_data(face, ts_index, font_rid);
 	auto [inserted, _] = face.glyph_index_cache.emplace(key, glyph);
 	return inserted->second;
 }
@@ -1218,6 +1221,9 @@ void GodotFontInterface::_rebuild_effect_atlases(EffectLayer& layer) {
 				Rml::Span<const Rml::byte>(pixel_data->data(), pixel_data->size()),
 				Rml::Vector2i(EffectAtlasPage::SIZE, EffectAtlasPage::SIZE));
 		};
+		auto& old_source = layer.atlas_textures[page_idx];
+		if (old_source)
+			_deferred_atlas_sources.push_back(std::move(old_source));
 		layer.atlas_textures[page_idx] = std::make_unique<Rml::CallbackTextureSource>(std::move(callback));
 	}
 	layer.dirty_pages.clear();
@@ -1285,6 +1291,9 @@ void GodotFontInterface::_rebuild_dirty_atlases(FontFace& face) {
 				Rml::Vector2i(w, h));
 		};
 
+		auto& old_source = face.atlas_textures[page];
+		if (old_source)
+			_deferred_atlas_sources.push_back(std::move(old_source));
 		face.atlas_textures[page] = std::make_unique<Rml::CallbackTextureSource>(std::move(callback));
 	}
 
@@ -1305,9 +1314,14 @@ void GodotFontInterface::ReleaseTexturesForRenderManager(Rml::RenderManager* rm)
 			}
 		}
 	}
+	for (auto& source : _deferred_atlas_sources) {
+		if (source)
+			source->ReleaseForRenderManager(rm);
+	}
 }
 
 void GodotFontInterface::ReleaseFontResources() {
+	_deferred_atlas_sources.clear();
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	if (ts.is_valid()) {
 		for (auto& font : _loaded_fonts) {
@@ -1380,22 +1394,24 @@ void GodotFontInterface::set_text_render_mode(int mode) {
 }
 
 void GodotFontInterface::_invalidate_all_caches() {
+	// Free deferred sources from the PREVIOUS invalidation cycle. All contexts
+	// have had ample time to re-render since then, so these are safe to release.
+	_deferred_atlas_sources.clear();
+
 	for (auto& face : _faces) {
 		face->glyph_cache.clear();
 		face->glyph_index_cache.clear();
 		face->codepoint_to_index.clear();
-		face->atlas_textures.clear();
 		face->dirty_pages.clear();
 		face->page_font_rid.clear();
 		for (auto& layer : face->effect_layers) {
 			layer->glyph_cache.clear();
 			layer->glyph_index_cache.clear();
-			layer->atlas_pages.clear();
-			layer->atlas_textures.clear();
 			layer->dirty_pages.clear();
 		}
 		face->version++;
 	}
+	_global_version++;
 }
 
 int GodotFontInterface::_effective_subpixel_mode(const LoadedFont& font, int render_size) const {

@@ -86,7 +86,11 @@ void GodotRenderInterface::RenderGeometry(
 }
 
 void GodotRenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry) {
-	_geometry.erase(geometry);
+	auto it = _geometry.find(geometry);
+	if (it != _geometry.end()) {
+		_deferred_geometry_release.push_back(std::move(it->second));
+		_geometry.erase(it);
+	}
 	_raw_geometry.erase(geometry);
 }
 

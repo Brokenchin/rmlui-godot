@@ -278,6 +278,15 @@ void RmlContext::_process(double /*delta*/) {
 	_sync_dimensions();
 	_rml_context->Update();
 
+	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager && manager->is_initialized()) {
+		int fv = manager->get_font_interface().get_global_version();
+		if (fv != _last_font_version) {
+			_last_font_version = fv;
+			_render_dirty = true;
+		}
+	}
+
 	if (_render_dirty || _rml_context->GetNextUpdateDelay() == 0) {
 		_render_dirty = false;
 		queue_redraw();
@@ -287,16 +296,19 @@ void RmlContext::_process(double /*delta*/) {
 void RmlContext::_draw() {
 	if (_rml_context == nullptr) return;
 
+	auto* rs = godot::RenderingServer::get_singleton();
+	if (rs == nullptr) return;
+
+	// Free previous frame's canvas items and deferred geometry BEFORE Render()
+	// so old RIDs are removed from the rendering tree before we release meshes.
+	_free_scissor_items();
+	_free_layer_items();
+	_render_interface.flush_deferred_releases();
+
 	_render_interface.clear_draw_commands();
 	_rml_context->Render();
 
 	const auto& commands = _render_interface.get_draw_commands();
-
-	auto* rs = godot::RenderingServer::get_singleton();
-	if (rs == nullptr) return;
-	_free_scissor_items();
-	_free_layer_items();
-	
 
 	if (!_active_material.is_valid()) return;
 	godot::RID mat_rid = _active_material->get_rid();

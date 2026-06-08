@@ -113,6 +113,10 @@ public:
 
 	const std::vector<DrawCommand>& get_draw_commands() const { return _draw_commands; }
 	void clear_draw_commands() { _draw_commands.clear(); }
+	void flush_deferred_releases() {
+		_prev_deferred_geometry_release.clear();
+		_prev_deferred_geometry_release.swap(_deferred_geometry_release);
+	}
 	void release_all_resources();
 
 	godot::Ref<godot::ArrayMesh> get_mesh(Rml::CompiledGeometryHandle handle) const;
@@ -146,6 +150,8 @@ private:
 	godot::Ref<godot::ImageTexture> _white_texture;
 
 	std::unordered_map<uintptr_t, godot::Ref<godot::ArrayMesh>> _geometry;
+	std::vector<godot::Ref<godot::ArrayMesh>> _deferred_geometry_release;
+	std::vector<godot::Ref<godot::ArrayMesh>> _prev_deferred_geometry_release;
 	std::unordered_map<uintptr_t, RawGeometry> _raw_geometry;
 	std::unordered_map<uintptr_t, godot::Ref<godot::ImageTexture>> _textures;
 	std::unordered_map<uintptr_t, FilterData> _filters;
