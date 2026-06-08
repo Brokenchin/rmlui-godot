@@ -300,6 +300,7 @@ void RmlContext::_draw() {
 	if (_gpu_scissor) _ensure_scissor_material();
 	const bool use_gpu = _gpu_scissor && _scissor_material.is_valid();
 	godot::RID scissor_mat_rid = use_gpu ? _scissor_material->get_rid() : godot::RID();
+	godot::Vector2 global_pos = get_global_position();
 
 	ClipResult clip_buf;
 
@@ -351,7 +352,7 @@ void RmlContext::_draw() {
 		rs->canvas_item_set_draw_index(item, run_draw_index++);
 		if (material == scissor_mat_rid) {
 			godot::Vector4 rv = scissored
-				? godot::Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y)
+				? godot::Vector4(rect.position.x + global_pos.x, rect.position.y + global_pos.y, rect.size.x, rect.size.y)
 				: godot::Vector4(-1000000.0f, -1000000.0f, 2000000.0f, 2000000.0f);
 			rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", rv);
 		}
