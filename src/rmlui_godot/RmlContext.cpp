@@ -277,7 +277,11 @@ void RmlContext::_process(double /*delta*/) {
 
 	_sync_dimensions();
 	_rml_context->Update();
-	queue_redraw(); //what if nothing changed?
+
+	if (_render_dirty || _rml_context->GetNextUpdateDelay() == 0) {
+		_render_dirty = false;
+		queue_redraw();
+	}
 }
 
 void RmlContext::_draw() {
@@ -543,7 +547,7 @@ void RmlContext::_notification(int p_what) {
 		if (_rml_context != nullptr) {
 			_sync_dimensions();
 			_rml_context->Update();
-			queue_redraw();
+			_render_dirty = true;
 		}
 	} else if (p_what == godot::Node::NOTIFICATION_EXIT_TREE) {
 		_cleanup();
@@ -555,6 +559,7 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 
 	_forward_mouse_event(event);
 	_forward_key_event(event);
+	_render_dirty = true;
 }
 
 Rml::SharedPtr<Rml::StyleSheetContainer> RmlContext::_get_effective_base_sheet() {
@@ -630,7 +635,7 @@ void RmlContext::load_document(const godot::String& path) {
 		doc->Show();
 		_sync_dimensions();
 		_rml_context->Update();
-		queue_redraw();
+		_render_dirty = true;
 
 		_loaded_documents.push_back({std::string(rml_path.c_str()), doc});
 
@@ -684,7 +689,7 @@ bool RmlContext::reload_document(const godot::String& path) {
 
 	_sync_dimensions();
 	_rml_context->Update();
-	queue_redraw();
+	_render_dirty = true;
 
 	godot::UtilityFunctions::print(
 		godot::String("[RmlUi] Document reloaded: ") + path);
@@ -737,7 +742,7 @@ void RmlContext::reload_all_documents() {
 
 	_sync_dimensions();
 	_rml_context->Update();
-	queue_redraw();
+	_render_dirty = true;
 
 	godot::UtilityFunctions::print(
 		godot::String("[RmlUi] All documents reloaded (") +
@@ -989,7 +994,7 @@ void RmlContext::set_text_render_mode(int mode) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
 		manager->get_font_interface().set_text_render_mode(mode);
-		queue_redraw();
+		_render_dirty = true;
 	}
 }
 
@@ -998,7 +1003,7 @@ void RmlContext::set_font_hinting(int hinting) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
 		manager->get_font_interface().set_hinting(hinting);
-		queue_redraw();
+		_render_dirty = true;
 	}
 }
 
@@ -1007,7 +1012,7 @@ void RmlContext::set_font_antialiasing(int antialiasing) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
 		manager->get_font_interface().set_font_antialiasing(antialiasing);
-		queue_redraw();
+		_render_dirty = true;
 	}
 }
 
@@ -1016,7 +1021,7 @@ void RmlContext::set_font_subpixel(int subpixel) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
 		manager->get_font_interface().set_subpixel_positioning(subpixel);
-		queue_redraw();
+		_render_dirty = true;
 	}
 }
 
@@ -1025,7 +1030,7 @@ void RmlContext::set_font_oversampling(float oversampling) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
 		manager->get_font_interface().set_font_oversampling(oversampling);
-		queue_redraw();
+		_render_dirty = true;
 	}
 }
 
@@ -1034,7 +1039,7 @@ void RmlContext::set_font_pixel_snap(bool snap) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
 		manager->get_font_interface().set_pixel_snap(snap);
-		queue_redraw();
+		_render_dirty = true;
 	}
 }
 
@@ -1044,14 +1049,14 @@ void RmlContext::set_font_layout_mode(int mode) {
 	if (manager && manager->is_initialized()) {
 		manager->get_font_interface().set_layout_mode(mode);
 		reload_all_documents();
-		queue_redraw();
+		_render_dirty = true;
 	}
 }
 
 void RmlContext::set_gpu_scissor(bool enabled) {
 	if (_gpu_scissor == enabled) return;
 	_gpu_scissor = enabled;
-	queue_redraw();
+	_render_dirty = true;
 }
 
 void RmlContext::_ensure_scissor_material() {
