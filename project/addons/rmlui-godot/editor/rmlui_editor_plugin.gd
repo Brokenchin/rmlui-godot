@@ -10,6 +10,8 @@ var _completion_timer: Timer
 var _diagnostics: RmlDiagnostics
 
 func _enter_tree():
+	_register_textfile_extensions()
+
 	_rcss_highlighter = RcssSyntaxHighlighter.new()
 	_rml_highlighter = RmlSyntaxHighlighter.new()
 	var script_editor := EditorInterface.get_script_editor()
@@ -95,6 +97,23 @@ func _on_completion_requested(ce: CodeEdit) -> void:
 	# Always update: with zero options this cleanly cancels the popup and
 	# clears any previously added sources.
 	ce.update_code_completion_options(true)
+
+## Make .rml/.rcss first-class text files: visible in the FileSystem dock and
+## opened in the script editor on double-click. This is Godot's built-in
+## mechanism for custom text formats — no Resource type registration needed.
+func _register_textfile_extensions() -> void:
+	var es := EditorInterface.get_editor_settings()
+	var setting := "docks/filesystem/textfile_extensions"
+	var exts: String = es.get_setting(setting)
+	var list := exts.split(",", false)
+	var changed := false
+	for e in ["rml", "rcss"]:
+		if not e in list:
+			exts += "," + e
+			changed = true
+	if changed:
+		es.set_setting(setting, exts)
+		EditorInterface.get_resource_filesystem().scan()
 
 func _open_preview_for(ctx: Node) -> void:
 	if not _preview_panel:

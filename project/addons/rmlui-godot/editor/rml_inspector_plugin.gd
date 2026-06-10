@@ -61,12 +61,21 @@ func _parse_begin(object: Object) -> void:
 			btn_edit_rcss.tooltip_text = "The document has no <link href=\"*.rcss\"> tags"
 		btn_edit_rcss.pressed.connect(_on_edit_rcss.bind(ctx))
 		btn_row.add_child(btn_edit_rcss)
-	elif not doc_path.is_empty():
-		var btn_create := Button.new()
-		btn_create.text = "Create RML"
-		btn_create.tooltip_text = "Create %s from a starter template and open it" % doc_path
-		btn_create.pressed.connect(_on_create_rml.bind(ctx))
-		btn_row.add_child(btn_create)
+	else:
+		# document_path empty or pointing at a missing file. The inspector's
+		# file picker can only select EXISTING files, so file creation needs
+		# its own save dialog.
+		var btn_new := Button.new()
+		btn_new.text = "New RML..."
+		btn_new.tooltip_text = "Create a new .rml document from a starter template,\nassign it to document_path and open it"
+		btn_new.pressed.connect(_on_new_rml.bind(ctx))
+		btn_row.add_child(btn_new)
+		if not doc_path.is_empty():
+			var btn_create := Button.new()
+			btn_create.text = "Create %s" % doc_path.get_file()
+			btn_create.tooltip_text = "Create the missing file %s from a starter template" % doc_path
+			btn_create.pressed.connect(_on_create_rml.bind(ctx))
+			btn_row.add_child(btn_create)
 
 	var btn_reload := Button.new()
 	btn_reload.text = "Reload"
@@ -132,6 +141,29 @@ func _on_edit_rcss(ctx: RmlContext) -> void:
 		if not FileAccess.file_exists(rcss_path):
 			_create_text_file(rcss_path, "/* %s */\n\nbody {\n}\n" % rcss_path.get_file())
 		_open_in_editor(rcss_path)
+
+
+func _on_new_rml(ctx: RmlContext) -> void:
+	var dialog := EditorFileDialog.new()
+	dialog.file_mode = EditorFileDialog.FILE_MODE_SAVE_FILE
+	dialog.access = EditorFileDialog.ACCESS_RESOURCES
+	dialog.add_filter("*.rml", "RmlUi Document")
+	dialog.title = "New RML Document"
+	dialog.current_file = "new_document.rml"
+	dialog.file_selected.connect(func(path: String):
+		if not path.get_extension():
+			path += ".rml"
+		var title := path.get_file().get_basename().capitalize()
+		if FileAccess.file_exists(path) \
+			or _create_text_file(path, RML_TEMPLATE % [title, title, path.get_file()]):
+			if is_instance_valid(ctx):
+				ctx.set("document_path", path)  # setter loads live
+				ctx.notify_property_list_changed()
+			_open_in_editor(path)
+		dialog.queue_free())
+	dialog.canceled.connect(dialog.queue_free)
+	EditorInterface.get_base_control().add_child(dialog)
+	dialog.popup_centered_ratio(0.5)
 
 
 func _on_create_rml(ctx: RmlContext) -> void:

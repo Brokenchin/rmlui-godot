@@ -155,8 +155,11 @@ func _parse_log(entries: Array) -> Array:
 			continue
 		var msg: String = entry.get("message", "")
 		# Environment noise, not buffer errors: the hidden validation context
-		# has no fonts of its own (font loading is per-scene configuration).
-		if msg.begins_with("No font face defined"):
+		# has no fonts and no data models of its own (both are per-scene,
+		# runtime-bound configuration).
+		if msg.begins_with("No font face defined") \
+			or msg.begins_with("Could not locate data model") \
+			or msg.begins_with("Could not add data-"):
 			continue
 		var line := -1
 		var m := re_xml.search(msg)

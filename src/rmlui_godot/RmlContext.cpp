@@ -1056,7 +1056,14 @@ void RmlContext::set_document_path(const godot::String& path) {
 	// performs the initial load.
 	if (_rml_context != nullptr) {
 		if (!old.is_empty()) {
-			unload_document(old);
+			// Only unload if the old path actually loaded (it may have been
+			// missing/broken) — unload_document warns about untracked paths.
+			std::string old_str(old.utf8().get_data());
+			bool old_loaded = std::any_of(_loaded_documents.begin(), _loaded_documents.end(),
+				[&](const LoadedDocument& ld) { return ld.path == old_str; });
+			if (old_loaded) {
+				unload_document(old);
+			}
 		}
 		if (!path.is_empty()) {
 			load_document(path);
