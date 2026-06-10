@@ -130,7 +130,7 @@ func _on_edit_rml(ctx: RmlContext) -> void:
 	var path: String = ctx.get("document_path")
 	if path.is_empty():
 		return
-	_open_in_editor(path)
+	_open_in_editor(path, ctx)
 
 
 func _on_edit_rcss(ctx: RmlContext) -> void:
@@ -140,7 +140,7 @@ func _on_edit_rcss(ctx: RmlContext) -> void:
 	for rcss_path in RmlPreviewPanel.extract_rcss_links(rml_path):
 		if not FileAccess.file_exists(rcss_path):
 			_create_text_file(rcss_path, "/* %s */\n\nbody {\n}\n" % rcss_path.get_file())
-		_open_in_editor(rcss_path)
+		_open_in_editor(rcss_path, ctx)
 
 
 func _on_new_rml(ctx: RmlContext) -> void:
@@ -157,9 +157,8 @@ func _on_new_rml(ctx: RmlContext) -> void:
 		if FileAccess.file_exists(path) \
 			or _create_text_file(path, RML_TEMPLATE % [title, title, path.get_file()]):
 			if is_instance_valid(ctx):
-				ctx.set("document_path", path)  # setter loads live
-				ctx.notify_property_list_changed()
-			_open_in_editor(path)
+				ctx.set("document_path", path)  # setter loads live + refreshes inspector
+			_open_in_editor(path, ctx)
 		dialog.queue_free())
 	dialog.canceled.connect(dialog.queue_free)
 	EditorInterface.get_base_control().add_child(dialog)
@@ -175,7 +174,7 @@ func _on_create_rml(ctx: RmlContext) -> void:
 		return
 	if ctx.has_method("load_document"):
 		ctx.load_document(path)  # the _ready load failed while the file was missing
-	_open_in_editor(path)
+	_open_in_editor(path, ctx)
 	# Rebuild the inspector so the buttons switch to Edit RML / Edit RCSS.
 	ctx.notify_property_list_changed()
 
@@ -204,10 +203,39 @@ func _create_text_file(path: String, content: String) -> bool:
 	return true
 
 
-func _open_in_editor(path: String) -> void:
+## Open a text file in the script editor. There is no public API for this
+## (ScriptEditor::open_file is internal), but FileSystemDock's activation
+## handler reaches it natively for registered textfile extensions: select the
+## file via navigate_to_path, then fire the dock Tree's item_activated — the
+## exact double-click code path. Degrades to just selecting the file in the
+## dock if the internal layout ever changes.
+static func open_in_editor(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		push_warning("RmlUI: File not found: %s" % path)
 		return
-	var res := load(path)
-	if res:
-		EditorInterface.edit_resource(res)
+	var dock := EditorInterface.get_file_system_dock()
+	dock.navigate_to_path(path)
+	var tree := _find_tree(dock)
+	if tree:
+		tree.item_activated.emit()
+	else:
+		push_warning("RmlUI: FileSystem dock tree not found — file selected, open it manually")
+
+
+static func _find_tree(node: Node) -> Tree:
+	for child in node.get_children():
+		if child is Tree:
+			return child
+		var found := _find_tree(child)
+		if found:
+			return found
+	return null
+
+
+## Instance wrapper: opens the file, then restores the inspector to the
+## context node — opening pushes the file into the Inspector natively, but
+## from these buttons the user is working ON the node.
+func _open_in_editor(path: String, refocus: Node = null) -> void:
+	open_in_editor(path)
+	if refocus and is_instance_valid(refocus):
+		EditorInterface.edit_node.call_deferred(refocus)

@@ -10,6 +10,7 @@
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/StyleSheetContainer.h>
 #include <RmlUi/Debugger.h>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/font_file.hpp>
 #include <godot_cpp/classes/input_event_key.hpp>
@@ -1070,6 +1071,13 @@ void RmlContext::set_document_path(const godot::String& path) {
 		}
 	}
 	update_configuration_warnings();
+
+	// Rebuild any open inspector so path-dependent custom controls
+	// (Edit/Create buttons) reflect the new document immediately.
+	auto* engine = godot::Engine::get_singleton();
+	if (engine != nullptr && engine->is_editor_hint()) {
+		notify_property_list_changed();
+	}
 }
 
 void RmlContext::set_font_paths(const godot::PackedStringArray& paths) {

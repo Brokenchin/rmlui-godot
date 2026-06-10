@@ -221,9 +221,22 @@ func fill_rml_options(ce: CodeEdit) -> bool:
 	var tag := tag_part.substr(i, name_end - i).to_lower()
 
 	if name_end == n:
-		# Still typing the tag name.
-		for t in RML_TAGS:
-			ce.add_code_completion_option(CodeEdit.KIND_CLASS, t, t + ">" if is_closing else t)
+		# Still typing the tag name. NOTE: CodeEdit's completion word scanner
+		# includes '/' in the matched word, so after "</di" the filter base is
+		# "/di" — closing-tag options must carry the leading '/' to survive
+		# filtering (and their insert text replaces it correctly).
+		if is_closing:
+			# Best match first: the innermost currently-unclosed tag.
+			var open_tag := _innermost_open_tag(txt.substr(0, lt))
+			if not open_tag.is_empty():
+				ce.add_code_completion_option(CodeEdit.KIND_CLASS, "/" + open_tag, "/" + open_tag + ">",
+					Color(0.647, 0.890, 0.631))
+			for t in RML_TAGS:
+				if t != open_tag:
+					ce.add_code_completion_option(CodeEdit.KIND_CLASS, "/" + t, "/" + t + ">")
+		else:
+			for t in RML_TAGS:
+				ce.add_code_completion_option(CodeEdit.KIND_CLASS, t, t)
 		return true
 
 	# Walk attributes to find quote state and the attribute the caret is in.
@@ -267,6 +280,26 @@ func fill_rml_options(ce: CodeEdit) -> bool:
 	for a in EVENT_ATTRIBUTES:
 		ce.add_code_completion_option(CodeEdit.KIND_SIGNAL, a, a + "=\"")
 	return true
+
+
+## The innermost tag opened but not yet closed before `txt`'s end — the best
+## suggestion when the user types "</".
+func _innermost_open_tag(txt: String) -> String:
+	const VOID_TAGS := ["br", "hr", "img", "input", "link", "meta", "col"]
+	var stack: Array[String] = []
+	var re := RegEx.create_from_string("<(/?)([A-Za-z][A-Za-z0-9_-]*)((?:\"[^\"]*\"|'[^']*'|[^>\"'])*)>")
+	for m in re.search_all(txt):
+		var closing := m.get_string(1) == "/"
+		var tag := m.get_string(2).to_lower()
+		var self_closing: bool = m.get_string(3).ends_with("/") or tag in VOID_TAGS
+		if closing:
+			# Pop to the matching open tag (tolerates mismatches).
+			var idx := stack.rfind(tag)
+			if idx >= 0:
+				stack.resize(idx)
+		elif not self_closing:
+			stack.append(tag)
+	return stack.back() if not stack.is_empty() else ""
 
 
 func _text_up_to_caret(ce: CodeEdit, caret_line: int, before: String) -> String:
