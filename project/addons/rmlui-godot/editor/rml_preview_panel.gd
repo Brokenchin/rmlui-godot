@@ -275,12 +275,13 @@ func _ensure_preview_context() -> bool:
 		return false
 	_preview_context.name = "EditorPreview"
 	_viewport.add_child(_preview_context)
-	_preview_context.set_anchors_preset(Control.PRESET_FULL_RECT)
-	# A viewport only lays out children when ITS size changes — a Control
-	# added to an already-sized SubViewport stays 0x0 forever otherwise,
-	# and a 0x0 context CPU-culls all of its geometry. Deferred per Godot's
-	# anchor rules (size set in the same frame as anchors gets overridden).
-	_preview_context.set_deferred("size", _viewport.size)
+	# MUST be anchors_AND_OFFSETS_preset, nothing else: plain
+	# set_anchors_preset keeps existing offsets and setting `size` on an
+	# anchored control bakes the current parent size INTO the offsets — both
+	# leave the control at viewport_size + stale_offset after any resize,
+	# so the document lays out for a canvas that doesn't match the panel.
+	# Verified by tests/test_live_preview_parity.gd (0.00% pixel diff).
+	_preview_context.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	return true
 
 func _on_reload_pressed() -> void:
