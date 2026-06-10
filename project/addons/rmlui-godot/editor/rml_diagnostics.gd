@@ -21,6 +21,7 @@ var _kind := ""  # "rml" | "rcss"
 var _hidden_ctx: Node
 var _doc_loaded := false
 var _debounce: Timer
+var _error_bar: PanelContainer
 var _error_label: Label
 var _painted_lines: PackedInt32Array = []
 var _retries := 0
@@ -64,8 +65,9 @@ func detach() -> void:
 		if _ce.text_changed.is_connected(_on_text_changed):
 			_ce.text_changed.disconnect(_on_text_changed)
 		_clear_paint()
-	if _error_label and is_instance_valid(_error_label):
-		_error_label.queue_free()
+	if _error_bar and is_instance_valid(_error_bar):
+		_error_bar.queue_free()
+	_error_bar = null
 	_error_label = null
 	_ce = null
 	_kind = ""
@@ -157,7 +159,13 @@ func _parse_log(entries: Array) -> Array:
 			m = re_tail.search(msg)
 		if m:
 			line = m.get_string(1).to_int() - 1
-		diags.append({"line": line, "message": msg, "level": level})
+		# RmlUi logs most parse problems as warnings (LT_WARNING=3) — classify
+		# by message so syntax/XML errors paint red like GDScript errors.
+		var is_err: bool = level <= 2 \
+			or msg.containsn("syntax error") \
+			or msg.containsn("parse error") \
+			or msg.containsn("failed")
+		diags.append({"line": line, "message": msg, "is_error": is_err})
 	return diags
 
 
@@ -169,8 +177,8 @@ func _apply_diagnostics(diags: Array) -> void:
 		return
 
 	if diags.is_empty():
-		if _error_label and is_instance_valid(_error_label):
-			_error_label.visible = false
+		if _error_bar and is_instance_valid(_error_bar):
+			_error_bar.visible = false
 		return
 
 	var line_count := _ce.get_line_count()
@@ -178,8 +186,7 @@ func _apply_diagnostics(diags: Array) -> void:
 		var line: int = d.line
 		if line < 0 or line >= line_count:
 			continue
-		var is_err: bool = d.level <= 2
-		_ce.set_line_background_color(line, LINE_TINT_ERROR if is_err else LINE_TINT_WARNING)
+		_ce.set_line_background_color(line, LINE_TINT_ERROR if d.is_error else LINE_TINT_WARNING)
 		_painted_lines.append(line)
 
 	if _error_label and is_instance_valid(_error_label):
@@ -187,9 +194,10 @@ func _apply_diagnostics(diags: Array) -> void:
 		var loc := "Line %d: " % (first.line + 1) if first.line >= 0 else ""
 		var suffix := "  (+%d more)" % (diags.size() - 1) if diags.size() > 1 else ""
 		_error_label.text = loc + first.message + suffix
+		_error_label.tooltip_text = "\n".join(diags.map(func(d): return d.message))
 		_error_label.add_theme_color_override("font_color",
-			Color(0.95, 0.55, 0.55) if first.level <= 2 else Color(0.95, 0.85, 0.5))
-		_error_label.visible = true
+			Color(0.95, 0.55, 0.55) if first.is_error else Color(0.95, 0.85, 0.5))
+		_error_bar.visible = true
 
 
 func _clear_paint() -> void:
@@ -202,20 +210,34 @@ func _clear_paint() -> void:
 
 
 func _ensure_error_label() -> void:
-	if _error_label and is_instance_valid(_error_label):
+	if _error_bar and is_instance_valid(_error_bar):
 		return
 	if _ce == null or not is_instance_valid(_ce):
 		return
 	# The script editor wraps the CodeEdit in a container (CodeTextEditor-like
 	# VBox); appending there places the bar under the editor, matching the
 	# GDScript error bar. If the layout ever changes, the line highlights
-	# still work without the bar.
+	# still work without the bar. PanelContainer gives the bar a background
+	# and a real minimum size — a bare Label can get squeezed to nothing by
+	# the editor's internal layout.
 	var parent := _ce.get_parent()
 	if parent == null:
 		return
+
+	_error_bar = PanelContainer.new()
+	_error_bar.visible = false
+	_error_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.14, 0.11, 0.12)
+	style.content_margin_left = 8.0
+	style.content_margin_right = 8.0
+	style.content_margin_top = 3.0
+	style.content_margin_bottom = 3.0
+	_error_bar.add_theme_stylebox_override("panel", style)
+
 	_error_label = Label.new()
-	_error_label.visible = false
-	_error_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_error_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_error_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_error_label.max_lines_visible = 2
-	parent.add_child(_error_label)
+	_error_label.custom_minimum_size = Vector2(0, 18)
+	_error_bar.add_child(_error_label)
+	parent.add_child(_error_bar)
