@@ -345,6 +345,9 @@ private:
 	};
 	std::unordered_map<std::string, DataModelEntry> _data_models;
 
+	// RmlUi's data type register is per-context — must not be shared globally.
+	bool _array_type_registered = false;
+
 	// Lookup helpers — return nullptr (optionally warning) when not found.
 	DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true);
 	const DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true) const;

@@ -175,7 +175,6 @@ godot::Dictionary RmlManager::get_info() const {
 	info["global_textures"] = static_cast<int>(_global_textures.size());
 	info["registered_tags"] = static_cast<int>(_registered_tags.size());
 	info["instancer_registered"] = _instancer_registered;
-	info["array_type_registered"] = _array_type_registered;
 	return info;
 }
 
@@ -247,7 +246,6 @@ void RmlManager::_shutdown_rmlui() {
 	Rml::Shutdown();
 	_rmlui_initialized = false;
 	_instancer_registered = false;
-	_array_type_registered = false;
 	godot::UtilityFunctions::print("[RmlManager] RmlUI shutdown");
 }
 

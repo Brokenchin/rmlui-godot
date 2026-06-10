@@ -962,7 +962,14 @@ void RmlContext::_create_context() {
 		size = godot::Vector2(800, 600);
 	}
 
+	// Context names must be unique process-wide. Multiple instances sharing a
+	// configured name (e.g. several open scenes plus the editor preview, all
+	// "default") get a unique suffix appended.
 	Rml::String name(_context_name.utf8().get_data());
+	if (Rml::GetContext(name) != nullptr) {
+		name += Rml::String("_") +
+			Rml::String(godot::String::num_uint64(get_instance_id()).utf8().get_data());
+	}
 	_rml_context = Rml::CreateContext(name,
 		Rml::Vector2i(static_cast<int>(size.x), static_cast<int>(size.y)),
 		&_render_interface);
@@ -1386,9 +1393,12 @@ bool RmlContext::bind_data_array(const godot::String& model_name,
 		return false;
 	}
 
-	if (!RmlGodot::RmlManager::get_singleton()->is_array_type_registered()) {
+	// RmlUi's data type register is per-context, so this must be tracked
+	// per RmlContext instance — a global flag breaks every context after
+	// the first one (including the editor preview context).
+	if (!_array_type_registered) {
 		model->constructor.RegisterArray<Rml::Vector<Rml::String>>();
-		RmlGodot::RmlManager::get_singleton()->set_array_type_registered(true);
+		_array_type_registered = true;
 	}
 
 	model->arrays[aname] = godot_array_to_rml_string_vector(initial_array);

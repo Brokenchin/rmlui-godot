@@ -91,8 +91,6 @@ public:
 
 	bool is_instancer_registered() const { return _instancer_registered; }
 	void set_instancer_registered(bool v) { _instancer_registered = v; }
-	bool is_array_type_registered() const { return _array_type_registered; }
-	void set_array_type_registered(bool v) { _array_type_registered = v; }
 	std::vector<std::string>& get_registered_tags() { return _registered_tags; }
 
 
@@ -108,7 +106,6 @@ private:
 
 	bool _rmlui_initialized = false;
 	bool _instancer_registered = false;
-	bool _array_type_registered = false;
 	int _context_count = 0;
 
 	std::vector<std::string> _registered_tags;
