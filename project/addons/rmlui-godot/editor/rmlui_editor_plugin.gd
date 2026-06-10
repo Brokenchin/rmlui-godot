@@ -7,6 +7,7 @@ var _inspector_plugin: RmlInspectorPlugin
 var _preview_panel: RmlPreviewPanel
 var _completion_provider: RcssCompletionProvider
 var _completion_timer: Timer
+var _diagnostics: RmlDiagnostics
 
 func _enter_tree():
 	_rcss_highlighter = RcssSyntaxHighlighter.new()
@@ -24,6 +25,9 @@ func _enter_tree():
 	_completion_timer.timeout.connect(_ensure_completion_hook)
 	add_child(_completion_timer)
 	_completion_timer.start()
+
+	_diagnostics = RmlDiagnostics.new()
+	add_child(_diagnostics)
 
 	_inspector_plugin = RmlInspectorPlugin.new()
 	add_inspector_plugin(_inspector_plugin)
@@ -57,9 +61,21 @@ func _ensure_completion_hook() -> void:
 	if ed == null:
 		return
 	var ce := ed.get_base_editor() as CodeEdit
-	if ce == null or ce.has_meta("rmlui_completion"):
+	if ce == null:
 		return
+
+	# Diagnostics follow the active tab (attach() no-ops on the same CodeEdit).
 	var hl := ce.syntax_highlighter
+	var kind := ""
+	if hl is RmlSyntaxHighlighter:
+		kind = "rml"
+	elif hl is RcssSyntaxHighlighter:
+		kind = "rcss"
+	if _diagnostics:
+		_diagnostics.attach(ce if kind != "" else null, kind)
+
+	if ce.has_meta("rmlui_completion"):
+		return
 	if hl is RcssSyntaxHighlighter or hl is RmlSyntaxHighlighter:
 		ce.set_meta("rmlui_completion", true)
 		ce.code_completion_enabled = true
