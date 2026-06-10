@@ -562,8 +562,21 @@ void RmlContext::_notification(int p_what) {
 			_rml_context->Update();
 			_render_dirty = true;
 		}
+	} else if (p_what == godot::Node::NOTIFICATION_ENTER_TREE) {
+		// Re-entering the tree (editor scene-tab switch, reparenting): the
+		// visuals were freed on exit — repaint from the still-alive context.
+		_render_dirty = true;
 	} else if (p_what == godot::Node::NOTIFICATION_EXIT_TREE) {
-		_cleanup();
+		// Only drop the visual canvas items here. The Rml context, documents,
+		// and data models survive so the node can re-enter the tree intact —
+		// the editor detaches inactive scene tabs, and games reparent UI.
+		// Full teardown happens in the destructor.
+		auto* rs = godot::RenderingServer::get_singleton();
+		if (rs != nullptr) {
+			_free_scissor_items();
+			_free_layer_items();
+			_render_interface.flush_deferred_releases();
+		}
 	}
 }
 
