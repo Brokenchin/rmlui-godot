@@ -1,4 +1,5 @@
 #include "GodotSystemInterface.hpp"
+#include "RmlManager.hpp"
 
 #include <godot_cpp/classes/display_server.hpp>
 #include <godot_cpp/classes/time.hpp>
@@ -25,6 +26,12 @@ bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& me
 		default:
 			godot::UtilityFunctions::print(msg);
 			break;
+	}
+
+	// Forward to RmlManager so tooling (editor preview panel, validators)
+	// can subscribe via the "rml_log" signal.
+	if (auto* manager = RmlManager::get_singleton()) {
+		manager->notify_log(static_cast<int>(type), godot::String(message.c_str()));
 	}
 	return true;
 }

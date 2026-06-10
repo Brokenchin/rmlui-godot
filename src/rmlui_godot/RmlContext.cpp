@@ -660,6 +660,36 @@ void RmlContext::load_document(const godot::String& path) {
 	}
 }
 
+bool RmlContext::load_document_from_string(const godot::String& rml_text, const godot::String& alias_path) {
+	if (_rml_context == nullptr) {
+		godot::UtilityFunctions::push_error("[RmlUi] Cannot load document — context not initialized");
+		return false;
+	}
+
+	if (rml_text.is_empty()) {
+		godot::UtilityFunctions::push_warning("[RmlUi] Cannot load document — text is empty");
+		return false;
+	}
+
+	Rml::ElementDocument* doc = _rml_context->LoadDocumentFromMemory(
+		Rml::String(rml_text.utf8().get_data()),
+		Rml::String(alias_path.utf8().get_data()));
+	if (doc == nullptr) {
+		godot::UtilityFunctions::push_error(
+			godot::String("[RmlUi] Failed to load document from string (") + alias_path + ")");
+		return false;
+	}
+
+	_apply_base_stylesheet(doc);
+	doc->Show();
+	_sync_dimensions();
+	_rml_context->Update();
+	_render_dirty = true;
+
+	_loaded_documents.push_back({std::string(alias_path.utf8().get_data()), doc});
+	return true;
+}
+
 bool RmlContext::reload_document(const godot::String& path) {
 	if (_rml_context == nullptr) {
 		godot::UtilityFunctions::push_warning("[RmlUi] Cannot reload document — context not initialized");

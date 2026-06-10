@@ -69,6 +69,17 @@ RmlManager::~RmlManager() {
 	_singleton = nullptr;
 }
 
+void RmlManager::notify_log(int level, const godot::String& message) {
+	godot::Dictionary entry;
+	entry["level"] = level;
+	entry["message"] = message;
+	_recent_log.push_back(entry);
+	while (_recent_log.size() > 32) {
+		_recent_log.pop_front();
+	}
+	emit_signal("rml_log", level, message);
+}
+
 void RmlManager::ensure_initialized() {
 	_initialize_rmlui();
 }
