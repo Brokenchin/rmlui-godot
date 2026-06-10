@@ -100,6 +100,57 @@ const COLOR_NAMES := [
 	"silver", "teal", "transparent",
 ]
 
+# --- RML tag/attribute data ---
+
+const RML_TAGS := [
+	"rml", "head", "title", "link", "meta", "style", "script", "template", "body",
+	"div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "em", "strong", "br", "hr",
+	"img", "button", "input", "textarea", "select", "option", "label", "form",
+	"table", "thead", "tbody", "tfoot", "tr", "td", "th", "col", "colgroup",
+	"ul", "ol", "li", "tabset", "tab", "panel", "progress", "handle",
+]
+
+const GLOBAL_ATTRIBUTES := [
+	"id", "class", "style",
+	"data-model", "data-if", "data-visible", "data-for", "data-rml", "data-value",
+	"data-checked", "data-alias", "data-attr-", "data-style-", "data-class-", "data-event-",
+]
+
+const EVENT_ATTRIBUTES := [
+	"onclick", "ondblclick", "onmousedown", "onmouseup", "onmouseover", "onmouseout",
+	"onmousemove", "onmousescroll", "onkeydown", "onkeyup", "ontextinput",
+	"onfocus", "onblur", "onload", "onunload", "onshow", "onhide", "onresize",
+	"onscroll", "onchange", "onsubmit", "ontabchange", "onanimationend", "ontransitionend",
+	"ondragstart", "ondrag", "ondragend", "ondragdrop", "ondragover", "ondragout", "ondragmove",
+]
+
+const TAG_ATTRIBUTES := {
+	"rml": [],
+	"link": ["rel", "href", "type"],
+	"script": ["type", "src"],
+	"template": ["name", "content", "src"],
+	"img": ["src", "sprite", "rect", "width", "height"],
+	"input": ["type", "name", "value", "checked", "disabled", "min", "max", "step", "maxlength", "size"],
+	"textarea": ["name", "rows", "cols", "wrap", "maxlength"],
+	"select": ["name", "value"],
+	"option": ["value", "selected", "disabled"],
+	"label": ["for"],
+	"form": ["onsubmit"],
+	"handle": ["move_target", "size_target", "edge_margin"],
+	"progress": ["value", "max", "direction", "start-edge", "fill-image"],
+	"tab": ["tabindex"],
+	"panel": ["tabindex"],
+	"td": ["colspan", "rowspan"],
+	"th": ["colspan", "rowspan"],
+	"col": ["span"],
+	"colgroup": ["span"],
+	"body": ["template"],
+}
+
+# Properties exported by the running RmlUi build (authoritative). Lazily
+# fetched; static PROPERTIES is the fallback and supplies value keywords.
+var _engine_properties := PackedStringArray()
+
 
 ## Fill completion options on `ce` based on caret context. Returns true when
 ## options were added (caller then shows the popup).
@@ -128,10 +179,118 @@ func fill_options(ce: CodeEdit) -> bool:
 			ce.add_code_completion_option(CodeEdit.KIND_CONSTANT, v, v)
 		return not values.is_empty() or prop in COLOR_PROPERTIES
 	else:
-		# Property-name position.
-		for prop in PROPERTIES:
+		# Property-name position — engine-registered names first, static
+		# table as fallback (some names may only exist in one source).
+		var seen := {}
+		for prop in _get_engine_properties():
+			seen[prop] = true
 			ce.add_code_completion_option(CodeEdit.KIND_MEMBER, prop, prop + ": ")
+		for prop in PROPERTIES:
+			if not seen.has(prop):
+				ce.add_code_completion_option(CodeEdit.KIND_MEMBER, prop, prop + ": ")
 		return true
+
+
+## Completion for .rml buffers: tag names, per-tag attributes, closing tags,
+## RCSS inside <style> blocks and style="" attributes.
+func fill_rml_options(ce: CodeEdit) -> bool:
+	var caret_line := ce.get_caret_line()
+	var before := ce.get_line(caret_line).substr(0, ce.get_caret_column())
+	var txt := _text_up_to_caret(ce, caret_line, before)
+
+	# Inside a <style> block (its opening tag closed, no </style> yet)?
+	var style_open := txt.rfindn("<style")
+	var style_close := txt.rfindn("</style")
+	var lt := txt.rfind("<")
+	var gt := txt.rfind(">")
+	if style_open > style_close and gt > style_open and lt <= style_open:
+		return fill_options(ce)
+
+	if lt <= gt:
+		return false  # text content — completion starts at '<'
+
+	# Inside a tag. Scan it to find: tag name, and whether the caret sits in
+	# the name, an attribute position, or a quoted attribute value.
+	var tag_part := txt.substr(lt)
+	var is_closing := tag_part.length() > 1 and tag_part[1] == "/"
+	var i := 2 if is_closing else 1
+	var n := tag_part.length()
+	var name_end := i
+	while name_end < n and _is_tag_char(tag_part[name_end]):
+		name_end += 1
+	var tag := tag_part.substr(i, name_end - i).to_lower()
+
+	if name_end == n:
+		# Still typing the tag name.
+		for t in RML_TAGS:
+			ce.add_code_completion_option(CodeEdit.KIND_CLASS, t, t + ">" if is_closing else t)
+		return true
+
+	# Walk attributes to find quote state and the attribute the caret is in.
+	i = name_end
+	var in_quote := ""
+	var attr := ""
+	var current_attr := ""
+	while i < n:
+		var c := tag_part[i]
+		if in_quote != "":
+			if c == in_quote:
+				in_quote = ""
+			i += 1
+			continue
+		if c == "\"" or c == "'":
+			in_quote = c
+			attr = current_attr
+			i += 1
+			continue
+		if _is_tag_char(c) or c == "-":
+			var e := i
+			while e < n and (_is_tag_char(tag_part[e]) or tag_part[e] == "-"):
+				e += 1
+			current_attr = tag_part.substr(i, e - i).to_lower()
+			i = e
+			continue
+		i += 1
+
+	if in_quote != "":
+		# Inside an attribute value.
+		if attr == "style":
+			return fill_options(ce)  # colon/semicolon heuristic works inline
+		return false
+
+	# Attribute-name position.
+	var attrs: Array = TAG_ATTRIBUTES.get(tag, [])
+	for a in attrs:
+		ce.add_code_completion_option(CodeEdit.KIND_MEMBER, a, a + "=\"")
+	for a in GLOBAL_ATTRIBUTES:
+		ce.add_code_completion_option(CodeEdit.KIND_MEMBER, a, a if a.ends_with("-") else a + "=\"")
+	for a in EVENT_ATTRIBUTES:
+		ce.add_code_completion_option(CodeEdit.KIND_SIGNAL, a, a + "=\"")
+	return true
+
+
+func _text_up_to_caret(ce: CodeEdit, caret_line: int, before: String) -> String:
+	# Join enough preceding lines for multi-line tags / <style> blocks.
+	var start := maxi(0, caret_line - 200)
+	var parts := PackedStringArray()
+	for i in range(start, caret_line):
+		parts.append(ce.get_line(i))
+	parts.append(before)
+	return "\n".join(parts)
+
+
+func _get_engine_properties() -> PackedStringArray:
+	if _engine_properties.is_empty() and Engine.has_singleton("RmlManager"):
+		var mgr := Engine.get_singleton("RmlManager")
+		if mgr.has_method("get_supported_rcss_properties"):
+			# Empty until RmlUi initializes (first context) — retried until then.
+			_engine_properties = mgr.get_supported_rcss_properties()
+	return _engine_properties
+
+
+func _is_tag_char(c: String) -> bool:
+	var l := c.to_lower()
+	return (l >= "a" and l <= "z") or (c >= "0" and c <= "9") or c == "_"
 
 
 func _property_before_colon(before: String, colon: int) -> String:

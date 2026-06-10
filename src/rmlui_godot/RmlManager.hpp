@@ -39,6 +39,7 @@ class RM_GD_CLASS(RmlManager, godot::Object, {
 	godot::ClassDB::bind_method(godot::D_METHOD("is_default_rcss_enabled"), &RmlManager::is_default_rcss_enabled);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_recent_log"), &RmlManager::get_recent_log);
 	godot::ClassDB::bind_method(godot::D_METHOD("clear_recent_log"), &RmlManager::clear_recent_log);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_supported_rcss_properties"), &RmlManager::get_supported_rcss_properties);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "default_rcss_enabled"), "set_default_rcss_enabled", "is_default_rcss_enabled");
 
@@ -88,6 +89,10 @@ public:
 	void notify_log(int level, const godot::String& message);
 	godot::Array get_recent_log() const { return _recent_log; }
 	void clear_recent_log() { _recent_log.clear(); }
+
+	// Every property + shorthand registered with RmlUi's stylesheet engine —
+	// the authoritative source for editor autocomplete.
+	godot::PackedStringArray get_supported_rcss_properties() const;
 
 	bool is_instancer_registered() const { return _instancer_registered; }
 	void set_instancer_registered(bool v) { _instancer_registered = v; }

@@ -2,6 +2,7 @@
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
+#include <RmlUi/Core/StyleSheetSpecification.h>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 namespace RmlGodot {
@@ -82,6 +83,30 @@ void RmlManager::notify_log(int level, const godot::String& message) {
 
 void RmlManager::ensure_initialized() {
 	_initialize_rmlui();
+}
+
+godot::PackedStringArray RmlManager::get_supported_rcss_properties() const {
+	godot::PackedStringArray result;
+	if (!_rmlui_initialized) return result;
+
+	const Rml::PropertyIdSet& ids = Rml::StyleSheetSpecification::GetRegisteredProperties();
+	for (auto it = ids.begin(); it != ids.end(); ++it) {
+		const Rml::String& name = Rml::StyleSheetSpecification::GetPropertyName(*it);
+		if (!name.empty()) {
+			result.append(godot::String(name.c_str()));
+		}
+	}
+
+	// Shorthands (margin, padding, border, flex, ...) live in a separate
+	// registry keyed by ShorthandId.
+	for (int i = 1; i < static_cast<int>(Rml::ShorthandId::NumDefinedIds); i++) {
+		const Rml::String& name = Rml::StyleSheetSpecification::GetShorthandName(static_cast<Rml::ShorthandId>(i));
+		if (!name.empty()) {
+			result.append(godot::String(name.c_str()));
+		}
+	}
+
+	return result;
 }
 
 void RmlManager::on_context_created() {

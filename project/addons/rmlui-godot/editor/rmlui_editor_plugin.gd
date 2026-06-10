@@ -63,12 +63,21 @@ func _ensure_completion_hook() -> void:
 	if hl is RcssSyntaxHighlighter or hl is RmlSyntaxHighlighter:
 		ce.set_meta("rmlui_completion", true)
 		ce.code_completion_enabled = true
-		ce.code_completion_prefixes = [":"]
+		# ' '/'\t' let Ctrl+Space work after indentation (CodeEdit cancels the
+		# popup when there is no word AND no prefix char before the caret);
+		# '<', '/', '"' auto-trigger tag/attribute/value completion in RML.
+		ce.code_completion_prefixes = [":", " ", "\t", "<", "/", "\""]
 		ce.code_completion_requested.connect(_on_completion_requested.bind(ce))
 
 func _on_completion_requested(ce: CodeEdit) -> void:
-	if _completion_provider.fill_options(ce):
-		ce.update_code_completion_options(true)
+	var hl := ce.syntax_highlighter
+	if hl is RmlSyntaxHighlighter:
+		_completion_provider.fill_rml_options(ce)
+	elif hl is RcssSyntaxHighlighter:
+		_completion_provider.fill_options(ce)
+	# Always update: with zero options this cleanly cancels the popup and
+	# clears any previously added sources.
+	ce.update_code_completion_options(true)
 
 func _on_selection_changed() -> void:
 	if not _preview_panel:
