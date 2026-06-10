@@ -239,5 +239,7 @@ func _ensure_error_label() -> void:
 	_error_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_error_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_error_label.custom_minimum_size = Vector2(0, 18)
+	# Labels ignore the mouse by default — required for the tooltip to show.
+	_error_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	_error_bar.add_child(_error_label)
 	parent.add_child(_error_bar)

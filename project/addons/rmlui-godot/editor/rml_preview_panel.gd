@@ -30,6 +30,7 @@ var _watched_files: Dictionary = {}
 var _connected_editor: TextEdit
 var _live_rml_text := ""
 var _live_rcss_text := ""
+var _live_rcss_name := ""  # file name of the buffer behind _live_rcss_text
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(0, 200)
@@ -168,6 +169,7 @@ func track_context(ctx: Node) -> void:
 	_watch_timer.stop()
 	_live_rml_text = ""
 	_live_rcss_text = ""
+	_live_rcss_name = ""
 	if ctx:
 		_load_from_context()
 	else:
@@ -206,14 +208,27 @@ func _load_from_context() -> void:
 
 	_apply_mock_data()
 
-	# Live RML override replaces the document; live RCSS injects on top.
-	# alias_path = the real path so relative <link href> still resolves.
-	if not _live_rml_text.is_empty() and _preview_context.has_method("load_document_from_string"):
-		_preview_context.call("load_document_from_string", _live_rml_text, doc_path)
-	else:
-		_preview_context.call("load_document", doc_path)
-
+	# Live RML override replaces the document. Live RCSS is spliced into the
+	# document at its <link> tag's position as a <style> block — replacing the
+	# disk stylesheet at the SAME cascade position. Injecting it on top
+	# instead would override later <style> blocks and keep deleted rules
+	# alive. alias_path = real path so relative <link href> still resolves.
+	var doc_text := _live_rml_text
+	var inject_fallback := false
 	if not _live_rcss_text.is_empty():
+		if doc_text.is_empty():
+			doc_text = FileAccess.get_file_as_string(doc_path)
+		var spliced := _splice_live_rcss(doc_text, _live_rcss_name, _live_rcss_text)
+		if spliced.is_empty():
+			inject_fallback = true  # couldn't locate the <link> — old behavior
+		else:
+			doc_text = spliced
+
+	if doc_text.is_empty() or not _preview_context.has_method("load_document_from_string"):
+		_preview_context.call("load_document", doc_path)
+	else:
+		_preview_context.call("load_document_from_string", doc_text, doc_path)
+	if inject_fallback:
 		_preview_context.call("inject_stylesheet", _live_rcss_text)
 
 	_watch_file(doc_path)
@@ -271,6 +286,7 @@ func _ensure_preview_context() -> bool:
 func _on_reload_pressed() -> void:
 	_live_rml_text = ""
 	_live_rcss_text = ""
+	_live_rcss_name = ""
 	_reload_preview()
 
 func _reload_preview() -> void:
@@ -352,9 +368,42 @@ func _apply_live_edit() -> void:
 		_live_rml_text = _connected_editor.text
 	elif hl is RcssSyntaxHighlighter:
 		_live_rcss_text = _connected_editor.text
+		_live_rcss_name = _current_tab_file_name()
 	else:
 		return
 	_reload_preview()
+
+
+## File name of the active script-editor tab (e.g. "hello.rcss"). The tab
+## title is the only place the editor exposes it for TextFile buffers; an
+## unsaved-changes marker "(*)" may be appended.
+func _current_tab_file_name() -> String:
+	var ed := EditorInterface.get_script_editor().get_current_editor()
+	if ed == null:
+		return ""
+	var tc := ed.get_parent() as TabContainer
+	if tc == null:
+		return ""
+	var idx := tc.get_tab_idx_from_control(ed)
+	if idx < 0:
+		return ""
+	return tc.get_tab_title(idx).trim_suffix("(*)").strip_edges()
+
+
+## Replace `<link ... href="...<file_name>" ...>` with an inline <style> block
+## holding the live buffer — same cascade position, true replace semantics.
+## Returns "" when the link tag can't be found.
+static func _splice_live_rcss(rml_text: String, file_name: String, rcss_text: String) -> String:
+	if file_name.is_empty():
+		return ""
+	var escaped := file_name.replace(".", "\\.")
+	var regex := RegEx.create_from_string("<link[^>]*href=\"[^\"]*" + escaped + "\"[^>]*>")
+	var m := regex.search(rml_text)
+	if m == null:
+		return ""
+	return rml_text.substr(0, m.get_start()) \
+		+ "<style>\n" + rcss_text + "\n</style>" \
+		+ rml_text.substr(m.get_end())
 
 # --- File watching ---
 
@@ -376,6 +425,7 @@ func _poll_file_changes() -> void:
 		# Saved files are the source of truth again — drop live overrides.
 		_live_rml_text = ""
 		_live_rcss_text = ""
+		_live_rcss_name = ""
 		_reload_preview()
 
 # --- Error surface ---
