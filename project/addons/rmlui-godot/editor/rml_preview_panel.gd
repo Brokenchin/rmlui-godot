@@ -224,7 +224,11 @@ func _load_from_context() -> void:
 	# Surface any parse errors/warnings the loads just produced. The rml_log
 	# signal covers async cases; this pull is the deterministic path.
 	if mgr and mgr.has_method("get_recent_log"):
-		for entry in mgr.get_recent_log():
+		var entries: Array = mgr.get_recent_log()
+		# TEMP diagnostic for error-surface debugging — remove once confirmed.
+		print("[RmlPreview] load finished — %d RmlUi log entries, live_rml=%d live_rcss=%d chars" % [
+			entries.size(), _live_rml_text.length(), _live_rcss_text.length()])
+		for entry in entries:
 			var lvl: int = entry.get("level", 4)
 			if lvl <= 3:
 				_on_rml_log(lvl, entry.get("message", ""))
@@ -347,6 +351,8 @@ func _apply_live_edit() -> void:
 	if not is_instance_valid(_connected_editor) or not is_instance_valid(_tracked_context):
 		return
 	var hl := _connected_editor.syntax_highlighter
+	# TEMP diagnostic for error-surface debugging — remove once confirmed.
+	print("[RmlPreview] live edit fired, highlighter=%s" % (hl.get_script().resource_path.get_file() if hl and hl.get_script() else str(hl)))
 	if hl is RmlSyntaxHighlighter:
 		_live_rml_text = _connected_editor.text
 	elif hl is RcssSyntaxHighlighter:
