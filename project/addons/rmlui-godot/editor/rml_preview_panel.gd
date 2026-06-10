@@ -182,8 +182,13 @@ func _load_from_context() -> void:
 
 	var doc_path: String = _tracked_context.get("document_path")
 	if doc_path.is_empty():
-		_file_label.text = "Selected context has no document_path"
 		_clear_preview()
+		_file_label.text = "No document_path on '%s'" % _tracked_context.name
+		_no_preview_label.text = (
+			"RmlContext '%s' has no document_path.\n" % _tracked_context.name
+			+ "Set Auto-Configuration → Document Path in the inspector to enable the preview.\n"
+			+ "(Script-driven load_document() calls don't run in the editor.)"
+		)
 		return
 
 	if not _ensure_preview_context():
@@ -227,6 +232,7 @@ func _clear_preview() -> void:
 		_preview_context = null
 	_viewport_container.visible = false
 	_no_preview_label.visible = true
+	_no_preview_label.text = "Select an RmlContext node to preview its document"
 	_file_label.text = "No document"
 	_info_label.text = ""
 	_clear_error()
