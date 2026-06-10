@@ -306,6 +306,8 @@ private:
 	godot::Ref<godot::Material> _active_material;
 
 	bool _gpu_scissor = false;
+	bool _render_dirty = true;
+	int _last_font_version = -1;
 	bool _use_default_rcss = true;
 	std::string _local_base_rcss;
 	bool _has_local_base_rcss = false;
