@@ -2,13 +2,16 @@
 extends EditorPlugin
 
 var _rcss_highlighter: RcssSyntaxHighlighter
+var _rml_highlighter: RmlSyntaxHighlighter
 var _inspector_plugin: RmlInspectorPlugin
 var _preview_panel: RmlPreviewPanel
 
 func _enter_tree():
 	_rcss_highlighter = RcssSyntaxHighlighter.new()
+	_rml_highlighter = RmlSyntaxHighlighter.new()
 	var script_editor := EditorInterface.get_script_editor()
 	script_editor.register_syntax_highlighter(_rcss_highlighter)
+	script_editor.register_syntax_highlighter(_rml_highlighter)
 
 	_inspector_plugin = RmlInspectorPlugin.new()
 	add_inspector_plugin(_inspector_plugin)
@@ -20,10 +23,13 @@ func _enter_tree():
 	selection.selection_changed.connect(_on_selection_changed)
 
 func _exit_tree():
+	var script_editor := EditorInterface.get_script_editor()
 	if _rcss_highlighter:
-		var script_editor := EditorInterface.get_script_editor()
 		script_editor.unregister_syntax_highlighter(_rcss_highlighter)
 		_rcss_highlighter = null
+	if _rml_highlighter:
+		script_editor.unregister_syntax_highlighter(_rml_highlighter)
+		_rml_highlighter = null
 
 	if _inspector_plugin:
 		remove_inspector_plugin(_inspector_plugin)
