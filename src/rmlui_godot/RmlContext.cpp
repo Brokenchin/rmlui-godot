@@ -10,6 +10,7 @@
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/StyleSheetContainer.h>
 #include <RmlUi/Debugger.h>
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/font_file.hpp>
 #include <godot_cpp/classes/input_event_key.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
@@ -1061,6 +1062,7 @@ void RmlContext::set_document_path(const godot::String& path) {
 			load_document(path);
 		}
 	}
+	update_configuration_warnings();
 }
 
 void RmlContext::set_font_paths(const godot::PackedStringArray& paths) {
@@ -1077,6 +1079,38 @@ void RmlContext::set_font_paths(const godot::PackedStringArray& paths) {
 		}
 		_render_dirty = true;
 	}
+	update_configuration_warnings();
+}
+
+godot::PackedStringArray RmlContext::_get_configuration_warnings() const {
+	godot::PackedStringArray warnings;
+
+	if (RmlGodot::RmlManager::get_singleton() == nullptr) {
+		warnings.append("RmlManager singleton not available — is the rmlui-godot GDExtension loaded?");
+		return warnings;
+	}
+
+	if (_document_path.is_empty()) {
+		warnings.append("No document_path set. Set Auto-Configuration > Document Path to load an .rml document (script-driven load_document() calls don't run in the editor).");
+	} else if (!godot::FileAccess::file_exists(_document_path)) {
+		warnings.append(godot::String("Document file not found: ") + _document_path);
+	}
+
+	for (int i = 0; i < _font_paths.size(); i++) {
+		if (!godot::FileAccess::file_exists(_font_paths[i])) {
+			warnings.append(godot::String("Font file not found: ") + _font_paths[i]);
+		}
+	}
+
+	if (_font_paths.is_empty()) {
+		auto* manager = RmlGodot::RmlManager::get_singleton();
+		bool has_global_fonts = manager->is_initialized() && manager->get_loaded_fonts().size() > 0;
+		if (!has_global_fonts) {
+			warnings.append("No fonts configured (font_paths is empty and no global fonts are loaded) — text will not render.");
+		}
+	}
+
+	return warnings;
 }
 
 // --- Public: dp_ratio ---

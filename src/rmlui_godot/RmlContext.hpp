@@ -177,6 +177,7 @@ public:
 	void _draw() override;
 	void _notification(int p_what);
 	void _gui_input(const godot::Ref<godot::InputEvent>& event) override;
+	godot::PackedStringArray _get_configuration_warnings() const override;
 
 	void load_document(const godot::String& path);
 	bool load_document_from_string(const godot::String& rml_text, const godot::String& alias_path = "memory://document");

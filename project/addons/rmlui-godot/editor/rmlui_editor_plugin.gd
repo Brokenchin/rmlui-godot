@@ -30,6 +30,7 @@ func _enter_tree():
 	add_child(_diagnostics)
 
 	_inspector_plugin = RmlInspectorPlugin.new()
+	_inspector_plugin.preview_opener = _open_preview_for
 	add_inspector_plugin(_inspector_plugin)
 
 	_preview_panel = RmlPreviewPanel.new()
@@ -94,6 +95,12 @@ func _on_completion_requested(ce: CodeEdit) -> void:
 	# Always update: with zero options this cleanly cancels the popup and
 	# clears any previously added sources.
 	ce.update_code_completion_options(true)
+
+func _open_preview_for(ctx: Node) -> void:
+	if not _preview_panel:
+		return
+	_preview_panel.track_context(ctx)
+	make_bottom_panel_item_visible(_preview_panel)
 
 func _on_selection_changed() -> void:
 	if not _preview_panel:
