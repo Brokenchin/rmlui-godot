@@ -1043,6 +1043,42 @@ void RmlContext::_cleanup() {
 	_render_interface.release_all_resources();
 }
 
+// --- Public: auto-configuration ---
+
+void RmlContext::set_document_path(const godot::String& path) {
+	if (_document_path == path) return;
+	const godot::String old = _document_path;
+	_document_path = path;
+
+	// Live change (inspector edit or runtime assignment) — swap the document.
+	// During scene instantiation _rml_context is still null and _ready()
+	// performs the initial load.
+	if (_rml_context != nullptr) {
+		if (!old.is_empty()) {
+			unload_document(old);
+		}
+		if (!path.is_empty()) {
+			load_document(path);
+		}
+	}
+}
+
+void RmlContext::set_font_paths(const godot::PackedStringArray& paths) {
+	const godot::PackedStringArray old = _font_paths;
+	_font_paths = paths;
+
+	// Live change: load any newly added faces. Removed paths stay loaded —
+	// RmlUi has no per-face unload.
+	if (_rml_context != nullptr) {
+		for (int i = 0; i < paths.size(); i++) {
+			if (!old.has(paths[i])) {
+				load_font_face(paths[i]);
+			}
+		}
+		_render_dirty = true;
+	}
+}
+
 // --- Public: dp_ratio ---
 
 void RmlContext::set_dp_ratio(float ratio) {

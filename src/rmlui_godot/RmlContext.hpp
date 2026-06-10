@@ -195,11 +195,11 @@ public:
 	void set_dp_ratio(float ratio);
 
 	godot::String get_document_path() const { return _document_path; }
-	void set_document_path(const godot::String& path) { _document_path = path; }
+	void set_document_path(const godot::String& path);
 	godot::Dictionary get_editor_mock_data() const { return _editor_mock_data; }
 	void set_editor_mock_data(const godot::Dictionary& data) { _editor_mock_data = data; }
 	godot::PackedStringArray get_font_paths() const { return _font_paths; }
-	void set_font_paths(const godot::PackedStringArray& paths) { _font_paths = paths; }
+	void set_font_paths(const godot::PackedStringArray& paths);
 
 	int get_text_render_mode() const { return _text_render_mode; }
 	void set_text_render_mode(int mode);

@@ -196,6 +196,9 @@ func _load_from_context() -> void:
 		return
 
 	_clear_error()
+	var mgr: Object = Engine.get_singleton("RmlManager") if Engine.has_singleton("RmlManager") else null
+	if mgr and mgr.has_method("clear_recent_log"):
+		mgr.clear_recent_log()
 
 	var font_paths: PackedStringArray = _tracked_context.get("font_paths")
 	for fp in font_paths:
@@ -217,6 +220,14 @@ func _load_from_context() -> void:
 	for rcss in extract_rcss_links(doc_path):
 		_watch_file(rcss)
 	_watch_timer.start()
+
+	# Surface any parse errors/warnings the loads just produced. The rml_log
+	# signal covers async cases; this pull is the deterministic path.
+	if mgr and mgr.has_method("get_recent_log"):
+		for entry in mgr.get_recent_log():
+			var lvl: int = entry.get("level", 4)
+			if lvl <= 3:
+				_on_rml_log(lvl, entry.get("message", ""))
 
 	var live_tag := ""
 	if not _live_rml_text.is_empty() or not _live_rcss_text.is_empty():
@@ -250,6 +261,10 @@ func _ensure_preview_context() -> bool:
 	_preview_context.name = "EditorPreview"
 	_viewport.add_child(_preview_context)
 	_preview_context.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# A viewport only lays out children when ITS size changes — a Control
+	# added to an already-sized SubViewport stays 0x0 forever otherwise,
+	# and a 0x0 context CPU-culls all of its geometry.
+	_preview_context.size = _viewport.size
 	return true
 
 func _on_reload_pressed() -> void:
@@ -366,7 +381,7 @@ func _poll_file_changes() -> void:
 
 func _on_rml_log(level: int, message: String) -> void:
 	# Rml::Log::Type: 1=error, 2=assert, 3=warning. Ignore info/debug.
-	if level > 3 or not visible:
+	if level > 3:
 		return
 	_error_label.text = message
 	_error_label.add_theme_color_override("font_color",
