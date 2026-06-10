@@ -224,10 +224,15 @@ func _load_from_context() -> void:
 		else:
 			doc_text = spliced
 
+	var live_load_failed := false
 	if doc_text.is_empty() or not _preview_context.has_method("load_document_from_string"):
 		_preview_context.call("load_document", doc_path)
-	else:
-		_preview_context.call("load_document_from_string", doc_text, doc_path)
+	elif not _preview_context.call("load_document_from_string", doc_text, doc_path):
+		# Live buffer doesn't parse (typically a mid-edit state). Fall back to
+		# the saved file so the preview keeps showing something useful — the
+		# parse error itself lands in the status line below.
+		live_load_failed = true
+		_preview_context.call("load_document", doc_path)
 	if inject_fallback:
 		_preview_context.call("inject_stylesheet", _live_rcss_text)
 
@@ -245,7 +250,9 @@ func _load_from_context() -> void:
 				_on_rml_log(lvl, entry.get("message", ""))
 
 	var live_tag := ""
-	if not _live_rml_text.is_empty() or not _live_rcss_text.is_empty():
+	if live_load_failed:
+		live_tag = "  (live — parse failed, showing saved file)"
+	elif not _live_rml_text.is_empty() or not _live_rcss_text.is_empty():
 		live_tag = "  (live)"
 	_file_label.text = doc_path.get_file() + live_tag
 	_no_preview_label.visible = false
