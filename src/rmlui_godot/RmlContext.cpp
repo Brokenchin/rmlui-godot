@@ -5,6 +5,7 @@
 #include "GodotFontInterface.hpp"
 
 #include <algorithm>
+#include <utility>
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/StyleSheetContainer.h>
@@ -1152,6 +1153,41 @@ bool RmlContext::create_data_model(const godot::String& model_name) {
 	return true;
 }
 
+RmlContext::DataModelEntry* RmlContext::_get_data_model(const godot::String& model_name, bool warn) {
+	auto it = _data_models.find(std::string(model_name.utf8().get_data()));
+	if (it == _data_models.end()) {
+		if (warn) {
+			godot::UtilityFunctions::push_warning(
+				godot::String("[RmlUi] Data model not found: ") + model_name);
+		}
+		return nullptr;
+	}
+	return &it->second;
+}
+
+const RmlContext::DataModelEntry* RmlContext::_get_data_model(const godot::String& model_name, bool warn) const {
+	return const_cast<RmlContext*>(this)->_get_data_model(model_name, warn);
+}
+
+Rml::Vector<Rml::String>* RmlContext::_get_data_array(DataModelEntry& model,
+	const godot::String& array_name, bool warn) {
+
+	auto it = model.arrays.find(std::string(array_name.utf8().get_data()));
+	if (it == model.arrays.end()) {
+		if (warn) {
+			godot::UtilityFunctions::push_warning(
+				godot::String("[RmlUi] Array not bound: ") + array_name);
+		}
+		return nullptr;
+	}
+	return &it->second;
+}
+
+const Rml::Vector<Rml::String>* RmlContext::_get_data_array(const DataModelEntry& model,
+	const godot::String& array_name, bool warn) {
+	return _get_data_array(const_cast<DataModelEntry&>(model), array_name, warn);
+}
+
 bool RmlContext::bind_data_variable(const godot::String& model_name,
 	const godot::String& variable_name, const godot::Variant& initial_value) {
 
@@ -1160,21 +1196,16 @@ bool RmlContext::bind_data_variable(const godot::String& model_name,
 		return false;
 	}
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return false;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return false;
 
 	std::string vname(variable_name.utf8().get_data());
-	it->second.variables[vname] = godot_to_rml_variant(initial_value);
+	model->variables[vname] = godot_to_rml_variant(initial_value);
 
-	auto* vars = &it->second.variables;
+	auto* vars = &model->variables;
 	std::string captured_vname = vname;
 
-	it->second.constructor.BindFunc(
+	model->constructor.BindFunc(
 		Rml::String(vname),
 		[vars, captured_vname](Rml::Variant& variant) {
 			auto found = vars->find(captured_vname);
@@ -1197,29 +1228,23 @@ void RmlContext::set_data_variable(const godot::String& model_name,
 		return;
 	}
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
 
 	std::string vname(variable_name.utf8().get_data());
-	it->second.variables[vname] = godot_to_rml_variant(value);
-	it->second.handle.DirtyVariable(Rml::String(vname));
+	model->variables[vname] = godot_to_rml_variant(value);
+	model->handle.DirtyVariable(Rml::String(vname));
 }
 
 godot::Variant RmlContext::get_data_variable(const godot::String& model_name,
 	const godot::String& variable_name) const {
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) return godot::Variant();
+	const DataModelEntry* model = _get_data_model(model_name, false);
+	if (model == nullptr) return godot::Variant();
 
 	std::string vname(variable_name.utf8().get_data());
-	auto vit = it->second.variables.find(vname);
-	if (vit == it->second.variables.end()) return godot::Variant();
+	auto vit = model->variables.find(vname);
+	if (vit == model->variables.end()) return godot::Variant();
 
 	return rml_to_godot_variant(vit->second);
 }
@@ -1232,21 +1257,16 @@ bool RmlContext::bind_data_event(const godot::String& model_name,
 		return false;
 	}
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return false;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return false;
 
 	std::string ename(event_name.utf8().get_data());
-	it->second.event_callbacks[ename] = callable;
+	model->event_callbacks[ename] = callable;
 
-	auto* callbacks = &it->second.event_callbacks;
+	auto* callbacks = &model->event_callbacks;
 	std::string captured_ename = ename;
 
-	it->second.constructor.BindEventCallback(
+	model->constructor.BindEventCallback(
 		Rml::String(ename),
 		[callbacks, captured_ename](Rml::DataModelHandle /*handle*/, Rml::Event& /*event*/,
 			const Rml::VariantList& arguments) {
@@ -1269,21 +1289,19 @@ void RmlContext::dirty_data_variable(const godot::String& model_name,
 
 	if (_rml_context == nullptr) return;
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) return;
+	DataModelEntry* model = _get_data_model(model_name, false);
+	if (model == nullptr) return;
 
-	it->second.handle.DirtyVariable(Rml::String(std::string(variable_name.utf8().get_data())));
+	model->handle.DirtyVariable(Rml::String(std::string(variable_name.utf8().get_data())));
 }
 
 void RmlContext::dirty_all_variables(const godot::String& model_name) {
 	if (_rml_context == nullptr) return;
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) return;
+	DataModelEntry* model = _get_data_model(model_name, false);
+	if (model == nullptr) return;
 
-	it->second.handle.DirtyAllVariables();
+	model->handle.DirtyAllVariables();
 }
 
 bool RmlContext::create_data_model_from_dict(const godot::String& model_name,
@@ -1303,22 +1321,17 @@ bool RmlContext::create_data_model_from_dict(const godot::String& model_name,
 void RmlContext::update_data_model(const godot::String& model_name,
 	const godot::Dictionary& variables) {
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
 
 	godot::Array keys = variables.keys();
 	for (int i = 0; i < keys.size(); i++) {
 		godot::String key = keys[i];
 		std::string vname(key.utf8().get_data());
-		auto var_it = it->second.variables.find(vname);
-		if (var_it != it->second.variables.end()) {
+		auto var_it = model->variables.find(vname);
+		if (var_it != model->variables.end()) {
 			var_it->second = godot_to_rml_variant(variables[key]);
-			it->second.handle.DirtyVariable(Rml::String(vname));
+			model->handle.DirtyVariable(Rml::String(vname));
 		}
 	}
 }
@@ -1333,30 +1346,25 @@ bool RmlContext::bind_data_array(const godot::String& model_name,
 		return false;
 	}
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return false;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return false;
 
 	std::string aname(array_name.utf8().get_data());
-	if (it->second.arrays.count(aname)) {
+	if (model->arrays.count(aname)) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] Array already bound: ") + array_name);
 		return false;
 	}
 
 	if (!RmlGodot::RmlManager::get_singleton()->is_array_type_registered()) {
-		it->second.constructor.RegisterArray<Rml::Vector<Rml::String>>();
+		model->constructor.RegisterArray<Rml::Vector<Rml::String>>();
 		RmlGodot::RmlManager::get_singleton()->set_array_type_registered(true);
 	}
 
-	it->second.arrays[aname] = godot_array_to_rml_string_vector(initial_array);
+	model->arrays[aname] = godot_array_to_rml_string_vector(initial_array);
 
-	auto* array_ptr = &it->second.arrays[aname];
-	it->second.constructor.Bind(Rml::String(aname), array_ptr);
+	auto* array_ptr = &model->arrays[aname];
+	model->constructor.Bind(Rml::String(aname), array_ptr);
 
 	return true;
 }
@@ -1364,142 +1372,90 @@ bool RmlContext::bind_data_array(const godot::String& model_name,
 void RmlContext::set_data_array(const godot::String& model_name,
 	const godot::String& array_name, const godot::Array& array) {
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
 
-	std::string aname(array_name.utf8().get_data());
-	auto ait = it->second.arrays.find(aname);
-	if (ait == it->second.arrays.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Array not bound: ") + array_name);
-		return;
-	}
+	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
+	if (arr == nullptr) return;
 
-	ait->second = godot_array_to_rml_string_vector(array);
-	it->second.handle.DirtyVariable(Rml::String(aname));
+	*arr = godot_array_to_rml_string_vector(array);
+	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 }
 
 void RmlContext::push_data_array_item(const godot::String& model_name,
 	const godot::String& array_name, const godot::Variant& value) {
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
 
-	std::string aname(array_name.utf8().get_data());
-	auto ait = it->second.arrays.find(aname);
-	if (ait == it->second.arrays.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Array not bound: ") + array_name);
-		return;
-	}
+	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
+	if (arr == nullptr) return;
 
-	ait->second.push_back(godot_variant_to_rml_string(value));
-	it->second.handle.DirtyVariable(Rml::String(aname));
+	arr->push_back(godot_variant_to_rml_string(value));
+	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 }
 
 void RmlContext::remove_data_array_item(const godot::String& model_name,
 	const godot::String& array_name, int index) {
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
 
-	std::string aname(array_name.utf8().get_data());
-	auto ait = it->second.arrays.find(aname);
-	if (ait == it->second.arrays.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Array not bound: ") + array_name);
-		return;
-	}
+	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
+	if (arr == nullptr) return;
 
-	if (index < 0 || index >= static_cast<int>(ait->second.size())) {
+	if (index < 0 || index >= static_cast<int>(arr->size())) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] Array index out of bounds: ") + godot::String::num_int64(index));
 		return;
 	}
 
-	ait->second.erase(ait->second.begin() + index);
-	it->second.handle.DirtyVariable(Rml::String(aname));
+	arr->erase(arr->begin() + index);
+	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 }
 
 void RmlContext::set_data_array_item(const godot::String& model_name,
 	const godot::String& array_name, int index, const godot::Variant& value) {
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
 
-	std::string aname(array_name.utf8().get_data());
-	auto ait = it->second.arrays.find(aname);
-	if (ait == it->second.arrays.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Array not bound: ") + array_name);
-		return;
-	}
+	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
+	if (arr == nullptr) return;
 
-	if (index < 0 || index >= static_cast<int>(ait->second.size())) {
+	if (index < 0 || index >= static_cast<int>(arr->size())) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] Array index out of bounds: ") + godot::String::num_int64(index));
 		return;
 	}
 
-	ait->second[index] = godot_variant_to_rml_string(value);
-	it->second.handle.DirtyVariable(Rml::String(aname));
+	(*arr)[index] = godot_variant_to_rml_string(value);
+	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 }
 
 int RmlContext::get_data_array_size(const godot::String& model_name,
 	const godot::String& array_name) const {
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) return 0;
+	const DataModelEntry* model = _get_data_model(model_name, false);
+	if (model == nullptr) return 0;
 
-	std::string aname(array_name.utf8().get_data());
-	auto ait = it->second.arrays.find(aname);
-	if (ait == it->second.arrays.end()) return 0;
+	const Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name, false);
+	if (arr == nullptr) return 0;
 
-	return static_cast<int>(ait->second.size());
+	return static_cast<int>(arr->size());
 }
 
 void RmlContext::clear_data_array(const godot::String& model_name,
 	const godot::String& array_name) {
 
-	std::string mname(model_name.utf8().get_data());
-	auto it = _data_models.find(mname);
-	if (it == _data_models.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Data model not found: ") + model_name);
-		return;
-	}
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
 
-	std::string aname(array_name.utf8().get_data());
-	auto ait = it->second.arrays.find(aname);
-	if (ait == it->second.arrays.end()) {
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] Array not bound: ") + array_name);
-		return;
-	}
+	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
+	if (arr == nullptr) return;
 
-	ait->second.clear();
-	it->second.handle.DirtyVariable(Rml::String(aname));
+	arr->clear();
+	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 }
 
 // --- Phase 5: Custom element instancers ---

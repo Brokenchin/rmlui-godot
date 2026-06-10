@@ -335,6 +335,14 @@ private:
 	};
 	std::unordered_map<std::string, DataModelEntry> _data_models;
 
+	// Lookup helpers — return nullptr (optionally warning) when not found.
+	DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true);
+	const DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true) const;
+	static Rml::Vector<Rml::String>* _get_data_array(DataModelEntry& model,
+		const godot::String& array_name, bool warn = true);
+	static const Rml::Vector<Rml::String>* _get_data_array(const DataModelEntry& model,
+		const godot::String& array_name, bool warn = true);
+
 	struct DragSourceEntry {
 		std::string element_id;
 		godot::Callable payload_builder;
