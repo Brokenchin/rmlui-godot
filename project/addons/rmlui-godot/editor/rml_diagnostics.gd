@@ -115,7 +115,12 @@ func _validate() -> void:
 	if _kind == "rcss":
 		_hidden_ctx.call("inject_stylesheet", text)
 	else:
-		_doc_loaded = _hidden_ctx.call("load_document_from_string", text, ALIAS)
+		# Strip <link> tags: relative hrefs can't resolve against the fake
+		# alias (-> false 'Failed to load style sheet diag|//...' errors), and
+		# linked sheets are saved files that don't need buffer validation.
+		# Tags rarely span lines, so line numbers stay accurate.
+		var link_re := RegEx.create_from_string("<link[^>]*>")
+		_doc_loaded = _hidden_ctx.call("load_document_from_string", link_re.sub(text, "", true), ALIAS)
 
 	_apply_diagnostics(_parse_log(mgr.get_recent_log()))
 
