@@ -1,0 +1,61 @@
+<rml>
+<head>
+	<title>Gamepad Navigation</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			font-family: "Noto Sans";
+			font-size: 16px;
+			color: #eeeeee;
+			background-color: #20242c;
+			width: 100%;
+			height: 100%;
+			padding: 24px;
+		}
+		h1 { font-size: 24px; margin-bottom: 4px; }
+		p  { color: #99a; margin-bottom: 16px; }
+		.menu { width: 240px; }
+		button {
+			display: block;
+			width: 100%;
+			padding: 10px 16px;
+			margin-bottom: 6px;
+			background-color: #2e3440;
+			border: 2px #3a4254;
+			tab-index: auto;     /* focusable */
+			nav: auto;           /* spatial navigation in all directions */
+			cursor: pointer;
+		}
+		button:hover { background-color: #3a4254; }
+		button:focus { background-color: #3a5a8c; border: 2px #6699ee; }
+		.grid { margin-top: 16px; }
+		.grid button { display: inline-block; width: 70px; margin-right: 6px; }
+		#status { margin-top: 16px; color: #7c9; min-height: 24px; }
+	</style>
+	<script>
+	var rml_context
+
+	func _pick(event):
+		var id = str(event.get("target_id", "?"))
+		rml_context.set_element_inner_rml("status", "Activated: " + id)
+
+	func _on_input_action(action: String, pressed: bool):
+		if action == "ui_cancel" and pressed:
+			rml_context.set_element_inner_rml("status", "Cancel pressed — back/close here")
+	</script>
+</head>
+<body>
+	<h1>Gamepad Navigation</h1>
+	<p>Arrows / D-pad to move focus · Enter / A to activate · Tab cycles</p>
+	<div class="menu">
+		<button id="continue" onclick="gdscript:_pick">Continue</button>
+		<button id="new-game" onclick="gdscript:_pick">New Game</button>
+		<button id="settings" onclick="gdscript:_pick">Settings</button>
+		<button id="quit" onclick="gdscript:_pick">Quit</button>
+	</div>
+	<div class="grid">
+		<button id="g1" onclick="gdscript:_pick">G1</button><button id="g2" onclick="gdscript:_pick">G2</button><button id="g3" onclick="gdscript:_pick">G3</button>
+	</div>
+	<div id="status">No selection yet.</div>
+</body>
+</rml>

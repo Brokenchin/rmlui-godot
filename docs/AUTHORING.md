@@ -109,6 +109,33 @@ Self-contained interactive documents — no `.gd` file required.
 </body>
 ```
 
+### Input actions
+
+Script blocks are not Nodes — `_input`/`_process` never fire. For game
+actions (InputMap), set the context's `input_actions` property and implement
+`_on_input_action` in the block:
+
+```gdscript
+$RmlContext.input_actions = ["inventory_toggle", "ui_cancel"]
+```
+
+```xml
+<script>
+var rml_context
+var open := false
+
+func _on_input_action(action: String, pressed: bool):
+	if action == "inventory_toggle" and pressed:
+		open = not open
+		rml_context.set_element_class("panel", "hidden", not open)
+</script>
+```
+
+The same press/release also reaches game code via the context's
+`rml_input_action(action, pressed)` signal — use whichever side owns the
+behavior. Events arrive through `_unhandled_input`, so UI controls that
+consume input (text fields etc.) keep priority.
+
 Rules of the model:
 
 - A block is a **full GDScript class** (implicit `RefCounted`): vars, funcs,
@@ -125,6 +152,26 @@ Rules of the model:
   persistent state in data models or game-side.
 - No `_process`/`_ready` (not a Node) and no debugger breakpoints — put
   complex logic in a `<script src="...">` file instead.
+
+## Gamepad & keyboard navigation
+
+Set `gamepad_navigation = true` on the RmlContext and opt elements in via RCSS:
+
+```css
+button { tab-index: auto; nav: auto; }   /* focusable + spatial nav */
+button:focus { border: 2dp #6699ee; }    /* the focus indicator */
+```
+
+That's the whole setup. Godot's `ui_*` actions (D-pad/stick/arrows out of the
+box, rebindable in the InputMap) then drive RmlUi's built-in focus engine:
+arrows = nearest-element spatial navigation, Tab = document order,
+Accept = click the focused element (fires `onclick` — inline `gdscript:`
+handlers included), Cancel = forwarded (handle via `input_actions` +
+`_on_input_action`).
+
+Fine control: `nav-up/down/left/right` accept `none`, `auto`, `horizontal`,
+`vertical`, or `#element-id` for explicit wiring; `nav: vertical` on list
+items keeps focus inside a column. See `examples/basic/gamepad_nav`.
 
 ## Drag & drop
 
