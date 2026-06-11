@@ -192,7 +192,7 @@ func fill_options(ce: CodeEdit) -> bool:
 
 
 ## Completion for .rml buffers: tag names, per-tag attributes, closing tags,
-## RCSS inside <style> blocks and style="" attributes.
+## RCSS inside <style> blocks, GDScript inside <script> blocks.
 func fill_rml_options(ce: CodeEdit) -> bool:
 	var caret_line := ce.get_caret_line()
 	var before := ce.get_line(caret_line).substr(0, ce.get_caret_column())
@@ -205,6 +205,12 @@ func fill_rml_options(ce: CodeEdit) -> bool:
 	var gt := txt.rfind(">")
 	if style_open > style_close and gt > style_open and lt <= style_open:
 		return fill_options(ce)
+
+	# Inside a <script> block → GDScript completion.
+	var script_open := txt.rfindn("<script")
+	var script_close := txt.rfindn("</script")
+	if script_open > script_close and gt > script_open and lt <= script_open:
+		return fill_gdscript_options(ce, before)
 
 	if lt <= gt:
 		return false  # text content — completion starts at '<'
@@ -330,6 +336,83 @@ func _innermost_open_tag(txt: String) -> String:
 		elif not self_closing:
 			stack.append(tag)
 	return stack.back() if not stack.is_empty() else ""
+
+
+# --- GDScript completion inside <script> blocks ---
+#
+# Godot's semantic completion engine isn't exposed to plugins, so this is
+# reflection-based: member access on a known type lists its real methods,
+# properties and signals via ClassDB; bare identifiers get keywords, the
+# block's own funcs/vars, engine class names and the rml_context/event
+# conventions. Accurate because it's reflection, not a hardcoded list.
+
+const GDSCRIPT_KEYWORDS := [
+	"func", "var", "const", "signal", "enum", "class", "extends",
+	"if", "elif", "else", "for", "while", "match", "when", "break", "continue",
+	"pass", "return", "await", "static", "and", "or", "not", "in", "is", "as",
+	"self", "super", "true", "false", "null", "print", "preload", "load",
+	"range", "str", "int", "float", "bool", "abs", "clamp", "lerp", "weakref",
+]
+
+## `before` = current line up to the caret.
+func fill_gdscript_options(ce: CodeEdit, before: String) -> bool:
+	# Member access: identifier "." [partial-word]
+	var m := RegEx.create_from_string("([A-Za-z_][A-Za-z0-9_]*)\\.[A-Za-z0-9_]*$").search(before)
+	if m:
+		var base := m.get_string(1)
+		var cls := ""
+		if base == "rml_context":
+			cls = "RmlContext"
+		elif ClassDB.class_exists(base):
+			cls = base  # engine singletons share their class name: Input, OS, Time, Engine…
+		if cls.is_empty():
+			return false
+		for opt in class_member_options(cls):
+			ce.add_code_completion_option(opt[0], opt[1], opt[2])
+		return true
+
+	# Bare identifier position.
+	for kw in GDSCRIPT_KEYWORDS:
+		ce.add_code_completion_option(CodeEdit.KIND_PLAIN_TEXT, kw, kw)
+	ce.add_code_completion_option(CodeEdit.KIND_VARIABLE, "rml_context", "rml_context")
+	ce.add_code_completion_option(CodeEdit.KIND_FUNCTION, "_on_input_action", "_on_input_action(action: String, pressed: bool):")
+	for local in _buffer_locals(ce.text):
+		ce.add_code_completion_option(local[0], local[1], local[1])
+	# Engine classes (popup filters as you type — Upper-case prefixes find these).
+	for cls_name in ClassDB.get_class_list():
+		ce.add_code_completion_option(CodeEdit.KIND_CLASS, cls_name, cls_name)
+	return true
+
+
+## [kind, display, insert] for every method/property/signal of `cls`,
+## inherited members included.
+static func class_member_options(cls: String) -> Array:
+	var out := []
+	for sig in ClassDB.class_get_signal_list(cls):
+		out.append([CodeEdit.KIND_SIGNAL, sig.name, sig.name])
+	for prop in ClassDB.class_get_property_list(cls):
+		# Skip group/category markers and internals.
+		if prop.usage & (PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_INTERNAL):
+			continue
+		if String(prop.name).contains("/"):
+			continue
+		out.append([CodeEdit.KIND_MEMBER, prop.name, prop.name])
+	for method in ClassDB.class_get_method_list(cls):
+		var args: Array = method.args
+		var display: String = method.name + "(" + ", ".join(args.map(func(a): return String(a.name))) + ")"
+		var insert: String = method.name + ("()" if args.is_empty() else "(")
+		out.append([CodeEdit.KIND_FUNCTION, display, insert])
+	return out
+
+
+## funcs/vars/signals declared in the buffer itself.
+func _buffer_locals(text: String) -> Array:
+	var out := []
+	for m in RegEx.create_from_string("(?m)^\\s*(func|var|const|signal)\\s+([A-Za-z_][A-Za-z0-9_]*)").search_all(text):
+		var kind := CodeEdit.KIND_FUNCTION if m.get_string(1) == "func" else \
+			(CodeEdit.KIND_SIGNAL if m.get_string(1) == "signal" else CodeEdit.KIND_VARIABLE)
+		out.append([kind, m.get_string(2)])
+	return out
 
 
 func _text_up_to_caret(ce: CodeEdit, caret_line: int, before: String) -> String:

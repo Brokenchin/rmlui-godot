@@ -90,8 +90,9 @@ func _ensure_completion_hook() -> void:
 		ce.code_completion_enabled = true
 		# ' '/'\t' let Ctrl+Space work after indentation (CodeEdit cancels the
 		# popup when there is no word AND no prefix char before the caret);
-		# '<', '/', '"' auto-trigger tag/attribute/value completion in RML.
-		ce.code_completion_prefixes = [":", " ", "\t", "<", "/", "\""]
+		# '<', '/', '"' auto-trigger tag/attribute/value completion in RML;
+		# '.' pops member completion inside <script> blocks.
+		ce.code_completion_prefixes = [":", " ", "\t", "<", "/", "\"", "."]
 		ce.code_completion_requested.connect(_on_completion_requested.bind(ce))
 
 var _auto_closing := false

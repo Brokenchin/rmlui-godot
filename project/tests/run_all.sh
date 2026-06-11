@@ -46,6 +46,7 @@ run tests/test_leak_churn.gd headless
 run tests/test_error_fuzz.gd headless
 run tests/test_input_actions.gd headless
 run tests/test_gamepad_nav.gd headless
+run tests/test_script_completion.gd headless
 
 # Pixel-readback tests need a window
 run tests/test_live_preview_parity.gd windowed
