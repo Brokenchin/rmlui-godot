@@ -119,6 +119,12 @@ func _build_preview_area() -> void:
 	_viewport_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_viewport_container.stretch = true
 	_viewport_container.visible = false
+	# SubViewportContainer refuses to forward ANY input inside the editor
+	# (is_editor_hint guards in subviewport_container.cpp), so the panel
+	# forwards mouse events itself — hover, clicks and wheel scrolling then
+	# work in the preview document like at runtime.
+	_viewport_container.mouse_filter = Control.MOUSE_FILTER_STOP
+	_viewport_container.gui_input.connect(_on_preview_gui_input)
 
 	_viewport = SubViewport.new()
 	_viewport.transparent_bg = true
@@ -451,6 +457,17 @@ func _clear_error() -> void:
 	if _error_label:
 		_error_label.text = ""
 		_error_label.visible = false
+
+func _on_preview_gui_input(ev: InputEvent) -> void:
+	if not (ev is InputEventMouse):
+		return
+	if _preview_context == null or not is_instance_valid(_preview_context):
+		return
+	# gui_input positions are local to the container; stretch=true means the
+	# viewport is the same size, so coords map 1:1 (in_local_coords=true).
+	_viewport.push_input(ev, true)
+	# Keep wheel/clicks from also scrolling or focusing surrounding editor UI.
+	_viewport_container.accept_event()
 
 # --- Toolbar callbacks ---
 
