@@ -1,0 +1,190 @@
+# RML Authoring Guide
+
+How to write `.rml` documents for rmlui-godot — including the Godot-specific
+extensions (inline GDScript, data binding helpers, `texture://` and shader
+decorators) and the editor tooling that makes the loop fast.
+
+RML is RmlUi's XML dialect of HTML; RCSS is its CSS dialect. Upstream
+references: [RML](https://mikke89.github.io/RmlUiDoc/pages/rml.html) ·
+[RCSS](https://mikke89.github.io/RmlUiDoc/pages/rcss.html). This guide covers
+what's different or extended here.
+
+## Document skeleton
+
+```xml
+<rml>
+<head>
+	<title>My Screen</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<link type="text/rcss" href="my_screen.rcss" />   <!-- relative to this file -->
+	<style>
+		/* inline RCSS — same cascade position as a <link> here */
+		body { font-family: "Noto Sans"; font-size: 16dp; color: #eee; }
+	</style>
+</head>
+<body>
+	<div id="panel">
+		<h1>Hello</h1>
+		<p style="color: #9cf;">Inline styles work too.</p>
+	</div>
+</body>
+</rml>
+```
+
+- RML is **strict XML**: every tag closes (`<br/>`, `</div>`), attribute
+  values are quoted, `&` `<` `>` in text need entities.
+- Paths: `res://` absolute or relative-to-document both work in `href`/`src`.
+- Fonts must be loaded before text renders — set `font_paths` on the
+  RmlContext (preferred: also works in the editor) or call `load_font_face()`.
+- Sizes: prefer `dp` (scaled by `dp_ratio`) over `px` for resolution
+  independence.
+
+## Loading: properties vs code
+
+**Prefer the inspector properties** (`document_path`, `font_paths`). They are
+zero-code, render in the editor's 2D viewport, and power the preview panel.
+Script-driven `load_document()` calls don't run in the editor — the node will
+show a configuration warning explaining exactly that.
+
+## Data binding
+
+RmlUi's reactive layer. The model must exist **before** the document loads:
+
+```gdscript
+func _ready():
+    var ctx: RmlContext = $RmlContext
+    ctx.create_data_model_from_dict("hud", {"hp": 100, "name": "Player"})
+    ctx.bind_data_array("hud", "log_lines", [])
+    ctx.load_document("res://ui/hud.rml")   # or set document_path AFTER models
+
+func damage(amount: int):
+    hp -= amount
+    ctx.set_data_variable("hud", "hp", hp)   # document updates itself
+```
+
+```xml
+<body data-model="hud">
+	<div>HP: {{ hp }} / 100</div>
+	<div data-if="hp < 25" class="warning">LOW HEALTH</div>
+	<div data-for="line : log_lines">{{ line }}</div>
+	<button data-event-click="heal">Heal</button>   <!-- bind_data_event("hud", "heal", ...) -->
+</body>
+```
+
+`{{ }}` accepts expressions — arithmetic, comparisons, ternaries:
+`{{ hp > 50 ? 'fine' : 'hurt' }}`. This is RmlUi's own expression language
+evaluating against the data model (not GDScript).
+
+**Editor preview:** set `editor_mock_data` on the node
+(`{"hud": {"hp": 80, "log_lines": ["a", "b"]}}`) and the preview panel renders
+bindings without running the game.
+
+## Inline GDScript
+
+Self-contained interactive documents — no `.gd` file required.
+
+```xml
+<head>
+	<script>
+	var rml_context        # auto-injected: the owning RmlContext node
+	var count := 0
+
+	signal threshold_reached(value: int)   # game code can connect — see below
+
+	func _on_load(_event):
+		rml_context.create_data_model_from_dict("ui", {"count": 0})
+
+	func _add(_event):
+		count += 1
+		rml_context.set_data_variable("ui", "count", count)
+		if count == 10:
+			threshold_reached.emit(count)
+	</script>
+	<!-- or external, with full IDE support: -->
+	<!-- <script src="res://ui/my_screen.gd"></script> -->
+</head>
+<body data-model="ui" onload="gdscript:_on_load">
+	<button onclick="gdscript:_add">+</button>
+	<span>{{ count }}</span>
+</body>
+```
+
+Rules of the model:
+
+- A block is a **full GDScript class** (implicit `RefCounted`): vars, funcs,
+  signals, inner classes, `await`, `load()`, autoload access via
+  `rml_context.get_node("/root/MyAutoload")`.
+- Compiles at document load (errors report the document path). The instance is
+  created **lazily on the first dispatched event** — loading never runs user
+  code. Hot reload recompiles changed blocks; unchanged blocks are reused.
+- `gdscript:method` works on any `on*` event attribute. Dispatch order:
+  script blocks → the RmlContext's attached script → its parent node.
+  Handlers get one argument: the event Dictionary.
+- Bridge out with signals: `$RmlContext.get_document_script().threshold_reached.connect(...)`.
+- Instance state dies with the document (reload = fresh state). Keep
+  persistent state in data models or game-side.
+- No `_process`/`_ready` (not a Node) and no debugger breakpoints — put
+  complex logic in a `<script src="...">` file instead.
+
+## Drag & drop
+
+Registration is API-driven (works from inline scripts too):
+
+```gdscript
+ctx.register_drag_source("item-1", _build_payload)        # payload_builder(id, pos) -> Dictionary
+ctx.register_drop_target("slot-3", _on_drop)              # drop_handler(target_id, data)
+```
+
+```css
+.item { drag: clone; }          /* RCSS opts the element into dragging */
+.item:drag { visibility: hidden; }
+.slot:drag-over { border: 2dp #5588bb; }
+```
+
+Bridges Godot's native drag — drags cross between RmlContexts and native
+Controls freely. See `examples/advanced/inline_drag` for a fully inline
+implementation with a signal bridged back to a Godot Label.
+
+## Godot textures & shader decorators
+
+```gdscript
+RmlManager.register_texture("portrait", my_texture)   # global
+ctx.register_texture("minimap", viewport_texture)     # this context only
+ctx.register_decorator_shader("scanlines", my_shader)
+```
+
+```css
+.portrait { decorator: image("texture://portrait"); }
+.fancy    { decorator: shader(scanlines); }
+```
+
+## Editor tooling
+
+Everything ships in the addon (`plugin.cfg` → enable "RmlUI"):
+
+- **Syntax highlighting** for `.rml` and `.rcss` (including embedded `<style>`,
+  `style=""` and `<script>` regions). Files open in the script editor from the
+  FileSystem dock. *Files opened before the plugin existed may be cached as
+  "Plain Text" — switch once via the script editor's Edit ▸ Syntax Highlighter.*
+- **Autocomplete**: RCSS properties (live list from the engine) and values;
+  RML tags, per-tag attributes, `data-*`/`on*`; typing `>` auto-inserts the
+  closing tag; `</` suggests the innermost unclosed tag.
+- **Inline diagnostics**: parse errors tint the offending line and show in an
+  error bar under the editor, ~0.5 s after you stop typing — no save needed.
+- **Live preview** (bottom panel): select an RmlContext to render its
+  document; edits to open `.rml`/`.rcss` buffers apply live without saving;
+  mouse hover/click/scroll work inside the panel; parse errors appear in the
+  status line. `editor_mock_data` feeds bindings.
+- **Inspector**: Edit/Create buttons for the document and its linked `.rcss`,
+  a live status line, and a Preview shortcut.
+
+## Pitfalls worth knowing
+
+- **Models before documents** — `data-model="x"` resolves at load time.
+- **Element handles go stale on reload** — re-query, check `is_valid()`.
+- **`inject_stylesheet` wins the cascade** and stacks until the document
+  reloads; for live theming prefer data-driven classes.
+- **Main thread only** — marshal worker-thread results via `call_deferred`.
+- **`RmlManager` signal connections from lambdas** must be disconnected before
+  quit (singleton outlives GDScript teardown).
+- **F8** toggles the RmlUi debugger at runtime (element inspector).
