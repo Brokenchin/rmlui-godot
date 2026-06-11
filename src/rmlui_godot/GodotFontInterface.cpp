@@ -45,6 +45,12 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 	if (!path.begins_with("res://") && !path.begins_with("user://"))
 		path = godot::String("res://") + path;
 
+	// Same file + parameters already registered? Faces are global and live
+	// until shutdown — a duplicate would copy the whole font again.
+	const std::string key = std::string(path.utf8().get_data()) + "|" +
+		std::to_string(static_cast<int>(weight)) + "|" + (fallback_face ? "f" : "-");
+	if (_loaded_file_keys.count(key)) return true;
+
 	godot::Ref<godot::FileAccess> f = godot::FileAccess::open(path, godot::FileAccess::READ);
 	if (!f.is_valid()) {
 		godot::UtilityFunctions::push_warning(
@@ -72,7 +78,9 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 			weight = static_cast<Rml::Style::FontWeight>(ts_weight);
 	}
 
-	return _register_font(font_rid, family, style, weight, fallback_face);
+	if (!_register_font(font_rid, family, style, weight, fallback_face)) return false;
+	_loaded_file_keys.insert(key);
+	return true;
 }
 
 bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_index*/,
@@ -88,6 +96,11 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 	}
 	if (!path.begins_with("res://") && !path.begins_with("user://"))
 		path = godot::String("res://") + path;
+
+	const std::string key = std::string(path.utf8().get_data()) + "|" +
+		std::string(family.c_str()) + "|" + std::to_string(static_cast<int>(style)) + "|" +
+		std::to_string(static_cast<int>(weight)) + "|" + (fallback_face ? "f" : "-");
+	if (_loaded_file_keys.count(key)) return true;
 
 	godot::Ref<godot::FileAccess> f = godot::FileAccess::open(path, godot::FileAccess::READ);
 	if (!f.is_valid()) {
@@ -110,7 +123,9 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 			weight = static_cast<Rml::Style::FontWeight>(ts_weight);
 	}
 
-	return _register_font(font_rid, family, style, weight, fallback_face);
+	if (!_register_font(font_rid, family, style, weight, fallback_face)) return false;
+	_loaded_file_keys.insert(key);
+	return true;
 }
 
 bool GodotFontInterface::LoadFontFace(Rml::Span<const Rml::byte> data, int /*face_index*/,
@@ -1331,6 +1346,7 @@ void GodotFontInterface::ReleaseFontResources() {
 	}
 	_loaded_fonts.clear();
 	_faces.clear();
+	_loaded_file_keys.clear();
 	_fallback_font_index = -1;
 }
 

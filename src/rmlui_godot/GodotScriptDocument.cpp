@@ -21,15 +21,18 @@ GodotScriptDocument::~GodotScriptDocument() = default;
 void GodotScriptDocument::LoadInlineScript(const Rml::String& content,
 	const Rml::String& source_path, int source_line) {
 
-	godot::Ref<godot::GDScript> script;
-	script.instantiate();
+	auto* manager = RmlManager::get_singleton();
+	if (manager == nullptr) return;
+
 	// dedent(): the XML parser delivers the block with its .rml indentation,
 	// which whitespace-sensitive GDScript rejects ("Unexpected Indent").
 	// No `extends` needed — GDScript implicitly extends RefCounted.
-	script->set_source_code(godot::String(content.c_str()).dedent());
-
-	godot::Error err = script->reload();
-	if (err != godot::OK) {
+	// Compiled through the manager's source-keyed cache: unchanged blocks are
+	// reused across documents and hot reloads (Godot retains every runtime
+	// GDScript until shutdown, so per-load recompiles would accumulate).
+	godot::Ref<godot::GDScript> script =
+		manager->get_or_compile_script(godot::String(content.c_str()).dedent());
+	if (script.is_null()) {
 		godot::UtilityFunctions::push_error(
 			godot::String("[RmlUi] Failed to compile <script> block in ") +
 			godot::String(source_path.c_str()) + godot::String(" (line ") +

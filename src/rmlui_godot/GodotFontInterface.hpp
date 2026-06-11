@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <set>
 
@@ -170,6 +171,13 @@ private:
 	std::vector<LoadedFont> _loaded_fonts;
 	std::vector<std::unique_ptr<FontFace>> _faces;
 	int _fallback_font_index = -1;
+
+	// Dedup for file-based loads: "path|family|weight|fallback" of every face
+	// already registered. RmlUi font faces are global and live until shutdown,
+	// so re-loading the same file (every context's _ready runs its font_paths)
+	// would otherwise accumulate a full font copy per context — ~1 MB leaked
+	// per context lifecycle (measured by tests/test_leak_churn.gd).
+	std::unordered_set<std::string> _loaded_file_keys;
 	std::unordered_map<std::string, std::string> _generic_families;
 	LayoutMode _layout_mode = LayoutMode::MANUAL;
 	TextRenderMode _text_render_mode = TextRenderMode::DEFAULT;

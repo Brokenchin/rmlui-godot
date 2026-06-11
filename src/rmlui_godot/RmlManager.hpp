@@ -107,6 +107,13 @@ public:
 	void set_instancer_registered(bool v) { _instancer_registered = v; }
 	std::vector<std::string>& get_registered_tags() { return _registered_tags; }
 
+	// Compile-or-reuse for inline <script> blocks, keyed by exact source.
+	// Godot retains every runtime-created GDScript in its script cache until
+	// shutdown (virtual gdscript:// path), so recompiling identical source on
+	// every document (re)load accumulates dead Script objects — and reuse
+	// makes hot reload of unchanged blocks free.
+	godot::Ref<godot::GDScript> get_or_compile_script(const godot::String& source);
+
 	// Rml::Context* → owning RmlContext node. Lets element-level code (inline
 	// gdscript handlers, script blocks) reach the Godot node for dispatch.
 	void register_context_node(Rml::Context* context, RmlContext* node) { _context_nodes[context] = node; }
@@ -129,6 +136,7 @@ private:
 	GodotScriptDocumentInstancer _document_instancer;
 
 	std::unordered_map<Rml::Context*, RmlContext*> _context_nodes;
+	std::unordered_map<std::string, godot::Ref<godot::GDScript>> _script_cache;
 
 	bool _rmlui_initialized = false;
 	bool _instancer_registered = false;
