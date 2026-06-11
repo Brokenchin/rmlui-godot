@@ -17,6 +17,7 @@
 #include <godot_cpp/classes/input_event_key.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
+#include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/shader.hpp>
@@ -201,6 +202,23 @@ Rml::Vector<Rml::String> godot_array_to_rml_string_vector(const godot::Array& ar
 } // anonymous namespace
 
 namespace RmlGodot {
+
+// Thread-safety contract: every context API must run on the main thread —
+// RmlUi has no internal locking, and binding callbacks fire from Update()
+// during _process. A worker thread racing the data maps or DirtyVariable
+// corrupts state silently, so catch it loudly (warn-once, near-zero cost).
+static void _warn_if_off_main_thread() {
+	static bool warned = false;
+	if (warned) return;
+	auto* os = godot::OS::get_singleton();
+	if (os != nullptr && os->get_thread_caller_id() != os->get_main_thread_id()) {
+		warned = true;
+		godot::UtilityFunctions::push_warning(
+			"[RmlUi] Context API called from a non-main thread. RmlUi data binding "
+			"is NOT thread-safe — marshal through call_deferred() or a main-thread "
+			"queue. (Warning shown once; expect corruption or crashes if continued.)");
+	}
+}
 
 RmlContext::RmlContext() {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
@@ -646,6 +664,7 @@ void RmlContext::reset_base_rcss() {
 }
 
 void RmlContext::load_document(const godot::String& path) {
+	_warn_if_off_main_thread();
 	if (_rml_context == nullptr) {
 		godot::UtilityFunctions::push_error("[RmlUi] Cannot load document — context not initialized");
 		return;
@@ -1308,6 +1327,7 @@ bool RmlContext::create_data_model(const godot::String& model_name) {
 }
 
 RmlContext::DataModelEntry* RmlContext::_get_data_model(const godot::String& model_name, bool warn) {
+	_warn_if_off_main_thread();
 	auto it = _data_models.find(std::string(model_name.utf8().get_data()));
 	if (it == _data_models.end()) {
 		if (warn) {

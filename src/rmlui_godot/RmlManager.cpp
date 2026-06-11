@@ -85,6 +85,23 @@ void RmlManager::ensure_initialized() {
 	_initialize_rmlui();
 }
 
+godot::Ref<godot::GDScript> RmlManager::get_or_compile_script(const godot::String& source) {
+	const std::string key(source.utf8().get_data());
+	auto it = _script_cache.find(key);
+	if (it != _script_cache.end()) {
+		return it->second;
+	}
+
+	godot::Ref<godot::GDScript> script;
+	script.instantiate();
+	script->set_source_code(source);
+	if (script->reload() != godot::OK) {
+		return godot::Ref<godot::GDScript>(); // caller reports with doc context
+	}
+	_script_cache[key] = script;
+	return script;
+}
+
 godot::PackedStringArray RmlManager::get_supported_rcss_properties() const {
 	godot::PackedStringArray result;
 	if (!_rmlui_initialized) return result;
@@ -277,6 +294,7 @@ void RmlManager::_shutdown_rmlui() {
 	_default_sheet_dirty = true;
 	_global_textures.clear();
 	_loaded_fonts.clear();
+	_script_cache.clear();
 	_registered_tags.clear();
 
 	Rml::Shutdown();

@@ -9,6 +9,14 @@ A GDExtension plugin that integrates [RmlUi](https://github.com/mikke89/RmlUi) i
 
 > **Status:** Active development. Core API is stable.
 
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [API Reference](docs/API.md) | Every GDScript-facing method, property and signal of `RmlContext`, `RmlManager`, `RmlElementHandle` — plus the inline-GDScript dispatch model and thread-safety contract |
+| [RML Authoring Guide](docs/AUTHORING.md) | Writing documents: structure, data binding, inline GDScript, drag & drop, Godot textures/shaders, editor tooling, pitfalls |
+| [RCSS Reference](docs/RCSS.md) | All RCSS properties registered by this build, differences from web CSS, decorators, RmlUi-specific properties |
+
 ## Features
 
 ### Core

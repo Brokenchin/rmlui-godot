@@ -33,6 +33,7 @@ class RM_GD_CLASS(RmlManager, godot::Object, {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_texture", "name"), &RmlManager::get_texture);
 	godot::ClassDB::bind_method(godot::D_METHOD("has_texture", "name"), &RmlManager::has_texture);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_initialized"), &RmlManager::is_initialized);
+	godot::ClassDB::bind_method(godot::D_METHOD("ensure_initialized"), &RmlManager::ensure_initialized);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_context_count"), &RmlManager::get_context_count);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_info"), &RmlManager::get_info);
 
@@ -46,6 +47,11 @@ class RM_GD_CLASS(RmlManager, godot::Object, {
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "default_rcss_enabled"), "set_default_rcss_enabled", "is_default_rcss_enabled");
 
+	// NOTE: connect with method Callables owned by Nodes (the node's death
+	// removes the connection). Lambda/closure connections that are never
+	// disconnected crash at process exit: this singleton is destroyed during
+	// extension deinit, AFTER GDScript teardown, so releasing a closure-
+	// holding connection there touches freed scripting state.
 	ADD_SIGNAL(godot::MethodInfo("rml_log",
 		godot::PropertyInfo(godot::Variant::INT, "level"),
 		godot::PropertyInfo(godot::Variant::STRING, "message")));
@@ -101,6 +107,13 @@ public:
 	void set_instancer_registered(bool v) { _instancer_registered = v; }
 	std::vector<std::string>& get_registered_tags() { return _registered_tags; }
 
+	// Compile-or-reuse for inline <script> blocks, keyed by exact source.
+	// Godot retains every runtime-created GDScript in its script cache until
+	// shutdown (virtual gdscript:// path), so recompiling identical source on
+	// every document (re)load accumulates dead Script objects — and reuse
+	// makes hot reload of unchanged blocks free.
+	godot::Ref<godot::GDScript> get_or_compile_script(const godot::String& source);
+
 	// Rml::Context* → owning RmlContext node. Lets element-level code (inline
 	// gdscript handlers, script blocks) reach the Godot node for dispatch.
 	void register_context_node(Rml::Context* context, RmlContext* node) { _context_nodes[context] = node; }
@@ -123,6 +136,7 @@ private:
 	GodotScriptDocumentInstancer _document_instancer;
 
 	std::unordered_map<Rml::Context*, RmlContext*> _context_nodes;
+	std::unordered_map<std::string, godot::Ref<godot::GDScript>> _script_cache;
 
 	bool _rmlui_initialized = false;
 	bool _instancer_registered = false;

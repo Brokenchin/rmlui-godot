@@ -1,0 +1,64 @@
+<rml>
+<head>
+	<title>Hot Reload Test</title>
+	<link type="text/rcss" href="base.rcss" />
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 16px;
+			color: #ffffff;
+		}
+		#panel {
+			position: absolute;
+			left: 40px;
+			top: 40px;
+			width: 500px;
+			padding: 20px;
+			background-color: #16213e;
+		}
+		h1 {
+			font-size: 22px;
+			margin-bottom: 16px;
+			color: #e94560;
+		}
+		h2 {
+			font-size: 18px;
+			margin-top: 16px;
+			margin-bottom: 8px;
+			color: #a0c4ff;
+		}
+		.section {
+			margin-bottom: 12px;
+			padding: 10px;
+			background-color: #0f3460;
+		}
+		#status {
+			color: #00ff88;
+			margin-top: 8px;
+		}
+		#counter-display {
+			color: #ffd700;
+			font-size: 20px;
+			padding: 8px;
+		}
+	</style>
+</head>
+<body>
+	<div id="panel">
+		<h1>Phase 6 — Hot Reload</h1>
+
+		<h2>Data Binding Persistence</h2>
+		<div class="section">
+			<p>Counter: <span id="counter-display">{{ counter }}</span></p>
+			<p>Label: <span id="label-display">{{ label }}</span></p>
+		</div>
+
+		<h2>Status</h2>
+		<div class="section">
+			<p id="status">Document loaded</p>
+			<p id="marker">reload-test-marker</p>
+		</div>
+	</div>
+</body>
+</rml>

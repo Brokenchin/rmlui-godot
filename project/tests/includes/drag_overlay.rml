@@ -1,0 +1,20 @@
+<rml>
+<head>
+	<title>Drag Overlay</title>
+	<link type="text/rcss" href="base.rcss" />
+	<style>
+		body {
+			background-color: transparent;
+		}
+		#ghost-container {
+			position: absolute;
+			left: 0px;
+			top: 0px;
+			opacity: 0.85;
+		}
+	</style>
+</head>
+<body>
+	<div id="ghost-container"></div>
+</body>
+</rml>

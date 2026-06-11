@@ -1,0 +1,83 @@
+<rml>
+<head>
+<style>
+body {
+	background-color: #1a1a2e;
+	font-family: "Noto Sans";
+	font-size: 14px;
+	color: #e0e0e0;
+	padding: 10px;
+}
+h2 {
+	font-size: 16px;
+	color: #e94560;
+	margin-bottom: 8px;
+}
+.slot-grid {
+	display: block;
+	margin-bottom: 8px;
+}
+.slot {
+	display: inline-block;
+	width: 60px;
+	height: 40px;
+	margin: 3px;
+	padding: 4px;
+	background-color: #16213e;
+	border: 1px #0f3460;
+	font-size: 11px;
+	color: #aabbdd;
+	cursor: pointer;
+	vertical-align: top;
+	overflow: hidden;
+}
+.slot:hover {
+	border-color: #e94560;
+	background-color: #1a2a4a;
+}
+.drop-zone {
+	min-height: 40px;
+	padding: 8px;
+	background-color: #0f3460;
+	border: 1px #333366;
+	font-size: 12px;
+	color: #8899bb;
+	text-align: center;
+	margin-bottom: 8px;
+}
+.drop-zone:drag-over {
+	background-color: #1a5a3a;
+	border-color: #44ff88;
+}
+.status {
+	font-size: 11px;
+	color: #44ff44;
+	margin-top: 4px;
+}
+.canary {
+	font-size: 13px;
+	color: #ffaa44;
+	margin-top: 6px;
+	padding: 4px;
+	background-color: #2a1a0e;
+	border: 1px #664400;
+}
+</style>
+</head>
+<body>
+<h2>Ghost Lifecycle Test</h2>
+
+<div class="slot-grid">
+	<div id="slot_0" class="slot">Slot A</div>
+	<div id="slot_1" class="slot">Slot B</div>
+	<div id="slot_2" class="slot">Slot C</div>
+	<div id="slot_3" class="slot">Slot D</div>
+</div>
+
+<div id="drop-zone" class="drop-zone">Drop items here</div>
+<div id="drop-info" class="status"></div>
+
+<div id="canary" class="canary">CANARY: If you can read this after dragging, fonts survived.</div>
+<div id="test-status" class="status">Drag a slot and release. Watch if canary text disappears.</div>
+</body>
+</rml>

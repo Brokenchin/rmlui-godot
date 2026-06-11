@@ -1,0 +1,29 @@
+[gd_scene load_steps=2 format=3 uid="uid://cw610ym321tbu"]
+
+[sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_q7vvu"]
+blend_mode = 4
+
+[node name="MockPreviewTest" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="RmlContext" type="RmlContext" parent="."]
+document_path = "res://tests/mock_preview.rml"
+font_paths = PackedStringArray("res://addons/rmlui-godot/examples/fonts/NotoSans-Regular.ttf")
+editor_mock_data = {
+"mock": {
+"items": ["Sword", "Shield", "Potion"],
+"title": "Mock Inventory"
+}
+}
+material = SubResource("CanvasItemMaterial_q7vvu")
+clip_contents = true
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2

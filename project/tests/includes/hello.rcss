@@ -1,0 +1,19 @@
+body {
+	width: 100%;
+	height: 100%;
+}
+
+#container {
+	width: 300dp;
+	height: 200dp;
+	margin: 50dp auto;
+	background-color: #cc3333;
+	border: 4dp #ffcc00;
+	padding: 20dp;
+}
+
+#inner {
+	width: 100%;
+	height: 60dp;
+	background-color: #3366cc;
+}

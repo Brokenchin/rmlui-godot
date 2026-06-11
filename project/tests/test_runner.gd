@@ -22,7 +22,7 @@ func _initialize():
 		var instance = script.new()
 		if instance.has_method("run"):
 			instance.run(self)
-		instance.free()
+		instance = null  # RefCounted — released by refcount
 
 	_print_summary()
 	quit(0 if _failed == 0 else 1)
