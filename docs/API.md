@@ -32,6 +32,7 @@ process-wide (see RmlManager).
 | `font_pixel_snap`, `font_layout_mode`, `font_hinting`, `font_antialiasing`, `font_subpixel`, `font_oversampling` | — | Granular text tuning; apply process-wide via the shared font engine. |
 | `gpu_scissor` | bool | Shader-based scissoring instead of CPU clipping. |
 | `editor_mock_data` | Dictionary | `{model_name: {var_name: value}}` — applied **only by the editor preview panel** so `data-for`/`{{ }}` render without running the game. Arrays become data arrays. |
+| `input_actions` | PackedStringArray | InputMap actions this context watches via `_unhandled_input`. Each press/release emits `rml_input_action` **and** dispatches to the documents' `<script>` blocks (`_on_input_action(action, pressed)`). Empty = zero input overhead. |
 
 Configuration warnings (⚠ in the scene tree) flag a missing `document_path`,
 nonexistent document/font files, and no-fonts-anywhere setups.
@@ -42,6 +43,7 @@ nonexistent document/font files, and no-fonts-anywhere setups.
 |---|---|---|
 | `rml_drag_started` | `element_id: String, payload: Dictionary` | A registered drag source started dragging. |
 | `rml_drop_received` | `element_id: String, data: Dictionary` | A registered drop target received a drop. |
+| `rml_input_action` | `action: String, pressed: bool` | A watched InputMap action (see `input_actions`) was pressed/released. |
 
 ### Documents
 

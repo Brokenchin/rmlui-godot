@@ -109,6 +109,33 @@ Self-contained interactive documents — no `.gd` file required.
 </body>
 ```
 
+### Input actions
+
+Script blocks are not Nodes — `_input`/`_process` never fire. For game
+actions (InputMap), set the context's `input_actions` property and implement
+`_on_input_action` in the block:
+
+```gdscript
+$RmlContext.input_actions = ["inventory_toggle", "ui_cancel"]
+```
+
+```xml
+<script>
+var rml_context
+var open := false
+
+func _on_input_action(action: String, pressed: bool):
+	if action == "inventory_toggle" and pressed:
+		open = not open
+		rml_context.set_element_class("panel", "hidden", not open)
+</script>
+```
+
+The same press/release also reaches game code via the context's
+`rml_input_action(action, pressed)` signal — use whichever side owns the
+behavior. Events arrive through `_unhandled_input`, so UI controls that
+consume input (text fields etc.) keep priority.
+
 Rules of the model:
 
 - A block is a **full GDScript class** (implicit `RefCounted`): vars, funcs,

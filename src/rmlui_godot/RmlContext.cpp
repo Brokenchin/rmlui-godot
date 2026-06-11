@@ -252,6 +252,7 @@ RmlContext::~RmlContext() {
 
 void RmlContext::_ready() {
 	set_process(true);
+	set_process_unhandled_input(!_input_actions.is_empty());
 	set_clip_contents(true);
 
 	auto* manager = RmlGodot::RmlManager::get_singleton();
@@ -607,6 +608,46 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 	_forward_mouse_event(event);
 	_forward_key_event(event);
 	_render_dirty = true;
+}
+
+void RmlContext::set_input_actions(const godot::PackedStringArray& actions) {
+	_input_actions = actions;
+	// _unhandled_input only fires while enabled — keep it off unless watching
+	// something, so contexts add zero per-event overhead by default.
+	if (is_inside_tree()) {
+		set_process_unhandled_input(!_input_actions.is_empty());
+	}
+}
+
+void RmlContext::_unhandled_input(const godot::Ref<godot::InputEvent>& event) {
+	if (event.is_null() || _input_actions.is_empty()) return;
+
+	for (int i = 0; i < _input_actions.size(); i++) {
+		const godot::String action = _input_actions[i];
+		bool pressed;
+		if (event->is_action_pressed(action)) {
+			pressed = true;
+		} else if (event->is_action_released(action)) {
+			pressed = false;
+		} else {
+			continue;
+		}
+
+		emit_signal("rml_input_action", action, pressed);
+
+		// Dispatch into the documents' <script> blocks: first block across
+		// all loaded documents defining _on_input_action(action, pressed).
+		godot::Array args;
+		args.append(action);
+		args.append(pressed);
+		for (auto& ld : _loaded_documents) {
+			auto* doc = rmlui_dynamic_cast<GodotScriptDocument*>(ld.document);
+			if (doc != nullptr && doc->dispatch_to_scripts("_on_input_action", args)) {
+				break;
+			}
+		}
+		_render_dirty = true;
+	}
 }
 
 Rml::SharedPtr<Rml::StyleSheetContainer> RmlContext::_get_effective_base_sheet() {
