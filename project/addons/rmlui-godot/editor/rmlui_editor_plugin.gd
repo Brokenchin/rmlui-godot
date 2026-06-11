@@ -77,6 +77,12 @@ func _ensure_completion_hook() -> void:
 	if _diagnostics:
 		_diagnostics.attach(ce if kind != "" else null, kind)
 
+	# Auto-close: typing '>' after an opening tag inserts the matching
+	# closing tag, caret stays between them (RML is XML — no anonymous </>).
+	if hl is RmlSyntaxHighlighter and not ce.has_meta("rmlui_autoclose"):
+		ce.set_meta("rmlui_autoclose", true)
+		ce.text_changed.connect(_on_rml_text_changed.bind(ce))
+
 	if ce.has_meta("rmlui_completion"):
 		return
 	if hl is RcssSyntaxHighlighter or hl is RmlSyntaxHighlighter:
@@ -87,6 +93,22 @@ func _ensure_completion_hook() -> void:
 		# '<', '/', '"' auto-trigger tag/attribute/value completion in RML.
 		ce.code_completion_prefixes = [":", " ", "\t", "<", "/", "\""]
 		ce.code_completion_requested.connect(_on_completion_requested.bind(ce))
+
+var _auto_closing := false
+
+func _on_rml_text_changed(ce: CodeEdit) -> void:
+	if _auto_closing or not is_instance_valid(ce):
+		return
+	var line := ce.get_caret_line()
+	var col := ce.get_caret_column()
+	var tag := RcssCompletionProvider.autoclose_tag_for(ce.get_line(line), col)
+	if tag.is_empty():
+		return
+	_auto_closing = true
+	ce.insert_text("</" + tag + ">", line, col)
+	ce.set_caret_line(line)
+	ce.set_caret_column(col)
+	_auto_closing = false
 
 func _on_completion_requested(ce: CodeEdit) -> void:
 	var hl := ce.syntax_highlighter

@@ -282,10 +282,40 @@ func fill_rml_options(ce: CodeEdit) -> bool:
 	return true
 
 
+## Auto-close support: when the caret sits right after a '>' that completes an
+## opening tag, returns the tag name to close ("" when nothing should happen).
+## RmlUi is XML — closing tags must be named (</> is not a thing) — so editors
+## conventionally insert the close pair the moment the opening tag is finished.
+static func autoclose_tag_for(line_text: String, col: int) -> String:
+	if col < 2 or col > line_text.length() or line_text[col - 1] != ">":
+		return ""
+	if line_text[col - 2] == "/":
+		return ""  # self-closing <br/>
+	var lt := line_text.rfind("<", col - 1)
+	if lt == -1:
+		return ""
+	var tag_part := line_text.substr(lt, col - lt)
+	# Opening tag only: <name> or <name attr="..."> — rejects </close>,
+	# <!-- comments, <?xml, and quote-aware so > inside strings can't end it.
+	var re := RegEx.create_from_string("^<([A-Za-z][A-Za-z0-9_-]*)(\\s(?:\"[^\"]*\"|'[^']*'|[^>\"'])*)?>$")
+	var m := re.search(tag_part)
+	if m == null:
+		return ""
+	var tag := m.get_string(1)
+	if tag.to_lower() in VOID_TAGS:
+		return ""
+	# Don't double-insert when the close pair is already there.
+	if line_text.substr(col).begins_with("</" + tag + ">"):
+		return ""
+	return tag
+
+
+const VOID_TAGS := ["br", "hr", "img", "input", "link", "meta", "col"]
+
+
 ## The innermost tag opened but not yet closed before `txt`'s end — the best
 ## suggestion when the user types "</".
 func _innermost_open_tag(txt: String) -> String:
-	const VOID_TAGS := ["br", "hr", "img", "input", "link", "meta", "col"]
 	var stack: Array[String] = []
 	var re := RegEx.create_from_string("<(/?)([A-Za-z][A-Za-z0-9_-]*)((?:\"[^\"]*\"|'[^']*'|[^>\"'])*)>")
 	for m in re.search_all(txt):
