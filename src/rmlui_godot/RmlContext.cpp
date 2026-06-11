@@ -22,6 +22,7 @@
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/shader.hpp>
 #include <godot_cpp/classes/shader_material.hpp>
+#include <godot_cpp/classes/viewport.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/vector4.hpp>
 
@@ -252,7 +253,7 @@ RmlContext::~RmlContext() {
 
 void RmlContext::_ready() {
 	set_process(true);
-	set_process_unhandled_input(!_input_actions.is_empty());
+	set_process_unhandled_input(_gamepad_navigation || !_input_actions.is_empty());
 	set_clip_contents(true);
 
 	auto* manager = RmlGodot::RmlManager::get_singleton();
@@ -612,15 +613,90 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 
 void RmlContext::set_input_actions(const godot::PackedStringArray& actions) {
 	_input_actions = actions;
+	_update_unhandled_input_processing();
+}
+
+void RmlContext::set_gamepad_navigation(bool enabled) {
+	_gamepad_navigation = enabled;
+	_update_unhandled_input_processing();
+}
+
+void RmlContext::_update_unhandled_input_processing() {
 	// _unhandled_input only fires while enabled — keep it off unless watching
 	// something, so contexts add zero per-event overhead by default.
 	if (is_inside_tree()) {
-		set_process_unhandled_input(!_input_actions.is_empty());
+		set_process_unhandled_input(_gamepad_navigation || !_input_actions.is_empty());
 	}
 }
 
+// Godot's built-in ui_* actions (rebindable in the InputMap, gamepad bindings
+// included by default) → the RmlUi keys that drive its built-in navigation:
+// arrows = spatial nav via the nav-* properties, TAB = tab order,
+// RETURN = Click() on the focused element, ESCAPE = forwarded for documents.
+struct NavActionMap {
+	const char* action;
+	Rml::Input::KeyIdentifier key;
+	int modifiers;
+};
+static constexpr NavActionMap k_nav_action_map[] = {
+	{ "ui_up",         Rml::Input::KI_UP,     0 },
+	{ "ui_down",       Rml::Input::KI_DOWN,   0 },
+	{ "ui_left",       Rml::Input::KI_LEFT,   0 },
+	{ "ui_right",      Rml::Input::KI_RIGHT,  0 },
+	{ "ui_focus_next", Rml::Input::KI_TAB,    0 },
+	{ "ui_focus_prev", Rml::Input::KI_TAB,    Rml::Input::KM_SHIFT },
+	{ "ui_accept",     Rml::Input::KI_RETURN, 0 },
+	{ "ui_cancel",     Rml::Input::KI_ESCAPE, 0 },
+};
+
+bool RmlContext::_process_navigation_input(const godot::Ref<godot::InputEvent>& event) {
+	if (_rml_context == nullptr) return false;
+
+	for (const auto& na : k_nav_action_map) {
+		const godot::StringName action(na.action);
+		if (!event->is_action_pressed(action)) continue;
+
+		Rml::Input::KeyIdentifier key = na.key;
+		int modifiers = na.modifiers;
+
+		// Directional press with no real focus yet: grab the first tabbable
+		// element instead of navigating from nowhere (arrows only work from
+		// a focused element carrying a nav-* property).
+		const bool is_arrow = (key == Rml::Input::KI_UP || key == Rml::Input::KI_DOWN ||
+			key == Rml::Input::KI_LEFT || key == Rml::Input::KI_RIGHT);
+		if (is_arrow) {
+			Rml::Element* focus = _rml_context->GetFocusElement();
+			if (focus == nullptr || focus->GetTagName() == "body" || focus->GetTagName() == "#root") {
+				key = Rml::Input::KI_TAB;
+				modifiers = 0;
+			}
+		}
+
+		// ProcessKeyDown returns false when the UI consumed the key (focus
+		// moved / element clicked) — claim the event so gameplay below the
+		// UI doesn't also react to the same press.
+		const bool propagated = _rml_context->ProcessKeyDown(key, modifiers);
+		_rml_context->ProcessKeyUp(key, modifiers);
+		_render_dirty = true;
+		if (!propagated) {
+			godot::Viewport* vp = get_viewport();
+			if (vp != nullptr) {
+				vp->set_input_as_handled();
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
 void RmlContext::_unhandled_input(const godot::Ref<godot::InputEvent>& event) {
-	if (event.is_null() || _input_actions.is_empty()) return;
+	if (event.is_null()) return;
+
+	if (_gamepad_navigation) {
+		_process_navigation_input(event);
+	}
+
+	if (_input_actions.is_empty()) return;
 
 	for (int i = 0; i < _input_actions.size(); i++) {
 		const godot::String action = _input_actions[i];

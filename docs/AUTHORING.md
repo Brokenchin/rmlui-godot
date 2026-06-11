@@ -153,6 +153,26 @@ Rules of the model:
 - No `_process`/`_ready` (not a Node) and no debugger breakpoints — put
   complex logic in a `<script src="...">` file instead.
 
+## Gamepad & keyboard navigation
+
+Set `gamepad_navigation = true` on the RmlContext and opt elements in via RCSS:
+
+```css
+button { tab-index: auto; nav: auto; }   /* focusable + spatial nav */
+button:focus { border: 2dp #6699ee; }    /* the focus indicator */
+```
+
+That's the whole setup. Godot's `ui_*` actions (D-pad/stick/arrows out of the
+box, rebindable in the InputMap) then drive RmlUi's built-in focus engine:
+arrows = nearest-element spatial navigation, Tab = document order,
+Accept = click the focused element (fires `onclick` — inline `gdscript:`
+handlers included), Cancel = forwarded (handle via `input_actions` +
+`_on_input_action`).
+
+Fine control: `nav-up/down/left/right` accept `none`, `auto`, `horizontal`,
+`vertical`, or `#element-id` for explicit wiring; `nav: vertical` on list
+items keeps focus inside a column. See `examples/basic/gamepad_nav`.
+
 ## Drag & drop
 
 Registration is API-driven (works from inline scripts too):

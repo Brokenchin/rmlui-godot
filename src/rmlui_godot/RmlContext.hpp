@@ -104,9 +104,11 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
 		godot::PropertyInfo(godot::Variant::DICTIONARY, "data")));
 
-	// Input actions (see input_actions property)
+	// Input actions & navigation (see input_actions / gamepad_navigation)
 	godot::ClassDB::bind_method(godot::D_METHOD("set_input_actions", "actions"), &RmlContext::set_input_actions);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_input_actions"), &RmlContext::get_input_actions);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_gamepad_navigation", "enabled"), &RmlContext::set_gamepad_navigation);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_gamepad_navigation"), &RmlContext::get_gamepad_navigation);
 	ADD_SIGNAL(godot::MethodInfo("rml_input_action",
 		godot::PropertyInfo(godot::Variant::STRING, "action"),
 		godot::PropertyInfo(godot::Variant::BOOL, "pressed")));
@@ -156,6 +158,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "document_path", godot::PROPERTY_HINT_FILE, "*.rml"), "set_document_path", "get_document_path");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::PACKED_STRING_ARRAY, "font_paths"), "set_font_paths", "get_font_paths");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::PACKED_STRING_ARRAY, "input_actions"), "set_input_actions", "get_input_actions");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "gamepad_navigation"), "set_gamepad_navigation", "get_gamepad_navigation");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "use_default_rcss"), "set_use_default_rcss", "get_use_default_rcss");
 
 	ADD_GROUP("Text Rendering", "");
@@ -191,6 +194,14 @@ public:
 
 	godot::PackedStringArray get_input_actions() const { return _input_actions; }
 	void set_input_actions(const godot::PackedStringArray& actions);
+	bool get_gamepad_navigation() const { return _gamepad_navigation; }
+	void set_gamepad_navigation(bool enabled);
+
+private:
+	void _update_unhandled_input_processing();
+	bool _process_navigation_input(const godot::Ref<godot::InputEvent>& event);
+
+public:
 
 	void load_document(const godot::String& path);
 	bool load_document_from_string(const godot::String& rml_text, const godot::String& alias_path = "memory://document");
@@ -312,6 +323,7 @@ private:
 	godot::PackedStringArray _font_paths;
 	godot::Dictionary _editor_mock_data;
 	godot::PackedStringArray _input_actions;
+	bool _gamepad_navigation = false;
 	int _text_render_mode = 0;    // DEFAULT (resolves to SUBPIX_OFFSET)
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light

@@ -33,6 +33,7 @@ process-wide (see RmlManager).
 | `gpu_scissor` | bool | Shader-based scissoring instead of CPU clipping. |
 | `editor_mock_data` | Dictionary | `{model_name: {var_name: value}}` — applied **only by the editor preview panel** so `data-for`/`{{ }}` render without running the game. Arrays become data arrays. |
 | `input_actions` | PackedStringArray | InputMap actions this context watches via `_unhandled_input`. Each press/release emits `rml_input_action` **and** dispatches to the documents' `<script>` blocks (`_on_input_action(action, pressed)`). Empty = zero input overhead. |
+| `gamepad_navigation` | bool | Routes Godot's `ui_up/down/left/right`, `ui_focus_next/prev`, `ui_accept`, `ui_cancel` into RmlUi's built-in focus engine: spatial navigation over elements with `nav: auto` (or explicit `nav-*`), tab order via `tab-index: auto`, accept = click on the focused element. Works for keyboard *and* gamepad (the default `ui_*` bindings include D-pad/sticks). A consumed press is marked handled so gameplay doesn't double-react. First directional press auto-focuses the first tabbable element. |
 
 Configuration warnings (⚠ in the scene tree) flag a missing `document_path`,
 nonexistent document/font files, and no-fonts-anywhere setups.
