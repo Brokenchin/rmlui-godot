@@ -3,6 +3,7 @@
 #include "RmlElementHandle.hpp"
 #include "GodotEventListener.hpp"
 #include "GodotFontInterface.hpp"
+#include "GodotScriptDocument.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -814,6 +815,20 @@ godot::Array RmlContext::get_loaded_documents() const {
 		result.append(godot::String(ld.path.c_str()));
 	}
 	return result;
+}
+
+godot::Variant RmlContext::get_document_script(const godot::String& document_path) {
+	const std::string wanted(document_path.utf8().get_data());
+	for (const auto& ld : _loaded_documents) {
+		if (!wanted.empty() && ld.path != wanted) continue;
+		auto* doc = rmlui_dynamic_cast<GodotScriptDocument*>(ld.document);
+		if (doc == nullptr) continue;
+		godot::Array instances = doc->get_script_instances();
+		if (!instances.is_empty()) {
+			return instances[0];
+		}
+	}
+	return godot::Variant();
 }
 
 bool RmlContext::load_font_face(const godot::String& path) {

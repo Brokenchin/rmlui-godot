@@ -69,6 +69,17 @@ bool GodotScriptDocument::dispatch_to_scripts(const godot::String& method, const
 	return false;
 }
 
+godot::Array GodotScriptDocument::get_script_instances() {
+	godot::Array result;
+	for (auto& block : _blocks) {
+		godot::Object* obj = _ensure_instance(block);
+		if (obj != nullptr) {
+			result.append(block.instance);
+		}
+	}
+	return result;
+}
+
 godot::Object* GodotScriptDocument::_ensure_instance(ScriptBlock& block) {
 	if (block.instance_failed || block.script.is_null()) return nullptr;
 

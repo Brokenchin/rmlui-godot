@@ -35,6 +35,11 @@ public:
 	/// Returns false when no block has the method.
 	bool dispatch_to_scripts(const godot::String& method, const godot::Array& args);
 
+	/// Force-instantiates every script block and returns the instances.
+	/// This is how game code reaches a block from outside — to connect to
+	/// its signals or call its methods directly.
+	godot::Array get_script_instances();
+
 	bool has_scripts() const { return !_blocks.empty(); }
 
 private:
