@@ -33,6 +33,7 @@ class RM_GD_CLASS(RmlManager, godot::Object, {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_texture", "name"), &RmlManager::get_texture);
 	godot::ClassDB::bind_method(godot::D_METHOD("has_texture", "name"), &RmlManager::has_texture);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_initialized"), &RmlManager::is_initialized);
+	godot::ClassDB::bind_method(godot::D_METHOD("ensure_initialized"), &RmlManager::ensure_initialized);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_context_count"), &RmlManager::get_context_count);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_info"), &RmlManager::get_info);
 
@@ -46,6 +47,11 @@ class RM_GD_CLASS(RmlManager, godot::Object, {
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "default_rcss_enabled"), "set_default_rcss_enabled", "is_default_rcss_enabled");
 
+	// NOTE: connect with method Callables owned by Nodes (the node's death
+	// removes the connection). Lambda/closure connections that are never
+	// disconnected crash at process exit: this singleton is destroyed during
+	// extension deinit, AFTER GDScript teardown, so releasing a closure-
+	// holding connection there touches freed scripting state.
 	ADD_SIGNAL(godot::MethodInfo("rml_log",
 		godot::PropertyInfo(godot::Variant::INT, "level"),
 		godot::PropertyInfo(godot::Variant::STRING, "message")));

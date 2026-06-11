@@ -56,5 +56,12 @@ godot/
 # CMake-installed examples copy (source of truth is examples/ submodule)
 project/addons/rmlui-godot/examples/
 
-# Dev-only test scenes (not shipped)
-project/tests/
+# Automated test suite IS tracked (tests/*.gd run by tests/run_all.sh).
+# Manual/visual test scenes and scratch stay untracked:
+project/tests/test_rml_*
+project/tests/test_font_*
+project/tests/Raw/
+project/tests/stress/
+project/tests/visual/
+project/tests/assets/
+project/tests/_parity_*

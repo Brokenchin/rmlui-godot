@@ -1,0 +1,36 @@
+<rml>
+<head>
+<style>
+body {
+	width: 100%;
+	height: 100%;
+}
+.source {
+	position: absolute;
+	left: 10px;
+	top: 10px;
+	width: 60px;
+	height: 60px;
+	background-color: #e94560;
+	color: #ffffff;
+	text-align: center;
+	padding-top: 18px;
+}
+.target {
+	position: absolute;
+	left: 200px;
+	top: 10px;
+	width: 100px;
+	height: 100px;
+	background-color: #0f3460;
+	color: #ffffff;
+	text-align: center;
+	padding-top: 35px;
+}
+</style>
+</head>
+<body>
+<div id="drag-source" class="source">Drag</div>
+<div id="drop-target" class="target">Drop Here</div>
+</body>
+</rml>

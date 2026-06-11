@@ -6,6 +6,7 @@ func run(runner) -> void:
 	_test_create_destroy_50(runner)
 	_test_context_count_tracking(runner)
 	_test_double_cleanup(runner)
+	_test_reenter_tree(runner)
 
 func _test_rapid_create_destroy(runner) -> void:
 	for i in range(10):
@@ -43,10 +44,32 @@ func _test_context_count_tracking(runner) -> void:
 	runner.assert_eq(after_free, initial_count, "Count decrements on free")
 
 func _test_double_cleanup(runner) -> void:
+	# Real tree exit before free (manually injecting NOTIFICATION_EXIT_TREE
+	# into a node that never entered the tree crashes stock Godot — null
+	# viewport in the engine's own exit handlers).
 	var ctx := RmlContext.new()
 	ctx.rml_context_name = "double_cleanup"
 	ctx.size = Vector2(200, 200)
-	# Calling notification manually to simulate EXIT_TREE before free
-	ctx.notification(ctx.NOTIFICATION_EXIT_TREE)
+	var tree_root: Node = runner.root
+	tree_root.add_child(ctx)
+	tree_root.remove_child(ctx)
 	ctx.free()
-	runner.assert_true(true, "Double cleanup (EXIT_TREE + free) doesn't crash")
+	runner.assert_true(true, "Double cleanup (tree exit + free) doesn't crash")
+
+func _test_reenter_tree(runner) -> void:
+	# Exit + re-enter must keep the context alive (editor tab switches and
+	# runtime reparenting rely on this — regression for the EXIT_TREE
+	# permadeath fixed in 5d074f8).
+	var ctx := RmlContext.new()
+	ctx.rml_context_name = "reenter"
+	ctx.size = Vector2(200, 200)
+	var tree_root: Node = runner.root
+	tree_root.add_child(ctx)
+	var info_before: Dictionary = ctx.get_context_info()
+	tree_root.remove_child(ctx)
+	tree_root.add_child(ctx)
+	var info_after: Dictionary = ctx.get_context_info()
+	runner.assert_eq(info_after.get("initialized", false),
+		info_before.get("initialized", false), "Context survives tree exit/re-enter")
+	tree_root.remove_child(ctx)
+	ctx.free()

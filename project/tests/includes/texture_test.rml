@@ -1,0 +1,304 @@
+<rml>
+<head>
+	<title>Texture, Decorator, Spritesheet & Animation Test</title>
+	<link type="text/rcss" href="base.rcss" />
+	<style>
+		/* --- Spritesheet: fruits_atlas.png is 64x64, 16px grid (4 cols x 4 rows) --- */
+		@spritesheet items {
+			src: res://addons/rmlui-godot/examples/assets/fruits_atlas.png;
+			resolution: 1x;
+			item-bone:     0px  0px  16px 16px;
+			item-sword:    16px 0px  16px 16px;
+			item-pick:     32px 0px  16px 16px;
+			item-hammer:   48px 0px  16px 16px;
+			item-barrel:   0px  16px 16px 16px;
+			item-potion-r: 16px 16px 16px 16px;
+			item-potion-g: 32px 16px 16px 16px;
+			item-potion-b: 48px 16px 16px 16px;
+			item-stick:    0px  32px 16px 16px;
+			item-axe:      16px 32px 16px 16px;
+			item-spear:    32px 32px 16px 16px;
+			item-gem-r:    48px 32px 16px 16px;
+			item-shield:   0px  48px 16px 16px;
+			item-bag:      16px 48px 16px 16px;
+			item-mace:     32px 48px 16px 16px;
+			item-staff:    48px 48px 16px 16px;
+		}
+
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 16px;
+			color: #e0e0e0;
+		}
+
+		h2 {
+			font-size: 20px;
+			color: #ffffff;
+			margin-bottom: 8px;
+		}
+
+		.section {
+			margin: 12px 20px;
+			padding: 12px;
+			background-color: #16213e;
+			border: 1px #0f3460;
+		}
+
+		.label {
+			font-size: 12px;
+			color: #8888aa;
+			margin-bottom: 4px;
+		}
+
+		/* --- Test 1: Static spritesheet images --- */
+		.sprite-grid {
+			display: flex;
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 8px;
+		}
+
+		.sprite-cell {
+			width: 48px;
+			height: 48px;
+			background-color: #0a0a1a;
+			border: 1px #333355;
+			text-align: center;
+			padding: 4px;
+		}
+
+		.sprite-cell img {
+			width: 32px;
+			height: 32px;
+
+		}
+
+		.sprite-cell .name {
+			font-size: 8px;
+			color: #6666aa;
+			margin-top: 2px;
+		}
+
+		/* --- Test 2: Direct <img src="..."> textures --- */
+		.img-row {
+			display: flex;
+			flex-direction: row;
+			gap: 12px;
+			align-items: center;
+		}
+
+		.img-row img {
+			width: 64px;
+			height: 64px;
+		}
+
+		/* --- Test 3: Decorators --- */
+		.decorator-row {
+			display: flex;
+			flex-direction: row;
+			gap: 12px;
+		}
+
+		.deco-box {
+			width: 120px;
+			height: 80px;
+			padding: 8px;
+			text-align: center;
+		}
+
+		.deco-gradient {
+			decorator: vertical-gradient( #e94560 #0f3460 );
+		}
+
+		.deco-horizontal-gradient {
+			decorator: horizontal-gradient( #533483 #e94560 );
+		}
+
+		.deco-image {
+			decorator: image(item-shield);
+		}
+
+		.deco-image-fit {
+			decorator: image(res://addons/rmlui-godot/examples/assets/fruits_atlas.png);
+		}
+
+		/* --- Test 4: Animations --- */
+		@keyframes pulse {
+			0% { background-color: #e94560; }
+			50% { background-color: #533483; }
+			100% { background-color: #e94560; }
+		}
+
+		@keyframes slide-in {
+			from { margin-left: -200px; opacity: 0; }
+			to { margin-left: 0px; opacity: 1; }
+		}
+
+		@keyframes rotate-hue {
+			0% { image-color: #ff4444; }
+			33% { image-color: #44ff44; }
+			66% { image-color: #4444ff; }
+			100% { image-color: #ff4444; }
+		}
+
+		.anim-pulse {
+			width: 120px;
+			height: 60px;
+			padding: 8px;
+			background-color: #e94560;
+			animation: pulse 2s infinite;
+			text-align: center;
+		}
+
+		.anim-slide {
+			width: 200px;
+			height: 40px;
+			padding: 8px;
+			background-color: #0f3460;
+			animation: slide-in 2s quadratic-out 3s;
+
+		}
+
+		.anim-icon {
+			width: 48px;
+			height: 48px;
+			animation: rotate-hue 3s infinite;
+		}
+
+		/* --- Test 5: Transitions --- */
+		.transition-box {
+			width: 100px;
+			height: 60px;
+			padding: 8px;
+			background-color: #16213e;
+			border: 2px #0f3460;
+			transition: background-color 0.3s, border-color 0.3s;
+			text-align: center;
+		}
+
+		.transition-box:hover {
+			background-color: #e94560;
+			border-color: #ffffff;
+		}
+
+		/* --- Test 6: Data-bound sprites --- */
+		.inventory-grid {
+			display: flex;
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 6px;
+		}
+
+		.inv-slot {
+			width: 48px;
+			height: 48px;
+			background-color: #0a0a1a;
+			border: 1px #333355;
+			text-align: center;
+			padding: 4px;
+			transition: border-color 0.2s;
+		}
+
+		.inv-slot:hover {
+			border-color: #e94560;
+		}
+
+		.inv-slot img {
+			width: 32px;
+			height: 32px;
+
+		}
+
+		.inv-slot .count {
+			font-size: 10px;
+			color: #aaaacc;
+			text-align: right;
+		}
+
+	</style>
+</head>
+<body>
+
+	<!-- Test 1: Static spritesheet sprites -->
+	<div class="section">
+		<h2>Test 1: Spritesheet Sprites</h2>
+		<div class="label">@spritesheet items — 16px grid from Items.png</div>
+		<div class="sprite-grid">
+			<div class="sprite-cell"><img sprite="item-bone"/></div>
+			<div class="sprite-cell"><img sprite="item-sword"/></div>
+			<div class="sprite-cell"><img sprite="item-pick"/></div>
+			<div class="sprite-cell"><img sprite="item-hammer"/></div>
+			<div class="sprite-cell"><img sprite="item-barrel"/></div>
+			<div class="sprite-cell"><img sprite="item-potion-r"/></div>
+			<div class="sprite-cell"><img sprite="item-potion-g"/></div>
+			<div class="sprite-cell"><img sprite="item-potion-b"/></div>
+			<div class="sprite-cell"><img sprite="item-stick"/></div>
+			<div class="sprite-cell"><img sprite="item-axe"/></div>
+			<div class="sprite-cell"><img sprite="item-spear"/></div>
+			<div class="sprite-cell"><img sprite="item-gem-r"/></div>
+			<div class="sprite-cell"><img sprite="item-shield"/></div>
+			<div class="sprite-cell"><img sprite="item-bag"/></div>
+			<div class="sprite-cell"><img sprite="item-mace"/></div>
+			<div class="sprite-cell"><img sprite="item-staff"/></div>
+		</div>
+	</div>
+
+	<!-- Test 2: Direct <img src="..."> -->
+	<div class="section">
+		<h2>Test 2: Direct Image Sources</h2>
+		<div class="label">img src= with res:// paths</div>
+		<div class="img-row">
+			<img src="res://addons/rmlui-godot/examples/assets/fruits_atlas.png" />
+			<span>Full Items.png (should render at 64x64)</span>
+		</div>
+	</div>
+
+	<!-- Test 3: Decorators -->
+	<div class="section">
+		<h2>Test 3: Decorators</h2>
+		<div class="label">gradient, image decorator</div>
+		<div class="decorator-row">
+			<div class="deco-box deco-gradient">Linear gradient (vertical)</div>
+			<div class="deco-box deco-horizontal-gradient">Linear gradient (horizontal)</div>
+			<div class="deco-box deco-image">Image decorator (shield sprite)</div>
+			<div class="deco-box deco-image-fit">Image decorator (full atlas)</div>
+		</div>
+	</div>
+
+	<!-- Test 4: Animations -->
+	<div class="section">
+		<h2>Test 4: CSS Animations</h2>
+		<div class="label">@keyframes — pulse, slide-in, color cycle</div>
+		<div class="decorator-row">
+			<div class="anim-pulse">Pulsing color</div>
+			<div class="anim-slide">Slide-in from left</div>
+			<img class="anim-icon" sprite="item-gem-r" />
+		</div>
+	</div>
+
+	<!-- Test 5: Transitions -->
+	<div class="section">
+		<h2>Test 5: CSS Transitions</h2>
+		<div class="label">Hover to test transition: background-color + border</div>
+		<div class="decorator-row">
+			<div class="transition-box">Hover me</div>
+			<div class="transition-box">Hover me</div>
+			<div class="transition-box">Hover me</div>
+		</div>
+	</div>
+
+	<!-- Test 6: Data-bound inventory (driven by GDScript) -->
+	<div class="section" data-model="inventory">
+		<h2>Test 6: Data-Bound Sprites</h2>
+		<div class="label">Inventory slots — sprite names from data model, dynamically set from GDScript</div>
+		<div class="inventory-grid" data-for="item : items">
+			<div class="inv-slot">
+				<img data-attr-sprite="item" width="32" height="32" />
+			</div>
+		</div>
+		<div class="label" style="margin-top: 8px;">Selected item: <span data-rml="selected_item">none</span></div>
+	</div>
+
+</body>
+</rml>

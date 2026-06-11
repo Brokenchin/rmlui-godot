@@ -1,0 +1,13 @@
+<rml>
+<head>
+<style>
+body { font-family: Noto Sans; font-size: 18dp; color: #eeeeee; background: #20242c; width: 100%; height: 100%; padding: 16dp; }
+h1 { font-size: 24dp; color: #99ccff; margin-bottom: 8dp; }
+div.item { padding: 4dp; margin: 2dp; background: #2e3440; }
+</style>
+</head>
+<body data-model="mock">
+	<h1>{{ title }}</h1>
+	<div class="item" data-for="item : items">{{ item }}</div>
+</body>
+</rml>
