@@ -23,9 +23,10 @@ void GodotScriptDocument::LoadInlineScript(const Rml::String& content,
 
 	godot::Ref<godot::GDScript> script;
 	script.instantiate();
-	// GDScript without an `extends` implicitly extends RefCounted — blocks
-	// don't need boilerplate, and line numbers in errors match the source.
-	script->set_source_code(godot::String(content.c_str()));
+	// dedent(): the XML parser delivers the block with its .rml indentation,
+	// which whitespace-sensitive GDScript rejects ("Unexpected Indent").
+	// No `extends` needed — GDScript implicitly extends RefCounted.
+	script->set_source_code(godot::String(content.c_str()).dedent());
 
 	godot::Error err = script->reload();
 	if (err != godot::OK) {

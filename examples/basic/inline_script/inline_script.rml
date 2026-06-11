@@ -1,0 +1,76 @@
+<rml>
+<head>
+	<title>Inline GDScript</title>
+	<style>
+		body {
+			font-family: "Noto Sans";
+			font-size: 18px;
+			color: #eeeeee;
+			background-color: #20242c;
+			width: 100%;
+			height: 100%;
+			padding: 24px;
+		}
+		h1 { font-size: 26px; margin-bottom: 6px; }
+		p  { margin-bottom: 16px; color: #aab; }
+		#counter-row { margin-bottom: 16px; }
+		button {
+			display: inline-block;
+			padding: 8px 18px;
+			margin-right: 8px;
+			background-color: #3a4254;
+			border: 2px #5a6478;
+			cursor: pointer;
+		}
+		button:hover  { background-color: #4a5468; }
+		button:active { background-color: #2e3442; }
+		#count {
+			display: inline-block;
+			min-width: 60px;
+			padding: 8px 0;
+			text-align: center;
+			font-size: 22px;
+			color: #99ccff;
+		}
+		#status { color: #7a8; font-size: 14px; }
+	</style>
+	<script>
+	var rml_context
+	var count := 0
+
+	func _add(_event):
+		count += 1
+		_update()
+
+	func _subtract(_event):
+		count -= 1
+		_update()
+
+	func _reset(_event):
+		count = 0
+		_update()
+
+	func _on_load(_event):
+		_update()
+		var status = rml_context.get_element_by_id("status")
+		if status:
+			status.set_inner_rml("Script block loaded — no .gd file anywhere.")
+
+	func _update():
+		var el = rml_context.get_element_by_id("count")
+		if el:
+			el.set_inner_rml(str(count))
+	</script>
+</head>
+<body onload="gdscript:_on_load">
+	<h1>Inline GDScript</h1>
+	<p>The whole behavior of this document lives in its &lt;script&gt; block.</p>
+	<div id="counter-row">
+		<button onclick="gdscript:_subtract">−</button>
+		<span id="count">0</span>
+		<button onclick="gdscript:_add">+</button>
+		<button onclick="gdscript:_reset">Reset</button>
+	</div>
+	<div id="status"></div>
+</body>
+</rml>
