@@ -1,0 +1,118 @@
+<rml>
+<head>
+	<title>Inline Script Drag &amp; Drop</title>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		body {
+			background-color: #1a1a2e;
+			font-family: "Noto Sans";
+			font-size: 16px;
+			color: #ffffff;
+		}
+		h2 {
+			font-size: 18px;
+			margin-bottom: 8px;
+			color: #a0c4ff;
+		}
+		.drag-source {
+			display: inline-block;
+			width: 60px;
+			height: 60px;
+			margin: 6px;
+			background-color: #e94560;
+			color: #ffffff;
+			text-align: center;
+			padding-top: 20px;
+			drag: clone;
+			cursor: pointer;
+		}
+		.drag-source:drag {
+			visibility: hidden;
+		}
+		.drop-zone {
+			width: 240px;
+			min-height: 80px;
+			margin-top: 8px;
+			padding: 10px;
+			background-color: #0f3460;
+			border: 2px #333366;
+		}
+		.drop-zone:drag-over {
+			background-color: #1a4a7a;
+			border: 2px #5588bb;
+		}
+		#panel {
+			position: absolute;
+			left: 20px;
+			top: 20px;
+			width: 320px;
+			padding: 16px;
+			background-color: #16213e;
+		}
+		#status { margin-top: 8px; color: #00ff88; font-size: 13px; min-height: 40px; }
+		button {
+			display: inline-block;
+			padding: 6px 14px;
+			margin-top: 8px;
+			background-color: #3a4254;
+			cursor: pointer;
+		}
+		button:hover { background-color: #4a5468; }
+	</style>
+	<script>
+	## The entire drag-and-drop behavior lives in this block — registration,
+	## payload building, drop handling, state. The only thing outside is a
+	## plain Godot Label listening to the `item_dropped` signal (see
+	## inline_drag.gd for the two-line bridge).
+
+	signal item_dropped(item_id: String, label: String, total: int)
+
+	var rml_context
+	var drop_count := 0
+
+	func _on_load(_event):
+		for id in ["item-1", "item-2", "item-3"]:
+			rml_context.register_drag_source(id, _build_payload)
+		rml_context.register_drop_target("drop-zone", _on_drop)
+		_status("Drag A/B/C into the zone.")
+
+	func _build_payload(element_id: String, _pos: Vector2) -> Dictionary:
+		_status("Dragging %s..." % element_id)
+		return {"element_id": element_id, "label": element_id.replace("item-", "Item ")}
+
+	func _on_drop(target_id: String, data: Variant) -> void:
+		drop_count += 1
+		var label: String = data.get("label", "?")
+		rml_context.set_element_inner_rml("drop-zone", "Received: %s" % label)
+		_status("Drop #%d: %s onto %s" % [drop_count, label, target_id])
+		# Anything in the game can connect to this — see inline_drag.gd.
+		item_dropped.emit(str(data.get("element_id", "")), label, drop_count)
+
+	func _reset(_event):
+		drop_count = 0
+		rml_context.set_element_inner_rml("drop-zone", "Drop items here")
+		_status("Reset.")
+		item_dropped.emit("", "reset", 0)
+
+	func _status(text: String) -> void:
+		rml_context.set_element_inner_rml("status", text)
+	</script>
+</head>
+<body onload="gdscript:_on_load">
+	<div id="panel">
+		<h2>Drag Sources</h2>
+		<div>
+			<div class="drag-source" id="item-1">A</div>
+			<div class="drag-source" id="item-2">B</div>
+			<div class="drag-source" id="item-3">C</div>
+		</div>
+
+		<h2>Drop Zone</h2>
+		<div class="drop-zone" id="drop-zone">Drop items here</div>
+
+		<h2>Events</h2>
+		<div id="status">Waiting...</div>
+		<button onclick="gdscript:_reset">Reset</button>
+	</div>
+</body>
+</rml>

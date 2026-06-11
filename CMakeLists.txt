@@ -135,10 +135,13 @@ if(NOT TARGET rmlui_core)
 endif()
 
 # --- Collect sources ---
-file(GLOB_RECURSE RMLUI_GODOT_SOURCES
+# CONFIGURE_DEPENDS: re-glob at build time so newly added files are picked up
+# without a manual re-configure (stale builds otherwise fail with LNK2001 on
+# symbols from the new translation units).
+file(GLOB_RECURSE RMLUI_GODOT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rmlui_godot/*.cpp"
 )
-file(GLOB_RECURSE RMLUI_GODOT_HEADERS
+file(GLOB_RECURSE RMLUI_GODOT_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rmlui_godot/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rmlui_godot/*.h"
 )

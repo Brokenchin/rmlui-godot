@@ -18,11 +18,13 @@ public:
 	const godot::Callable& get_callable() const { return _callable; }
 	const std::string& get_event_type() const { return _event_type; }
 
+	/// Shared event → Dictionary conversion (also used by the inline
+	/// gdscript: listener).
+	static godot::Dictionary build_event_dict(Rml::Event& event);
+
 private:
 	godot::Callable _callable;
 	std::string _event_type;
-
-	static godot::Dictionary _build_event_dict(Rml::Event& event);
 };
 
 } // namespace RmlGodot

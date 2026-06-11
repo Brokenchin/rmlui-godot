@@ -3,6 +3,7 @@
 #include "RmlElementHandle.hpp"
 #include "GodotEventListener.hpp"
 #include "GodotFontInterface.hpp"
+#include "GodotScriptDocument.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -816,6 +817,20 @@ godot::Array RmlContext::get_loaded_documents() const {
 	return result;
 }
 
+godot::Variant RmlContext::get_document_script(const godot::String& document_path) {
+	const std::string wanted(document_path.utf8().get_data());
+	for (const auto& ld : _loaded_documents) {
+		if (!wanted.empty() && ld.path != wanted) continue;
+		auto* doc = rmlui_dynamic_cast<GodotScriptDocument*>(ld.document);
+		if (doc == nullptr) continue;
+		godot::Array instances = doc->get_script_instances();
+		if (!instances.is_empty()) {
+			return instances[0];
+		}
+	}
+	return godot::Variant();
+}
+
 bool RmlContext::load_font_face(const godot::String& path) {
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager == nullptr || !manager->is_initialized()) {
@@ -995,6 +1010,7 @@ void RmlContext::_create_context() {
 	}
 
 	_rml_context->SetDensityIndependentPixelRatio(_dp_ratio);
+	manager->register_context_node(_rml_context, this);
 
 	godot::UtilityFunctions::print(
 		godot::String("[RmlUi] Context created: ") + _context_name +
@@ -1007,6 +1023,9 @@ void RmlContext::_destroy_context() {
 	if (_rml_context == nullptr) return;
 
 	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager) {
+		manager->unregister_context_node(_rml_context);
+	}
 	if (manager && manager->is_initialized()) {
 		Rml::RemoveContext(_rml_context->GetName());
 	}
