@@ -219,8 +219,35 @@ void RmlContext::_ready() {
 		load_font_face(_font_paths[i]);
 	}
 
+	// In the editor, stand up mock data models BEFORE the document loads so
+	// data-model/data-for/{{ }} render in the 2D viewport without the game
+	// running (runtime models are script-bound and can't exist here).
+	auto* engine = godot::Engine::get_singleton();
+	if (engine != nullptr && engine->is_editor_hint() && !_editor_mock_data.is_empty()) {
+		_apply_editor_mock_data();
+	}
+
 	if (!_document_path.is_empty()) {
 		load_document(_document_path);
+	}
+}
+
+void RmlContext::_apply_editor_mock_data() {
+	godot::Array model_names = _editor_mock_data.keys();
+	for (int i = 0; i < model_names.size(); i++) {
+		const godot::String model_name = model_names[i];
+		godot::Dictionary vars = _editor_mock_data[model_name];
+		if (!create_data_model(model_name)) continue;
+		godot::Array var_names = vars.keys();
+		for (int j = 0; j < var_names.size(); j++) {
+			const godot::String var_name = var_names[j];
+			godot::Variant value = vars[var_name];
+			if (value.get_type() == godot::Variant::ARRAY) {
+				bind_data_array(model_name, var_name, value);
+			} else {
+				bind_data_variable(model_name, var_name, value);
+			}
+		}
 	}
 }
 

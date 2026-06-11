@@ -200,6 +200,7 @@ public:
 private:
 	void _update_unhandled_input_processing();
 	bool _process_navigation_input(const godot::Ref<godot::InputEvent>& event);
+	void _apply_editor_mock_data();
 
 public:
 
