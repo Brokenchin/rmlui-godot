@@ -254,6 +254,17 @@ void RmlManager::_initialize_rmlui() {
 		_instancer_registered = true;
 	}
 
+	// Replace the default "body" instancer so every document becomes a
+	// GodotScriptDocument (inline GDScript support). Must come after
+	// Rml::Initialise(), which registers the defaults.
+	Rml::Factory::RegisterElementInstancer("body", &_document_instancer);
+
+	// onclick="gdscript:method_name" event attributes.
+	_event_listener_instancer.register_factory("gdscript:",
+		[](const Rml::String& value, Rml::Element* /*element*/) -> Rml::EventListener* {
+			return new GodotInlineScriptListener(std::string(value.substr(9)));
+		});
+
 	_rmlui_initialized = true;
 	godot::UtilityFunctions::print("[RmlManager] RmlUI initialized");
 }

@@ -17,7 +17,7 @@ GodotEventListener::GodotEventListener(godot::Callable callable, const std::stri
 void GodotEventListener::ProcessEvent(Rml::Event& event) {
 	if (!_callable.is_valid()) return;
 
-	godot::Dictionary dict = _build_event_dict(event);
+	godot::Dictionary dict = build_event_dict(event);
 	_callable.call(dict);
 }
 
@@ -26,7 +26,7 @@ void GodotEventListener::OnDetach(Rml::Element* /*element*/) {
 	delete this;
 }
 
-godot::Dictionary GodotEventListener::_build_event_dict(Rml::Event& event) {
+godot::Dictionary GodotEventListener::build_event_dict(Rml::Event& event) {
 	godot::Dictionary dict;
 
 	dict["type"] = godot::String(event.GetType().c_str());

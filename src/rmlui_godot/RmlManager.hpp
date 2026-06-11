@@ -6,6 +6,7 @@
 #include "GodotFontInterface.hpp"
 #include "GodotEventListenerInstancer.hpp"
 #include "GodotElementInstancer.hpp"
+#include "GodotScriptDocument.hpp"
 
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/texture2d.hpp>
@@ -20,6 +21,8 @@
 #include <vector>
 
 namespace RmlGodot {
+
+class RmlContext;
 
 class RM_GD_CLASS(RmlManager, godot::Object, {
 
@@ -98,6 +101,15 @@ public:
 	void set_instancer_registered(bool v) { _instancer_registered = v; }
 	std::vector<std::string>& get_registered_tags() { return _registered_tags; }
 
+	// Rml::Context* → owning RmlContext node. Lets element-level code (inline
+	// gdscript handlers, script blocks) reach the Godot node for dispatch.
+	void register_context_node(Rml::Context* context, RmlContext* node) { _context_nodes[context] = node; }
+	void unregister_context_node(Rml::Context* context) { _context_nodes.erase(context); }
+	RmlContext* find_context_node(Rml::Context* context) const {
+		auto it = _context_nodes.find(context);
+		return it != _context_nodes.end() ? it->second : nullptr;
+	}
+
 
 
 private:
@@ -108,6 +120,9 @@ private:
 	GodotFontInterface _font_interface;
 	GodotEventListenerInstancer _event_listener_instancer;
 	GodotElementInstancer _element_instancer;
+	GodotScriptDocumentInstancer _document_instancer;
+
+	std::unordered_map<Rml::Context*, RmlContext*> _context_nodes;
 
 	bool _rmlui_initialized = false;
 	bool _instancer_registered = false;

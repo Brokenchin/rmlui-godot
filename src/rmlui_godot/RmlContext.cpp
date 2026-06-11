@@ -995,6 +995,7 @@ void RmlContext::_create_context() {
 	}
 
 	_rml_context->SetDensityIndependentPixelRatio(_dp_ratio);
+	manager->register_context_node(_rml_context, this);
 
 	godot::UtilityFunctions::print(
 		godot::String("[RmlUi] Context created: ") + _context_name +
@@ -1007,6 +1008,9 @@ void RmlContext::_destroy_context() {
 	if (_rml_context == nullptr) return;
 
 	auto* manager = RmlGodot::RmlManager::get_singleton();
+	if (manager) {
+		manager->unregister_context_node(_rml_context);
+	}
 	if (manager && manager->is_initialized()) {
 		Rml::RemoveContext(_rml_context->GetName());
 	}
