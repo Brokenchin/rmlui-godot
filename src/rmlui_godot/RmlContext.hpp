@@ -37,6 +37,7 @@ namespace RmlGodot {
 class RM_GD_CLASS(RmlContext, godot::Control, {
 
 	godot::ClassDB::bind_method(godot::D_METHOD("load_document", "path"), &RmlContext::load_document);
+	godot::ClassDB::bind_method(godot::D_METHOD("load_document_from_string", "rml_text", "alias_path"), &RmlContext::load_document_from_string, DEFVAL(godot::String("memory://document")));
 	godot::ClassDB::bind_method(godot::D_METHOD("reload_document", "path"), &RmlContext::reload_document);
 	godot::ClassDB::bind_method(godot::D_METHOD("reload_all_documents"), &RmlContext::reload_all_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_loaded_documents"), &RmlContext::get_loaded_documents);
@@ -137,6 +138,8 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_base_rcss"), &RmlContext::get_base_rcss);
 	godot::ClassDB::bind_method(godot::D_METHOD("append_base_rcss", "rcss"), &RmlContext::append_base_rcss);
 	godot::ClassDB::bind_method(godot::D_METHOD("reset_base_rcss"), &RmlContext::reset_base_rcss);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_editor_mock_data", "data"), &RmlContext::set_editor_mock_data);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_editor_mock_data"), &RmlContext::get_editor_mock_data);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "rml_context_name"), "set_rml_context_name", "get_rml_context_name");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "dp_ratio", godot::PROPERTY_HINT_RANGE, "0.25,4.0,0.25"), "set_dp_ratio", "get_dp_ratio");
@@ -160,6 +163,9 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_GROUP("Scissor Clipping", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "gpu_scissor"), "set_gpu_scissor", "get_gpu_scissor");
 
+	ADD_GROUP("Editor Preview", "");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::DICTIONARY, "editor_mock_data"), "set_editor_mock_data", "get_editor_mock_data");
+
 });
 
 public:
@@ -171,8 +177,10 @@ public:
 	void _draw() override;
 	void _notification(int p_what);
 	void _gui_input(const godot::Ref<godot::InputEvent>& event) override;
+	godot::PackedStringArray _get_configuration_warnings() const override;
 
 	void load_document(const godot::String& path);
+	bool load_document_from_string(const godot::String& rml_text, const godot::String& alias_path = "memory://document");
 	bool reload_document(const godot::String& path);
 	void reload_all_documents();
 	godot::Array get_loaded_documents() const;
@@ -188,9 +196,11 @@ public:
 	void set_dp_ratio(float ratio);
 
 	godot::String get_document_path() const { return _document_path; }
-	void set_document_path(const godot::String& path) { _document_path = path; }
+	void set_document_path(const godot::String& path);
+	godot::Dictionary get_editor_mock_data() const { return _editor_mock_data; }
+	void set_editor_mock_data(const godot::Dictionary& data) { _editor_mock_data = data; }
 	godot::PackedStringArray get_font_paths() const { return _font_paths; }
-	void set_font_paths(const godot::PackedStringArray& paths) { _font_paths = paths; }
+	void set_font_paths(const godot::PackedStringArray& paths);
 
 	int get_text_render_mode() const { return _text_render_mode; }
 	void set_text_render_mode(int mode);
@@ -286,6 +296,7 @@ private:
 	float _dp_ratio = 1.0f;
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
+	godot::Dictionary _editor_mock_data;
 	int _text_render_mode = 0;    // DEFAULT (resolves to SUBPIX_OFFSET)
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light
@@ -334,6 +345,17 @@ private:
 		std::unordered_map<std::string, Rml::Vector<Rml::String>> arrays;
 	};
 	std::unordered_map<std::string, DataModelEntry> _data_models;
+
+	// RmlUi's data type register is per-context — must not be shared globally.
+	bool _array_type_registered = false;
+
+	// Lookup helpers — return nullptr (optionally warning) when not found.
+	DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true);
+	const DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true) const;
+	static Rml::Vector<Rml::String>* _get_data_array(DataModelEntry& model,
+		const godot::String& array_name, bool warn = true);
+	static const Rml::Vector<Rml::String>* _get_data_array(const DataModelEntry& model,
+		const godot::String& array_name, bool warn = true);
 
 	struct DragSourceEntry {
 		std::string element_id;

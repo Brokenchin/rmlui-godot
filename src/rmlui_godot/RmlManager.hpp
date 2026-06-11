@@ -37,8 +37,15 @@ class RM_GD_CLASS(RmlManager, godot::Object, {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_default_rcss"), &RmlManager::get_default_rcss);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_default_rcss_enabled", "enabled"), &RmlManager::set_default_rcss_enabled);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_default_rcss_enabled"), &RmlManager::is_default_rcss_enabled);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_recent_log"), &RmlManager::get_recent_log);
+	godot::ClassDB::bind_method(godot::D_METHOD("clear_recent_log"), &RmlManager::clear_recent_log);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_supported_rcss_properties"), &RmlManager::get_supported_rcss_properties);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "default_rcss_enabled"), "set_default_rcss_enabled", "is_default_rcss_enabled");
+
+	ADD_SIGNAL(godot::MethodInfo("rml_log",
+		godot::PropertyInfo(godot::Variant::INT, "level"),
+		godot::PropertyInfo(godot::Variant::STRING, "message")));
 
 });
 
@@ -76,10 +83,19 @@ public:
 	GodotEventListenerInstancer& get_event_listener_instancer() { return _event_listener_instancer; }
 	GodotElementInstancer& get_element_instancer() { return _element_instancer; }
 
+	// RmlUi log forwarding — GodotSystemInterface::LogMessage reports here so
+	// editor tooling can subscribe via the "rml_log" signal. Levels are
+	// Rml::Log::Type values (1=error, 2=assert, 3=warning, 4=info, 5=debug).
+	void notify_log(int level, const godot::String& message);
+	godot::Array get_recent_log() const { return _recent_log; }
+	void clear_recent_log() { _recent_log.clear(); }
+
+	// Every property + shorthand registered with RmlUi's stylesheet engine —
+	// the authoritative source for editor autocomplete.
+	godot::PackedStringArray get_supported_rcss_properties() const;
+
 	bool is_instancer_registered() const { return _instancer_registered; }
 	void set_instancer_registered(bool v) { _instancer_registered = v; }
-	bool is_array_type_registered() const { return _array_type_registered; }
-	void set_array_type_registered(bool v) { _array_type_registered = v; }
 	std::vector<std::string>& get_registered_tags() { return _registered_tags; }
 
 
@@ -95,7 +111,6 @@ private:
 
 	bool _rmlui_initialized = false;
 	bool _instancer_registered = false;
-	bool _array_type_registered = false;
 	int _context_count = 0;
 
 	std::vector<std::string> _registered_tags;
@@ -106,6 +121,8 @@ private:
 	Rml::SharedPtr<Rml::StyleSheetContainer> _default_sheet;
 	bool _default_rcss_enabled = true;
 	bool _default_sheet_dirty = true;
+
+	godot::Array _recent_log;
 
 	void _initialize_rmlui();
 	void _shutdown_rmlui();

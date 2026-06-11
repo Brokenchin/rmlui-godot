@@ -1,6 +1,8 @@
 #include "GodotSystemInterface.hpp"
+#include "RmlManager.hpp"
 
 #include <godot_cpp/classes/display_server.hpp>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -14,6 +16,16 @@ double GodotSystemInterface::GetElapsedTime() {
 
 bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& message) {
 	godot::String msg = godot::String("[RmlUi] ") + godot::String(message.c_str());
+
+	// Data models are bound at runtime from script — inside the editor a
+	// document referencing one is expected, not an error. Downgrade so the
+	// editor console isn't spammed red on every selection/preview.
+	auto* engine = godot::Engine::get_singleton();
+	if (type == Rml::Log::LT_ERROR && engine != nullptr && engine->is_editor_hint() &&
+		message.find("Could not locate data model") != Rml::String::npos) {
+		type = Rml::Log::LT_WARNING;
+	}
+
 	switch (type) {
 		case Rml::Log::LT_ERROR:
 		case Rml::Log::LT_ASSERT:
@@ -25,6 +37,12 @@ bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& me
 		default:
 			godot::UtilityFunctions::print(msg);
 			break;
+	}
+
+	// Forward to RmlManager so tooling (editor preview panel, validators)
+	// can subscribe via the "rml_log" signal.
+	if (auto* manager = RmlManager::get_singleton()) {
+		manager->notify_log(static_cast<int>(type), godot::String(message.c_str()));
 	}
 	return true;
 }

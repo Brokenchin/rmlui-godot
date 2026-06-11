@@ -1,8 +1,19 @@
 @tool
 class_name RmlPreviewPanel
 extends VBoxContainer
+## Bottom-panel live preview for RmlContext documents.
+##
+## Tracks the selected RmlContext, renders its document in an isolated preview
+## context, and live-applies edits from the script editor without saving:
+## - .rcss buffers are injected on top of the document's saved stylesheets
+## - .rml buffers replace the document entirely (load_document_from_string)
+## Edited buffers are identified by their syntax highlighter, so live editing
+## only reacts to .rml/.rcss tabs. Saved-file changes are picked up by a 1s
+## mtime poll, which also resets live overrides (disk is truth after save).
 
 enum Background { TRANSPARENT, DARK, LIGHT }
+
+const LIVE_EDIT_DEBOUNCE := 0.35  # seconds after last keystroke
 
 var _tracked_context: Node
 var _preview_context: Node
@@ -12,15 +23,22 @@ var _preview_bg: ColorRect
 var _no_preview_label: Label
 var _file_label: Label
 var _info_label: Label
+var _error_label: Label
 var _watch_timer: Timer
+var _debounce_timer: Timer
 var _watched_files: Dictionary = {}
+var _connected_editor: TextEdit
+var _live_rml_text := ""
+var _live_rcss_text := ""
+var _live_rcss_name := ""  # file name of the buffer behind _live_rcss_text
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(0, 200)
 	_build_toolbar()
 	_build_status_bar()
 	_build_preview_area()
-	_build_file_watcher()
+	_build_timers()
+	_connect_rml_log()
 
 func _build_toolbar() -> void:
 	var toolbar := HBoxContainer.new()
@@ -28,8 +46,8 @@ func _build_toolbar() -> void:
 
 	var reload_btn := Button.new()
 	reload_btn.text = "Reload"
-	reload_btn.tooltip_text = "Reload all documents in the preview"
-	reload_btn.pressed.connect(_reload_preview)
+	reload_btn.tooltip_text = "Discard live edits and reload from saved files"
+	reload_btn.pressed.connect(_on_reload_pressed)
 	toolbar.add_child(reload_btn)
 
 	toolbar.add_child(VSeparator.new())
@@ -76,6 +94,13 @@ func _build_status_bar() -> void:
 	bar.add_child(_info_label)
 	add_child(bar)
 
+	_error_label = Label.new()
+	_error_label.visible = false
+	_error_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_error_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_error_label.max_lines_visible = 2
+	add_child(_error_label)
+
 func _build_preview_area() -> void:
 	var panel := PanelContainer.new()
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -94,6 +119,12 @@ func _build_preview_area() -> void:
 	_viewport_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_viewport_container.stretch = true
 	_viewport_container.visible = false
+	# SubViewportContainer refuses to forward ANY input inside the editor
+	# (is_editor_hint guards in subviewport_container.cpp), so the panel
+	# forwards mouse events itself — hover, clicks and wheel scrolling then
+	# work in the preview document like at runtime.
+	_viewport_container.mouse_filter = Control.MOUSE_FILTER_STOP
+	_viewport_container.gui_input.connect(_on_preview_gui_input)
 
 	_viewport = SubViewport.new()
 	_viewport.transparent_bg = true
@@ -108,15 +139,29 @@ func _build_preview_area() -> void:
 	panel.add_child(_viewport_container)
 	add_child(panel)
 
-func _build_file_watcher() -> void:
+func _build_timers() -> void:
 	_watch_timer = Timer.new()
 	_watch_timer.wait_time = 1.0
-	_watch_timer.timeout.connect(_poll_file_changes)
+	_watch_timer.timeout.connect(_on_watch_tick)
 	add_child(_watch_timer)
+
+	_debounce_timer = Timer.new()
+	_debounce_timer.wait_time = LIVE_EDIT_DEBOUNCE
+	_debounce_timer.one_shot = true
+	_debounce_timer.timeout.connect(_apply_live_edit)
+	add_child(_debounce_timer)
+
+func _connect_rml_log() -> void:
+	if not Engine.has_singleton("RmlManager"):
+		return
+	var mgr := Engine.get_singleton("RmlManager")
+	if mgr.has_signal("rml_log") and not mgr.is_connected("rml_log", _on_rml_log):
+		mgr.connect("rml_log", _on_rml_log)
 
 func _exit_tree() -> void:
 	_clear_preview()
 	_watched_files.clear()
+	_disconnect_editor()
 	if _watch_timer:
 		_watch_timer.stop()
 
@@ -128,6 +173,9 @@ func track_context(ctx: Node) -> void:
 	_tracked_context = ctx
 	_watched_files.clear()
 	_watch_timer.stop()
+	_live_rml_text = ""
+	_live_rcss_text = ""
+	_live_rcss_name = ""
 	if ctx:
 		_load_from_context()
 	else:
@@ -142,26 +190,77 @@ func _load_from_context() -> void:
 
 	var doc_path: String = _tracked_context.get("document_path")
 	if doc_path.is_empty():
-		_file_label.text = "Selected context has no document_path"
 		_clear_preview()
+		_file_label.text = "No document_path on '%s'" % _tracked_context.name
+		_no_preview_label.text = (
+			"RmlContext '%s' has no document_path.\n" % _tracked_context.name
+			+ "Set Auto-Configuration → Document Path in the inspector to enable the preview.\n"
+			+ "(Script-driven load_document() calls don't run in the editor.)"
+		)
 		return
 
 	if not _ensure_preview_context():
 		_file_label.text = "Cannot create preview (GDExtension not loaded?)"
 		return
 
+	_clear_error()
+	var mgr: Object = Engine.get_singleton("RmlManager") if Engine.has_singleton("RmlManager") else null
+	if mgr and mgr.has_method("clear_recent_log"):
+		mgr.clear_recent_log()
+
 	var font_paths: PackedStringArray = _tracked_context.get("font_paths")
 	for fp in font_paths:
 		_preview_context.call("load_font_face", fp)
 
-	_preview_context.call("load_document", doc_path)
+	_apply_mock_data()
+
+	# Live RML override replaces the document. Live RCSS is spliced into the
+	# document at its <link> tag's position as a <style> block — replacing the
+	# disk stylesheet at the SAME cascade position. Injecting it on top
+	# instead would override later <style> blocks and keep deleted rules
+	# alive. alias_path = real path so relative <link href> still resolves.
+	var doc_text := _live_rml_text
+	var inject_fallback := false
+	if not _live_rcss_text.is_empty():
+		if doc_text.is_empty():
+			doc_text = FileAccess.get_file_as_string(doc_path)
+		var spliced := _splice_live_rcss(doc_text, _live_rcss_name, _live_rcss_text)
+		if spliced.is_empty():
+			inject_fallback = true  # couldn't locate the <link> — old behavior
+		else:
+			doc_text = spliced
+
+	var live_load_failed := false
+	if doc_text.is_empty() or not _preview_context.has_method("load_document_from_string"):
+		_preview_context.call("load_document", doc_path)
+	elif not _preview_context.call("load_document_from_string", doc_text, doc_path):
+		# Live buffer doesn't parse (typically a mid-edit state). Fall back to
+		# the saved file so the preview keeps showing something useful — the
+		# parse error itself lands in the status line below.
+		live_load_failed = true
+		_preview_context.call("load_document", doc_path)
+	if inject_fallback:
+		_preview_context.call("inject_stylesheet", _live_rcss_text)
 
 	_watch_file(doc_path)
 	for rcss in extract_rcss_links(doc_path):
 		_watch_file(rcss)
 	_watch_timer.start()
 
-	_file_label.text = doc_path.get_file()
+	# Surface any parse errors/warnings the loads just produced. The rml_log
+	# signal covers async cases; this pull is the deterministic path.
+	if mgr and mgr.has_method("get_recent_log"):
+		for entry in mgr.get_recent_log():
+			var lvl: int = entry.get("level", 4)
+			if lvl <= 3:
+				_on_rml_log(lvl, entry.get("message", ""))
+
+	var live_tag := ""
+	if live_load_failed:
+		live_tag = "  (live — parse failed, showing saved file)"
+	elif not _live_rml_text.is_empty() or not _live_rcss_text.is_empty():
+		live_tag = "  (live)"
+	_file_label.text = doc_path.get_file() + live_tag
 	_no_preview_label.visible = false
 	_viewport_container.visible = true
 	_update_info()
@@ -172,12 +271,16 @@ func _clear_preview() -> void:
 		_preview_context = null
 	_viewport_container.visible = false
 	_no_preview_label.visible = true
+	_no_preview_label.text = "Select an RmlContext node to preview its document"
 	_file_label.text = "No document"
 	_info_label.text = ""
+	_clear_error()
 
 func _ensure_preview_context() -> bool:
+	# Always rebuilt from scratch — cheapest way to guarantee reload semantics.
 	if _preview_context and is_instance_valid(_preview_context):
-		return true
+		_preview_context.queue_free()
+		_preview_context = null
 	if not ClassDB.class_exists(&"RmlContext"):
 		return false
 	_preview_context = ClassDB.instantiate(&"RmlContext")
@@ -185,15 +288,24 @@ func _ensure_preview_context() -> bool:
 		return false
 	_preview_context.name = "EditorPreview"
 	_viewport.add_child(_preview_context)
-	_preview_context.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# MUST be anchors_AND_OFFSETS_preset, nothing else: plain
+	# set_anchors_preset keeps existing offsets and setting `size` on an
+	# anchored control bakes the current parent size INTO the offsets — both
+	# leave the control at viewport_size + stale_offset after any resize,
+	# so the document lays out for a canvas that doesn't match the panel.
+	# Verified by tests/test_live_preview_parity.gd (0.00% pixel diff).
+	_preview_context.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	return true
+
+func _on_reload_pressed() -> void:
+	_live_rml_text = ""
+	_live_rcss_text = ""
+	_live_rcss_name = ""
+	_reload_preview()
 
 func _reload_preview() -> void:
 	if not _tracked_context or not is_instance_valid(_tracked_context):
 		return
-	if _preview_context and is_instance_valid(_preview_context):
-		_preview_context.queue_free()
-		_preview_context = null
 	_load_from_context()
 
 func _update_info() -> void:
@@ -205,6 +317,108 @@ func _update_info() -> void:
 	var geom: int = info.get("num_geometry", 0)
 	_info_label.text = "%d docs · %d batches" % [docs, geom]
 
+# --- Mock data (editor_mock_data: {model_name: {var_name: value}}) ---
+
+func _apply_mock_data() -> void:
+	if not is_instance_valid(_tracked_context):
+		return
+	var mock = _tracked_context.get("editor_mock_data")
+	if mock == null or not mock is Dictionary or mock.is_empty():
+		return
+	for model_name in mock:
+		var vars = mock[model_name]
+		if not vars is Dictionary:
+			push_warning("RmlUI preview: editor_mock_data[%s] must be a Dictionary" % model_name)
+			continue
+		if not _preview_context.call("create_data_model", model_name):
+			continue
+		for var_name in vars:
+			var value = vars[var_name]
+			if value is Array:
+				_preview_context.call("bind_data_array", model_name, var_name, value)
+			else:
+				_preview_context.call("bind_data_variable", model_name, var_name, value)
+
+# --- Live editing ---
+
+func _on_watch_tick() -> void:
+	if not is_instance_valid(_tracked_context):
+		_clear_preview()
+		_watch_timer.stop()
+		return
+	_ensure_editor_connection()
+	_poll_file_changes()
+
+func _ensure_editor_connection() -> void:
+	var ed := EditorInterface.get_script_editor().get_current_editor()
+	if ed == null:
+		return
+	var te := ed.get_base_editor() as TextEdit
+	if te == null or te == _connected_editor:
+		return
+	_disconnect_editor()
+	_connected_editor = te
+	te.text_changed.connect(_on_editor_text_changed)
+
+func _disconnect_editor() -> void:
+	if _connected_editor and is_instance_valid(_connected_editor):
+		if _connected_editor.text_changed.is_connected(_on_editor_text_changed):
+			_connected_editor.text_changed.disconnect(_on_editor_text_changed)
+	_connected_editor = null
+
+func _on_editor_text_changed() -> void:
+	if not is_instance_valid(_tracked_context):
+		return
+	# Only react to .rml/.rcss buffers — identified by their highlighter.
+	var hl := _connected_editor.syntax_highlighter if is_instance_valid(_connected_editor) else null
+	if hl is RmlSyntaxHighlighter or hl is RcssSyntaxHighlighter:
+		_debounce_timer.start()
+
+func _apply_live_edit() -> void:
+	if not is_instance_valid(_connected_editor) or not is_instance_valid(_tracked_context):
+		return
+	var hl := _connected_editor.syntax_highlighter
+	if hl is RmlSyntaxHighlighter:
+		_live_rml_text = _connected_editor.text
+	elif hl is RcssSyntaxHighlighter:
+		_live_rcss_text = _connected_editor.text
+		_live_rcss_name = _current_tab_file_name()
+	else:
+		return
+	_reload_preview()
+
+
+## File name of the active script-editor tab (e.g. "hello.rcss"). The tab
+## title is the only place the editor exposes it for TextFile buffers; an
+## unsaved-changes marker "(*)" may be appended.
+func _current_tab_file_name() -> String:
+	var ed := EditorInterface.get_script_editor().get_current_editor()
+	if ed == null:
+		return ""
+	var tc := ed.get_parent() as TabContainer
+	if tc == null:
+		return ""
+	var idx := tc.get_tab_idx_from_control(ed)
+	if idx < 0:
+		return ""
+	return tc.get_tab_title(idx).trim_suffix("(*)").strip_edges()
+
+
+## Replace `<link ... href="...<file_name>" ...>` with an inline <style> block
+## holding the live buffer — same cascade position, true replace semantics.
+## Returns "" when the link tag can't be found.
+static func _splice_live_rcss(rml_text: String, file_name: String, rcss_text: String) -> String:
+	if file_name.is_empty():
+		return ""
+	var escaped := file_name.replace(".", "\\.")
+	var regex := RegEx.create_from_string("<link[^>]*href=\"[^\"]*" + escaped + "\"[^>]*>")
+	var m := regex.search(rml_text)
+	if m == null:
+		return ""
+	return rml_text.substr(0, m.get_start()) \
+		+ "<style>\n" + rcss_text + "\n</style>" \
+		+ rml_text.substr(m.get_end())
+
 # --- File watching ---
 
 func _watch_file(path: String) -> void:
@@ -213,11 +427,6 @@ func _watch_file(path: String) -> void:
 	_watched_files[path] = FileAccess.get_modified_time(path)
 
 func _poll_file_changes() -> void:
-	if not is_instance_valid(_tracked_context):
-		_clear_preview()
-		_watch_timer.stop()
-		return
-
 	var changed := false
 	for path in _watched_files:
 		if not FileAccess.file_exists(path):
@@ -227,7 +436,38 @@ func _poll_file_changes() -> void:
 			_watched_files[path] = mtime
 			changed = true
 	if changed:
+		# Saved files are the source of truth again — drop live overrides.
+		_live_rml_text = ""
+		_live_rcss_text = ""
+		_live_rcss_name = ""
 		_reload_preview()
+
+# --- Error surface ---
+
+func _on_rml_log(level: int, message: String) -> void:
+	# Rml::Log::Type: 1=error, 2=assert, 3=warning. Ignore info/debug.
+	if level > 3:
+		return
+	_error_label.text = message
+	_error_label.add_theme_color_override("font_color",
+		Color(0.95, 0.55, 0.55) if level <= 2 else Color(0.95, 0.85, 0.5))
+	_error_label.visible = true
+
+func _clear_error() -> void:
+	if _error_label:
+		_error_label.text = ""
+		_error_label.visible = false
+
+func _on_preview_gui_input(ev: InputEvent) -> void:
+	if not (ev is InputEventMouse):
+		return
+	if _preview_context == null or not is_instance_valid(_preview_context):
+		return
+	# gui_input positions are local to the container; stretch=true means the
+	# viewport is the same size, so coords map 1:1 (in_local_coords=true).
+	_viewport.push_input(ev, true)
+	# Keep wheel/clicks from also scrolling or focusing surrounding editor UI.
+	_viewport_container.accept_event()
 
 # --- Toolbar callbacks ---
 
