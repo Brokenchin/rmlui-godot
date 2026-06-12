@@ -241,14 +241,16 @@ if(RMLUI_GODOT_STANDALONE)
             endif()
         endforeach()
 
-        if(EXISTS "${RMLUI_ADDON_SOURCE_DIR}/editor")
-            add_custom_command(TARGET rmlui_godot POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    "${RMLUI_ADDON_SOURCE_DIR}/editor"
-                    "${RMLUI_ADDON_INSTALL_DIR}/editor"
-                COMMENT "Installing editor/ → ${RMLUI_ADDON_INSTALL_DIR}/editor"
-            )
-        endif()
+        foreach(_dir editor shaders)
+            if(EXISTS "${RMLUI_ADDON_SOURCE_DIR}/${_dir}")
+                add_custom_command(TARGET rmlui_godot POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory
+                        "${RMLUI_ADDON_SOURCE_DIR}/${_dir}"
+                        "${RMLUI_ADDON_INSTALL_DIR}/${_dir}"
+                    COMMENT "Installing ${_dir}/ → ${RMLUI_ADDON_INSTALL_DIR}/${_dir}"
+                )
+            endif()
+        endforeach()
     endif()
 
     if(RMLUI_GODOT_INSTALL_EXAMPLES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples")
@@ -264,7 +266,7 @@ endif()
 
 # --- Embedded addon install ---
 # When building as static lib for a host project, copy only the files Godot needs
-# to discover the editor plugin: plugin.cfg, base.rcss, editor/*.gd.
+# to discover the editor plugin: plugin.cfg, base.rcss, editor/*.gd, shaders/.
 # Deliberately skip .gdextension and bin/ — the C++ is statically linked by the
 # host, so Godot must not try to load a standalone GDExtension binary.
 if(NOT RMLUI_GODOT_STANDALONE)
@@ -284,10 +286,12 @@ if(NOT RMLUI_GODOT_STANDALONE)
             endif()
         endforeach()
 
-        if(EXISTS "${RMLUI_ADDON_SOURCE_DIR}/editor")
-            file(COPY "${RMLUI_ADDON_SOURCE_DIR}/editor"
-                DESTINATION "${RMLUI_ADDON_INSTALL_DIR}")
-        endif()
+        foreach(_dir editor shaders)
+            if(EXISTS "${RMLUI_ADDON_SOURCE_DIR}/${_dir}")
+                file(COPY "${RMLUI_ADDON_SOURCE_DIR}/${_dir}"
+                    DESTINATION "${RMLUI_ADDON_INSTALL_DIR}")
+            endif()
+        endforeach()
 
         message(STATUS "Installed embedded addon files → ${RMLUI_ADDON_INSTALL_DIR} (no .gdextension)")
     endif()
