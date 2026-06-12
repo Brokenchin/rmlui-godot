@@ -123,13 +123,17 @@ jobs:
           cp project/addons/rmlui-godot/plugin.cfg dist/addons/rmlui-godot/
           cp project/addons/rmlui-godot/base.rcss dist/addons/rmlui-godot/
           cp -r project/addons/rmlui-godot/editor dist/addons/rmlui-godot/editor
+          # shaders are a RUNTIME dependency (RmlContext loads
+          # res://addons/rmlui-godot/shaders/rmlui_canvas_item.gdshader)
+          cp -r project/addons/rmlui-godot/shaders dist/addons/rmlui-godot/shaders
+          cp LICENSE dist/addons/rmlui-godot/LICENSE
+          cp docs/API.md docs/AUTHORING.md docs/RCSS.md dist/addons/rmlui-godot/ 2>/dev/null || true
 
-          # Include examples as top-level folder (not inside addons)
+          # Examples live INSIDE the addon: every example references
+          # res://addons/rmlui-godot/examples/... paths.
           if [ -d "examples" ] && [ "$(ls -A examples 2>/dev/null)" ]; then
-            cp -r examples dist/examples
-            rm -rf dist/examples/.git
-          elif [ -d "project/examples" ]; then
-            cp -r project/examples dist/examples
+            cp -r examples dist/addons/rmlui-godot/examples
+            rm -rf dist/addons/rmlui-godot/examples/.git
           fi
 
           for dir in artifacts/rmlui-godot-*/; do

@@ -160,6 +160,10 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::PACKED_STRING_ARRAY, "font_paths"), "set_font_paths", "get_font_paths");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::PACKED_STRING_ARRAY, "input_actions"), "set_input_actions", "get_input_actions");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "gamepad_navigation"), "set_gamepad_navigation", "get_gamepad_navigation");
+	godot::ClassDB::bind_method(godot::D_METHOD("toggle_debugger"), &RmlContext::toggle_debugger);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_debugger_toggle_key"), &RmlContext::get_debugger_toggle_key);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_debugger_toggle_key", "key"), &RmlContext::set_debugger_toggle_key);
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "debugger_toggle_key"), "set_debugger_toggle_key", "get_debugger_toggle_key");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "use_default_rcss"), "set_use_default_rcss", "get_use_default_rcss");
 
 	ADD_GROUP("Text Rendering", "");
@@ -197,6 +201,12 @@ public:
 	void set_input_actions(const godot::PackedStringArray& actions);
 	bool get_gamepad_navigation() const { return _gamepad_navigation; }
 	void set_gamepad_navigation(bool enabled);
+	void toggle_debugger();
+	int64_t get_debugger_toggle_key() const { return _debugger_toggle_key; }
+	void set_debugger_toggle_key(int64_t key) {
+		_debugger_toggle_key = key;
+		_update_unhandled_input_processing();
+	}
 
 private:
 	void _update_unhandled_input_processing();
@@ -327,6 +337,10 @@ private:
 	godot::Dictionary _editor_mock_data;
 	godot::PackedStringArray _input_actions;
 	bool _gamepad_navigation = false;
+	// Key toggling the RmlUi debugger overlay (godot::Key value, 0 = disabled).
+	// Default F10 — with the 4.5 embedded game window F8 is the editor's
+	// Stop shortcut and F9 its Pause, both fatal/disruptive.
+	int64_t _debugger_toggle_key = static_cast<int64_t>(godot::KEY_F10);
 	int _text_render_mode = 0;    // DEFAULT (resolves to SUBPIX_OFFSET)
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light

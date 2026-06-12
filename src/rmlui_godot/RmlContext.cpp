@@ -181,7 +181,13 @@ RmlContext::~RmlContext() {
 
 void RmlContext::_ready() {
 	set_process(true);
-	set_process_unhandled_input(_gamepad_navigation || !_input_actions.is_empty());
+	_update_unhandled_input_processing();
+	// Click-to-focus: gui keyboard events (text inputs, key forwarding) only
+	// reach a focused Control, and the default focus_mode is NONE — keyboard
+	// interaction with documents silently required focus nobody could give.
+	if (get_focus_mode() == godot::Control::FOCUS_NONE) {
+		set_focus_mode(godot::Control::FOCUS_CLICK);
+	}
 	set_clip_contents(true);
 
 	auto* manager = RmlGodot::RmlManager::get_singleton();
