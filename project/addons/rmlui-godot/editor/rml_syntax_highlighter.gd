@@ -7,8 +7,7 @@ extends RmlUiSyntaxHighlighterBase
 ## - {{ expression }} data binding in text nodes
 ## - data-* / on* attributes get a distinct color
 ## - <style> blocks and style="" attributes delegate to RcssTokenizer
-## - <script> blocks get basic GDScript coloring (forward-compatible with
-##   inline GDScript support)
+## - <script> blocks delegate to RmlGdscriptTokenizer (keywords, types, calls)
 
 # --- Colors (Catppuccin Mocha-inspired, shared palette with RcssTokenizer) ---
 const COLOR_TEXT      := Color(0.804, 0.839, 0.957)  # text — body text, = >
@@ -19,20 +18,15 @@ const COLOR_DATA_ATTR := Color(0.804, 0.576, 0.969)  # mauve — data-*, on* att
 const COLOR_STRING    := Color(0.647, 0.890, 0.631)  # green — attribute values
 const COLOR_COMMENT   := Color(0.424, 0.443, 0.529)  # overlay1 — <!-- -->
 const COLOR_EXPR      := Color(0.976, 0.702, 0.529)  # peach — {{ expr }}, &entity;
-const COLOR_KEYWORD   := Color(0.804, 0.576, 0.969)  # mauve — gdscript keywords
-const COLOR_NUMBER    := Color(0.976, 0.702, 0.529)  # peach — gdscript numbers
 
-const GDSCRIPT_KEYWORDS := [
-	"func", "var", "const", "enum", "class", "class_name", "extends", "signal",
-	"if", "elif", "else", "for", "while", "match", "when", "break", "continue",
-	"pass", "return", "await", "yield", "static", "and", "or", "not", "in", "is",
-	"as", "self", "super", "true", "false", "null", "void", "breakpoint", "tool",
-]
 
 # --- Cross-line modes (low 4 bits of state; embedded sub-state above them) ---
 enum Mode { TEXT, COMMENT, TAG, TAG_STYLE, TAG_SCRIPT, STYLE, SCRIPT }
 const MODE_MASK := 0x0F
 const SUB_SHIFT := 4
+
+# preload: immune to global class-name cache staleness on first import
+const _GdTok := preload("res://addons/rmlui-godot/editor/gdscript_tokenizer.gd")
 
 var _rcss := RcssTokenizer.new()
 
@@ -82,7 +76,7 @@ func _tokenize_line(text: String, entry_state: int) -> Dictionary:
 				var close := text.findn("</script", i)
 				var seg_end := n if close == -1 else close
 				if seg_end > i:
-					_tokenize_gdscript(text, i, seg_end, tokens)
+					_GdTok.tokenize(text, i, seg_end, tokens)
 				i = seg_end
 				if close != -1:
 					mode = Mode.TEXT
@@ -174,41 +168,14 @@ func _tokenize_line(text: String, entry_state: int) -> Dictionary:
 	return {"tokens": tokens, "state": mode | (sub << SUB_SHIFT)}
 
 
-## Minimal GDScript coloring for <script> block segments — keywords, strings,
-## comments, and numbers. Not full fidelity; just enough to read.
-func _tokenize_gdscript(text: String, from: int, to: int, tokens: Dictionary) -> void:
-	var i := from
-	while i < to:
-		var c := text[i]
-		if c == "#":
-			tokens[i] = {"color": COLOR_COMMENT}
-			i = to
-		elif c == "\"" or c == "'":
-			tokens[i] = {"color": COLOR_STRING}
-			i = _scan_string(text, i, to)
-		elif c >= "0" and c <= "9":
-			tokens[i] = {"color": COLOR_NUMBER}
-			while i < to and (text[i].is_valid_int() or text[i] == "." or text[i] == "_" or text[i] == "x"):
-				i += 1
-		elif _is_name_char(c):
-			var e := i
-			while e < to and (_is_name_char(text[e]) or (text[e] >= "0" and text[e] <= "9")):
-				e += 1
-			var word := text.substr(i, e - i)
-			tokens[i] = {"color": COLOR_KEYWORD if word in GDSCRIPT_KEYWORDS else COLOR_TEXT}
-			i = e
-		else:
-			i += 1
-
-
-func _scan_name(text: String, from: int, to: int) -> int:
+static func _scan_name(text: String, from: int, to: int) -> int:
 	var i := from
 	while i < to and (_is_name_char(text[i]) or (text[i] >= "0" and text[i] <= "9")):
 		i += 1
 	return i
 
 
-func _scan_string(text: String, from: int, to: int) -> int:
+static func _scan_string(text: String, from: int, to: int) -> int:
 	var quote := text[from]
 	var i := from + 1
 	while i < to:
@@ -221,6 +188,6 @@ func _scan_string(text: String, from: int, to: int) -> int:
 	return to
 
 
-func _is_name_char(c: String) -> bool:
+static func _is_name_char(c: String) -> bool:
 	var l := c.to_lower()
 	return (l >= "a" and l <= "z") or c == "-" or c == "_" or c == ":"

@@ -27,16 +27,33 @@ void GodotScriptDocument::LoadInlineScript(const Rml::String& content,
 	// dedent(): the XML parser delivers the block with its .rml indentation,
 	// which whitespace-sensitive GDScript rejects ("Unexpected Indent").
 	// No `extends` needed — GDScript implicitly extends RefCounted.
+	//
+	// Newline padding: source_line is the <script> tag's line (1-based) and
+	// the content starts on that same line, so prepending source_line-1 blank
+	// lines makes every GDScript-reported line number — parse errors AND
+	// runtime stack frames (gdscript://…gd:N) — equal the .rml file line.
+	//
 	// Compiled through the manager's source-keyed cache: unchanged blocks are
 	// reused across documents and hot reloads (Godot retains every runtime
 	// GDScript until shutdown, so per-load recompiles would accumulate).
-	godot::Ref<godot::GDScript> script =
-		manager->get_or_compile_script(godot::String(content.c_str()).dedent());
+	godot::String source = godot::String(content.c_str()).dedent();
+	if (source_line > 1) {
+		source = godot::String("\n").repeat(source_line - 1) + source;
+	}
+	godot::Ref<godot::GDScript> script = manager->get_or_compile_script(source);
 	if (script.is_null()) {
-		godot::UtilityFunctions::push_error(
-			godot::String("[RmlUi] Failed to compile <script> block in ") +
-			godot::String(source_path.c_str()) + godot::String(" (line ") +
-			godot::String::num_int64(source_line) + godot::String(")"));
+		// Routed through notify_log so the editor diagnostics' error bar can
+		// show it on the <script> line (the trailing ': N.' carries the line);
+		// the engine's own SCRIPT ERROR with the GDScript detail follows in
+		// the Output log regardless.
+		godot::String msg = godot::String(
+			"Failed to compile <script> block (see Output for the GDScript error) in ") +
+			godot::String(source_path.c_str()) + godot::String(": ") +
+			godot::String::num_int64(source_line) + godot::String(".");
+		if (!manager->is_console_log_muted()) {
+			godot::UtilityFunctions::push_error(godot::String("[RmlUi] ") + msg);
+		}
+		manager->notify_log(1 /*Rml::Log::LT_ERROR*/, msg);
 		return;
 	}
 

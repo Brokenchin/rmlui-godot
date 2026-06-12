@@ -42,6 +42,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("reload_all_documents"), &RmlContext::reload_all_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_loaded_documents"), &RmlContext::get_loaded_documents);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_document_script", "document_path"), &RmlContext::get_document_script, DEFVAL(godot::String()));
+	godot::ClassDB::bind_method(godot::D_METHOD("get_document_scripts", "document_path"), &RmlContext::get_document_scripts, DEFVAL(godot::String()));
 	godot::ClassDB::bind_method(godot::D_METHOD("load_font_face", "path"), &RmlContext::load_font_face);
 	godot::ClassDB::bind_method(godot::D_METHOD("load_font_face_ex", "path", "family", "style", "weight", "fallback"), &RmlContext::load_font_face_ex, DEFVAL(0), DEFVAL(400), DEFVAL(false));
 	godot::ClassDB::bind_method(godot::D_METHOD("load_font_resource", "font"), &RmlContext::load_font_resource);
@@ -200,6 +201,7 @@ public:
 private:
 	void _update_unhandled_input_processing();
 	bool _process_navigation_input(const godot::Ref<godot::InputEvent>& event);
+	void _apply_editor_mock_data();
 
 public:
 
@@ -209,6 +211,7 @@ public:
 	void reload_all_documents();
 	godot::Array get_loaded_documents() const;
 	godot::Variant get_document_script(const godot::String& document_path = "");
+	godot::Array get_document_scripts(const godot::String& document_path = "");
 	bool load_font_face(const godot::String& path);
 	bool load_font_face_ex(const godot::String& path, const godot::String& family, int style = 0, int weight = 400, bool fallback = false);
 	bool load_font_resource(const godot::Ref<godot::Font>& font);

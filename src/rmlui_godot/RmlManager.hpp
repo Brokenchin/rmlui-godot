@@ -43,6 +43,8 @@ class RM_GD_CLASS(RmlManager, godot::Object, {
 	godot::ClassDB::bind_method(godot::D_METHOD("is_default_rcss_enabled"), &RmlManager::is_default_rcss_enabled);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_recent_log"), &RmlManager::get_recent_log);
 	godot::ClassDB::bind_method(godot::D_METHOD("clear_recent_log"), &RmlManager::clear_recent_log);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_console_log_muted", "muted"), &RmlManager::set_console_log_muted);
+	godot::ClassDB::bind_method(godot::D_METHOD("is_console_log_muted"), &RmlManager::is_console_log_muted);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_supported_rcss_properties"), &RmlManager::get_supported_rcss_properties);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "default_rcss_enabled"), "set_default_rcss_enabled", "is_default_rcss_enabled");
@@ -99,6 +101,14 @@ public:
 	godot::Array get_recent_log() const { return _recent_log; }
 	void clear_recent_log() { _recent_log.clear(); }
 
+	// While muted, RmlUi log output skips Godot's console (push_error/print)
+	// but still reaches get_recent_log() and the rml_log signal. Used by the
+	// editor diagnostics' throwaway validation context, whose expected
+	// environment warnings (no fonts, no models) would otherwise spam the
+	// Output panel on every keystroke.
+	void set_console_log_muted(bool muted) { _console_log_muted = muted; }
+	bool is_console_log_muted() const { return _console_log_muted; }
+
 	// Every property + shorthand registered with RmlUi's stylesheet engine —
 	// the authoritative source for editor autocomplete.
 	godot::PackedStringArray get_supported_rcss_properties() const;
@@ -152,6 +162,7 @@ private:
 	bool _default_sheet_dirty = true;
 
 	godot::Array _recent_log;
+	bool _console_log_muted = false;
 
 	void _initialize_rmlui();
 	void _shutdown_rmlui();

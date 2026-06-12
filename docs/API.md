@@ -55,7 +55,8 @@ reload_document(path: String) -> bool
 reload_all_documents()
 unload_document(path: String) -> bool
 get_loaded_documents() -> Array          # paths/aliases
-get_document_script(document_path := "") -> Variant   # see Inline GDScript
+get_document_script(document_path := "") -> Variant    # first <script> block instance
+get_document_scripts(document_path := "") -> Array     # all block instances, document order
 ```
 
 - `load_document_from_string` parses from memory; `alias_path` is used for
