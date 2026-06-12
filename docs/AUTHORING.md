@@ -46,6 +46,12 @@ zero-code, render in the editor's 2D viewport, and power the preview panel.
 Script-driven `load_document()` calls don't run in the editor — the node will
 show a configuration warning explaining exactly that.
 
+`document_path` loads **after the scene's `_ready` cascade** (deferred), so
+the natural pattern just works: create data models / register custom elements
+in `_ready`, and the document binds them on load. Code that needs the loaded
+document (attaching element listeners, populating content) should
+`await get_tree().process_frame` first.
+
 ## Data binding
 
 RmlUi's reactive layer. The model must exist **before** the document loads:

@@ -234,7 +234,13 @@ void RmlContext::_ready() {
 	}
 
 	if (!_document_path.is_empty()) {
-		load_document(_document_path);
+		// Deferred: children _ready before parents, so a direct load here runs
+		// BEFORE the owning scene's script can create data models / register
+		// custom elements — bindings would fail and need a reload. Deferring
+		// to after the whole _ready cascade lets the natural pattern work:
+		// create models in _ready, the document binds them on load.
+		// (Anything needing the loaded document should await one frame.)
+		call_deferred("load_document", _document_path);
 	}
 }
 
