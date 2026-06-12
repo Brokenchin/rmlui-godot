@@ -203,7 +203,10 @@ public:
 	void set_gamepad_navigation(bool enabled);
 	void toggle_debugger();
 	int64_t get_debugger_toggle_key() const { return _debugger_toggle_key; }
-	void set_debugger_toggle_key(int64_t key) { _debugger_toggle_key = key; }
+	void set_debugger_toggle_key(int64_t key) {
+		_debugger_toggle_key = key;
+		_update_unhandled_input_processing();
+	}
 
 private:
 	void _update_unhandled_input_processing();

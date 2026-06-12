@@ -62,7 +62,8 @@ void RmlContext::_update_unhandled_input_processing() {
 	// _unhandled_input only fires while enabled — keep it off unless watching
 	// something, so contexts add zero per-event overhead by default.
 	if (is_inside_tree()) {
-		set_process_unhandled_input(_gamepad_navigation || !_input_actions.is_empty());
+		set_process_unhandled_input(_gamepad_navigation || !_input_actions.is_empty() ||
+			_debugger_toggle_key != 0);
 	}
 }
 
@@ -128,6 +129,21 @@ bool RmlContext::_process_navigation_input(const godot::Ref<godot::InputEvent>& 
 
 void RmlContext::_unhandled_input(const godot::Ref<godot::InputEvent>& event) {
 	if (event.is_null()) return;
+
+	// Debugger toggle — here and not in _gui_input: gui keyboard events only
+	// reach a Control that HAS focus, and focus_mode defaults to click-grab.
+	// Default F10: with Godot 4.5's embedded game window, F8/F9 are the
+	// editor's Stop/Pause shortcuts and never reach the game.
+	if (_debugger_toggle_key != 0) {
+		auto* key = godot::Object::cast_to<godot::InputEventKey>(event.ptr());
+		if (key != nullptr && key->is_pressed() && !key->is_echo() &&
+			static_cast<int64_t>(key->get_keycode()) == _debugger_toggle_key) {
+			toggle_debugger();
+			godot::Viewport* vp = get_viewport();
+			if (vp != nullptr) vp->set_input_as_handled();
+			return;
+		}
+	}
 
 	if (_gamepad_navigation) {
 		_process_navigation_input(event);
@@ -504,15 +520,9 @@ void RmlContext::_forward_key_event(const godot::Ref<godot::InputEvent>& event) 
 		rml_key = Rml::Input::KI_TAB;
 	} else if (keycode == godot::KEY_ESCAPE) {
 		rml_key = Rml::Input::KI_ESCAPE;
-	} else if (_debugger_toggle_key != 0 &&
-			static_cast<int64_t>(keycode) == static_cast<int64_t>(_debugger_toggle_key)) {
-		// Default F10 — NOT F8/F9: with Godot 4.5's embedded game window the
-		// editor's Stop (F8) and Pause (F9) shortcuts fire first.
-		if (key->is_pressed()) {
-			toggle_debugger();
-		}
-		return;
 	}
+	// (The debugger toggle key is handled in _unhandled_input — _gui_input
+	// only receives keys when the Control has focus.)
 
 	const int modifiers = godot_modifiers_to_rml(event);
 
