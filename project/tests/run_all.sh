@@ -57,6 +57,7 @@ run tests/test_subviewport_recreate.gd windowed
 run tests/test_preview_click.gd windowed
 run tests/test_perf_stress.gd windowed
 run tests/test_render_dirty.gd windowed
+run tests/test_texture_filter.gd windowed
 
 echo
 echo "==============================================="

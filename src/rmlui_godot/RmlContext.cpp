@@ -315,9 +315,19 @@ void RmlContext::_draw() {
 
 	godot::Vector2 ctrl_size = get_size();
 
+	// Propagate this Control's texture_filter to every RS-created sub-item.
+	// Node-tree filter inheritance does NOT cover raw RenderingServer items —
+	// without this they always use the project default, and setting the
+	// filter on the RmlContext node silently did nothing. The CanvasItem and
+	// RS enums align numerically (PARENT_NODE/INHERIT == 0 == RS DEFAULT, so
+	// "inherit" degrades to the project default rather than walking the tree).
+	const auto item_filter = static_cast<godot::RenderingServer::CanvasItemTextureFilter>(
+		static_cast<int>(get_texture_filter()));
+
 	godot::RID root_draw = rs->canvas_item_create();
 	rs->canvas_item_set_parent(root_draw, get_canvas_item());
 	rs->canvas_item_set_material(root_draw, mat_rid);
+	rs->canvas_item_set_default_texture_filter(root_draw, item_filter);
 	_scissor_items.push_back(root_draw);
 
 	struct LayerState {
@@ -356,6 +366,7 @@ void RmlContext::_draw() {
 		godot::RID item = rs->canvas_item_create();
 		rs->canvas_item_set_parent(item, parent);
 		rs->canvas_item_set_material(item, material);
+		rs->canvas_item_set_default_texture_filter(item, item_filter);
 		rs->canvas_item_set_draw_index(item, run_draw_index++);
 		if (material == scissor_mat_rid) {
 			godot::Vector4 rv = scissored
@@ -380,6 +391,7 @@ void RmlContext::_draw() {
 		case CmdType::PUSH_LAYER: {
 			invalidate_run();
 			godot::RID group_item = rs->canvas_item_create();
+			rs->canvas_item_set_default_texture_filter(group_item, item_filter);
 			rs->canvas_item_set_parent(group_item, layer_stack.back().canvas_item);
 			rs->canvas_item_set_material(group_item, mat_rid);
 			rs->canvas_item_set_canvas_group_mode(group_item,
