@@ -335,9 +335,9 @@ private:
 	godot::PackedStringArray _input_actions;
 	bool _gamepad_navigation = false;
 	// Key toggling the RmlUi debugger overlay (godot::Key value, 0 = disabled).
-	// Default F9 — F8 is the editor Stop shortcut, fatal with the 4.5
-	// embedded game window.
-	int64_t _debugger_toggle_key = static_cast<int64_t>(godot::KEY_F9);
+	// Default F10 — with the 4.5 embedded game window F8 is the editor's
+	// Stop shortcut and F9 its Pause, both fatal/disruptive.
+	int64_t _debugger_toggle_key = static_cast<int64_t>(godot::KEY_F10);
 	int _text_render_mode = 0;    // DEFAULT (resolves to SUBPIX_OFFSET)
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light

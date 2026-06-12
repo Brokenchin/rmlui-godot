@@ -506,8 +506,8 @@ void RmlContext::_forward_key_event(const godot::Ref<godot::InputEvent>& event) 
 		rml_key = Rml::Input::KI_ESCAPE;
 	} else if (_debugger_toggle_key != 0 &&
 			static_cast<int64_t>(keycode) == static_cast<int64_t>(_debugger_toggle_key)) {
-		// Default F9 — NOT F8: with Godot 4.5's embedded game window the
-		// editor's Stop shortcut (F8) fires first and kills the game.
+		// Default F10 — NOT F8/F9: with Godot 4.5's embedded game window the
+		// editor's Stop (F8) and Pause (F9) shortcuts fire first.
 		if (key->is_pressed()) {
 			toggle_debugger();
 		}
