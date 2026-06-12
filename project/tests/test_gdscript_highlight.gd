@@ -30,6 +30,17 @@ func _initialize() -> void:
 	_check("call colored", _color_at(toks, line, "do_thing") == HL.COLOR_FUNC_CALL)
 	_check("ALL_CAPS not a type", _color_at(toks, line, "MAX_SIZE") == HL.COLOR_TEXT)
 
+	# lowercase builtins are types
+	line = "var i : int = 0"
+	toks = {}
+	HL.tokenize(line, 0, line.length(), toks)
+	_check("int is type", _color_at(toks, line, "int") == HL.COLOR_TYPE)
+	line = "func f(x : float) -> bool:"
+	toks = {}
+	HL.tokenize(line, 0, line.length(), toks)
+	_check("float is type", _color_at(toks, line, "float") == HL.COLOR_TYPE)
+	_check("bool is type", _color_at(toks, line, "bool") == HL.COLOR_TYPE)
+
 	print("ALL PASSED" if _fails == 0 else "%d FAILED" % _fails)
 	quit(_fails)
 

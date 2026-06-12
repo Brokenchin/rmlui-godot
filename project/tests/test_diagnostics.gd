@@ -66,4 +66,30 @@ func _check() -> void:
 			var no_false_positive := not text.containsn("style sheet")
 			var ok: bool = label and label.visible and no_false_positive
 			print("PHASE2 (broken rml, no link false-positive): ", "PASS" if ok else "FAIL")
-			quit(0 if ok else 1)
+			if not ok:
+				quit(1)
+				return
+			# Phase 3: GDScript syntax error inside <script> — error bar must
+			# report it with the <script> tag's rml line number.
+			_phase = 3
+			_diag.detach()
+			_ce.text = """<rml>
+<head>
+<script>
+func broken(:
+	pass
+</script>
+</head>
+<body>x</body>
+</rml>"""
+			_diag.attach(_ce, "rml")
+			create_timer(1.2).timeout.connect(_check)
+		3:
+			var label: PanelContainer = _diag._error_bar
+			var text: String = _diag._error_label.text if _diag._error_label else ""
+			print("script-error bar text: ", text)
+			var ok: bool = label and label.visible and text.containsn("script")
+			var has_line: bool = _diag._painted_lines.has(2)  # <script> on rml line 3
+			print("painted lines: ", _diag._painted_lines)
+			print("PHASE3 (script block compile error): ", "PASS" if (ok and has_line) else "FAIL")
+			quit(0 if (ok and has_line) else 1)

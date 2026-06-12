@@ -21,6 +21,9 @@ const KEYWORDS := [
 	"as", "self", "super", "true", "false", "null", "void", "breakpoint", "tool",
 ]
 
+# Lowercase builtins the CamelCase rule can't catch.
+const BUILTIN_TYPES := ["int", "float", "bool", "str"]
+
 
 static func tokenize(text: String, from: int, to: int, tokens: Dictionary) -> void:
 	var i := from
@@ -45,6 +48,8 @@ static func tokenize(text: String, from: int, to: int, tokens: Dictionary) -> vo
 			var color := COLOR_TEXT
 			if word in KEYWORDS:
 				color = COLOR_KEYWORD
+			elif word in BUILTIN_TYPES:
+				color = COLOR_TYPE
 			elif prev_word == "func" or prev_word == "signal":
 				# Declared name — function color even when CamelCase.
 				color = COLOR_FUNC_CALL
