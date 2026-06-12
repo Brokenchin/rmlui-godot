@@ -24,8 +24,12 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: x86_64
-            cmake_generator: "Visual Studio 17 2022"
-            cmake_arch: "-A x64"
+            # Ninja + msvc-dev-cmd instead of a named VS generator: the
+            # windows-latest image rotates VS versions ("Visual Studio 17
+            # 2022" stopped resolving when the image moved on) — the dev-cmd
+            # environment picks up whatever MSVC the runner ships.
+            cmake_generator: Ninja
+            cmake_arch: ""
           - os: ubuntu-latest
             platform: linux
             arch: x86_64
@@ -50,6 +54,12 @@ jobs:
       - name: Install Ninja
         if: matrix.cmake_generator == 'Ninja'
         uses: seanmiddleditch/gha-setup-ninja@master
+
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Setup ccache
         if: runner.os != 'Windows'
