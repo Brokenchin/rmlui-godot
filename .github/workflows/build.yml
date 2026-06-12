@@ -2,10 +2,13 @@ name: Build
 
 on:
   push:
-    branches: [master, dev-rmlui]
+    # dev gets CI on every push; master moves only via fast-forward from dev
+    # (already built) or a v* tag (which runs the full build + release job),
+    # so building the master branch push too would just duplicate the run.
+    branches: [dev]
     tags: ['v*']
   pull_request:
-    branches: [master, dev-rmlui]
+    branches: [master, dev]
   workflow_dispatch:
 
 concurrency:
