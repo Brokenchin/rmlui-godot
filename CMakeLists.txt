@@ -39,14 +39,17 @@ if(RMLUI_GODOT_INSTALL_EXAMPLES)
         if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.gitmodules")
             message(STATUS "Fetching rmlui-godot-examples submodule...")
             execute_process(
-                COMMAND ${GIT_EXECUTABLE} submodule update --init examples
+                # --checkout: the examples submodule is marked update=none in
+                # .gitmodules (so consumers' recursive inits skip it); plain
+                # --init would silently no-op.
+                COMMAND ${GIT_EXECUTABLE} submodule update --init --checkout examples
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 RESULT_VARIABLE _examples_result
             )
             if(NOT _examples_result EQUAL 0)
                 message(WARNING
                     "Failed to fetch examples submodule. Examples will not be installed.\n"
-                    "  Run manually: git submodule update --init examples")
+                    "  Run manually: git submodule update --init --checkout examples")
                 set(RMLUI_GODOT_INSTALL_EXAMPLES OFF)
             endif()
         else()
