@@ -111,6 +111,13 @@ func _validate() -> void:
 
 	mgr.clear_recent_log()
 
+	# Mute the console while validating: the throwaway context's expected
+	# environment noise (no fonts/models) otherwise spams Output on every
+	# keystroke. Messages still reach get_recent_log() for the error bar.
+	var can_mute: bool = mgr.has_method("set_console_log_muted")
+	if can_mute:
+		mgr.set_console_log_muted(true)
+
 	var text := _ce.text
 	if _kind == "rcss":
 		_hidden_ctx.call("inject_stylesheet", text)
@@ -121,6 +128,9 @@ func _validate() -> void:
 		# Tags rarely span lines, so line numbers stay accurate.
 		var link_re := RegEx.create_from_string("<link[^>]*>")
 		_doc_loaded = _hidden_ctx.call("load_document_from_string", link_re.sub(text, "", true), ALIAS)
+
+	if can_mute:
+		mgr.set_console_log_muted(false)
 
 	_apply_diagnostics(_parse_log(mgr.get_recent_log()))
 

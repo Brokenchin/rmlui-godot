@@ -17,6 +17,14 @@ double GodotSystemInterface::GetElapsedTime() {
 bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& message) {
 	godot::String msg = godot::String("[RmlUi] ") + godot::String(message.c_str());
 
+	// Console muted (editor diagnostics validating a buffer): skip Godot's
+	// console entirely but keep the recent-log/signal forwarding below.
+	auto* mute_manager = RmlManager::get_singleton();
+	if (mute_manager != nullptr && mute_manager->is_console_log_muted()) {
+		mute_manager->notify_log(static_cast<int>(type), godot::String(message.c_str()));
+		return true;
+	}
+
 	// Data models are bound at runtime from script — inside the editor a
 	// document referencing one is expected, not an error. Downgrade so the
 	// editor console isn't spammed red on every selection/preview.

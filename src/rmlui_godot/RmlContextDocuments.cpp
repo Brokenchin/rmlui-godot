@@ -132,8 +132,10 @@ bool RmlContext::load_document_from_string(const godot::String& rml_text, const 
 		Rml::String(rml_text.utf8().get_data()),
 		Rml::String(alias_path.utf8().get_data()));
 	if (doc == nullptr) {
-		godot::UtilityFunctions::push_error(
-			godot::String("[RmlUi] Failed to load document from string (") + alias_path + ")");
+		if (!console_log_muted()) {
+			godot::UtilityFunctions::push_error(
+				godot::String("[RmlUi] Failed to load document from string (") + alias_path + ")");
+		}
 		return false;
 	}
 
@@ -496,7 +498,9 @@ bool RmlContext::inject_stylesheet(const godot::String& rcss_string) {
 	Rml::String rcss(rcss_string.utf8().get_data());
 	auto new_styles = Rml::Factory::InstanceStyleSheetString(rcss);
 	if (!new_styles) {
-		godot::UtilityFunctions::push_error("[RmlUi] Failed to parse injected stylesheet");
+		if (!console_log_muted()) {
+			godot::UtilityFunctions::push_error("[RmlUi] Failed to parse injected stylesheet");
+		}
 		return false;
 	}
 
@@ -514,9 +518,11 @@ bool RmlContext::inject_stylesheet(const godot::String& rcss_string) {
 		injected_count++;
 	}
 
-	godot::UtilityFunctions::print(
-		godot::String("[RmlUi] Stylesheet injected into ") +
-		godot::String::num_int64(injected_count) + godot::String(" document(s)"));
+	if (!console_log_muted()) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Stylesheet injected into ") +
+			godot::String::num_int64(injected_count) + godot::String(" document(s)"));
+	}
 	return injected_count > 0;
 }
 
@@ -543,8 +549,10 @@ bool RmlContext::unload_document(const godot::String& path) {
 
 	_loaded_documents.erase(it);
 
-	godot::UtilityFunctions::print(
-		godot::String("[RmlUi] Document unloaded: ") + path);
+	if (!console_log_muted()) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Document unloaded: ") + path);
+	}
 	return true;
 }
 

@@ -354,8 +354,42 @@ const GDSCRIPT_KEYWORDS := [
 	"range", "str", "int", "float", "bool", "abs", "clamp", "lerp", "weakref",
 ]
 
+const BUILTIN_TYPES := [
+	"void", "bool", "int", "float", "String", "StringName", "NodePath",
+	"Vector2", "Vector2i", "Vector3", "Vector3i", "Vector4", "Vector4i",
+	"Rect2", "Rect2i", "Transform2D", "Transform3D", "Plane", "Quaternion",
+	"AABB", "Basis", "Projection", "Color", "RID", "Callable", "Signal",
+	"Dictionary", "Array", "Variant",
+	"PackedByteArray", "PackedInt32Array", "PackedInt64Array",
+	"PackedFloat32Array", "PackedFloat64Array", "PackedStringArray",
+	"PackedVector2Array", "PackedVector3Array", "PackedColorArray",
+]
+
 ## `before` = current line up to the caret.
 func fill_gdscript_options(ce: CodeEdit, before: String) -> bool:
+	# Naming a NEW symbol (func foo, var bar, …): suggestions are never
+	# right — suppress so 'func ' doesn't pop 'abs' and friends.
+	if RegEx.create_from_string("\\b(func|var|const|signal|class|class_name|enum|for)\\s+[A-Za-z0-9_]*$").search(before):
+		return false
+
+	# Return-type position: 'func x() -> Vec…' → types only.
+	if RegEx.create_from_string("->\\s*[A-Za-z0-9_]*$").search(before):
+		_add_type_options(ce)
+		return true
+
+	# Colon contexts. End-of-signature/statement colons ('):', 'if x:') want
+	# nothing; 'var x: ' and parameter 'name: ' want types.
+	var colon := RegEx.create_from_string(":\\s*[A-Za-z0-9_]*$").search(before)
+	if colon:
+		if RegEx.create_from_string("\\)\\s*(->\\s*[A-Za-z0-9_]+\\s*)?:\\s*[A-Za-z0-9_]*$").search(before):
+			return false  # colon ending a function signature
+		var in_parens := before.count("(") > before.count(")")
+		var var_line := RegEx.create_from_string("^\\s*(var|const)\\b").search(before) != null
+		if in_parens or var_line:
+			_add_type_options(ce)
+			return true
+		return false  # 'if cond:', 'for i in r:', match arms, …
+
 	# Member access: identifier "." [partial-word]
 	var m := RegEx.create_from_string("([A-Za-z_][A-Za-z0-9_]*)\\.[A-Za-z0-9_]*$").search(before)
 	if m:
@@ -382,6 +416,13 @@ func fill_gdscript_options(ce: CodeEdit, before: String) -> bool:
 	for cls_name in ClassDB.get_class_list():
 		ce.add_code_completion_option(CodeEdit.KIND_CLASS, cls_name, cls_name)
 	return true
+
+
+func _add_type_options(ce: CodeEdit) -> void:
+	for t in BUILTIN_TYPES:
+		ce.add_code_completion_option(CodeEdit.KIND_CLASS, t, t)
+	for cls_name in ClassDB.get_class_list():
+		ce.add_code_completion_option(CodeEdit.KIND_CLASS, cls_name, cls_name)
 
 
 ## [kind, display, insert] for every method/property/signal of `cls`,
