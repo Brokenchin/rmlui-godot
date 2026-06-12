@@ -50,6 +50,25 @@ func send_ping():
 
 var _ping_received := ""
 
+
+const DOC_MULTI := """<rml>
+<head>
+<script>
+var rml_context
+func from_a():
+	pass
+</script>
+<script>
+var rml_context
+func from_b():
+	pass
+func _on_load(_e):
+	rml_context.set_meta("multi", "b")
+</script>
+</head>
+<body onload="gdscript:_on_load">x</body>
+</rml>"""
+
 var _parent: Node
 var _ctx: Node
 var _phase := 0
@@ -98,6 +117,19 @@ func _step() -> void:
 				inst.ping.connect(func(msg): _ping_received = msg)
 				inst.send_ping()
 			_check("signal received on godot side", _ping_received == "hello from the block")
+			_ctx.call("unload_document", "memory://signal")
+			_ctx.call("load_document_from_string", DOC_MULTI, "memory://multi")
+			_phase = 4
+			create_timer(0.5).timeout.connect(_step)
+		4:
+			# Multiple <script> blocks: all compile, dispatch hits the first
+			# block defining the method, and the plural API exposes all.
+			var all: Array = _ctx.call("get_document_scripts", "memory://multi")
+			_check("both blocks exposed", all.size() == 2)
+			if all.size() == 2:
+				_check("block A reachable", all[0].has_method("from_a"))
+				_check("block B reachable", all[1].has_method("from_b"))
+			_check("dispatch reached block B handler", str(_ctx.get_meta("multi", "")) == "b")
 			print("ALL PASSED" if _fails == 0 else "%d FAILED" % _fails)
 			quit(_fails)
 

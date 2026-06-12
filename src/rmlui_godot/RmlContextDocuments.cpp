@@ -261,17 +261,20 @@ godot::Array RmlContext::get_loaded_documents() const {
 }
 
 godot::Variant RmlContext::get_document_script(const godot::String& document_path) {
+	godot::Array instances = get_document_scripts(document_path);
+	return instances.is_empty() ? godot::Variant() : instances[0];
+}
+
+godot::Array RmlContext::get_document_scripts(const godot::String& document_path) {
 	const std::string wanted(document_path.utf8().get_data());
+	godot::Array result;
 	for (const auto& ld : _loaded_documents) {
 		if (!wanted.empty() && ld.path != wanted) continue;
 		auto* doc = rmlui_dynamic_cast<GodotScriptDocument*>(ld.document);
 		if (doc == nullptr) continue;
-		godot::Array instances = doc->get_script_instances();
-		if (!instances.is_empty()) {
-			return instances[0];
-		}
+		result.append_array(doc->get_script_instances());
 	}
-	return godot::Variant();
+	return result;
 }
 
 bool RmlContext::load_font_face(const godot::String& path) {

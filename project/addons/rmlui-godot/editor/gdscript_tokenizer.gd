@@ -68,6 +68,12 @@ static func tokenize(text: String, from: int, to: int, tokens: Dictionary) -> vo
 			prev_word = word
 			i = e
 		else:
+			# Punctuation/operators MUST emit a color: the highlighter dict is
+			# sparse and a color runs until the next emitted column, so silent
+			# chars inherit the previous token's color — 'Vector2(0,0)' bled
+			# teal across the parens, 'Array[…] = […]' tinted the whole tail.
+			if c != " " and c != "\t":
+				tokens[i] = {"color": COLOR_TEXT}
 			i += 1
 
 

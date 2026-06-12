@@ -41,6 +41,20 @@ func _initialize() -> void:
 	_check("float is type", _color_at(toks, line, "float") == HL.COLOR_TYPE)
 	_check("bool is type", _color_at(toks, line, "bool") == HL.COLOR_TYPE)
 
+	# Punctuation must not inherit neighbor colors (sparse-dict bleed).
+	line = "var arr : Array[Vector2] = [Vector2(0,0), Vector2(0,0)]"
+	toks = {}
+	HL.tokenize(line, 0, line.length(), toks)
+	_check("open bracket is text", toks.get(line.find("["), {}).get("color") == HL.COLOR_TEXT)
+	_check("equals is text", toks.get(line.find("="), {}).get("color") == HL.COLOR_TEXT)
+	_check("paren after Vector2 is text", toks.get(line.find("("), {}).get("color") == HL.COLOR_TEXT)
+	_check("closing bracket is text", toks.get(line.rfind("]"), {}).get("color") == HL.COLOR_TEXT)
+	_check("comma is text", toks.get(line.find(","), {}).get("color") == HL.COLOR_NUMBER or toks.get(line.find(","), {}).get("color") == HL.COLOR_TEXT)
+	line = "var vec : Vector4i = Vector4i(0,0,0,0)"
+	toks = {}
+	HL.tokenize(line, 0, line.length(), toks)
+	_check("trailing paren is text", toks.get(line.rfind(")"), {}).get("color") == HL.COLOR_TEXT)
+
 	print("ALL PASSED" if _fails == 0 else "%d FAILED" % _fails)
 	quit(_fails)
 
