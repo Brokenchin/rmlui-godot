@@ -315,19 +315,18 @@ void RmlContext::_draw() {
 
 	godot::Vector2 ctrl_size = get_size();
 
-	// Propagate this Control's texture_filter to every RS-created sub-item.
-	// Node-tree filter inheritance does NOT cover raw RenderingServer items —
-	// without this they always use the project default, and setting the
-	// filter on the RmlContext node silently did nothing. The CanvasItem and
-	// RS enums align numerically (PARENT_NODE/INHERIT == 0 == RS DEFAULT, so
-	// "inherit" degrades to the project default rather than walking the tree).
-	const auto item_filter = static_cast<godot::RenderingServer::CanvasItemTextureFilter>(
-		static_cast<int>(get_texture_filter()));
+	// Text glyphs get an explicit filter (text_filtering_mode property);
+	// everything else stays on RS DEFAULT = the project setting. The node's
+	// texture_filter is deliberately NOT consulted — raw RS items skip
+	// node-tree inheritance anyway, and text crispness should not depend on
+	// project-wide or per-node image filtering.
+	const auto text_filter = (_text_filtering_mode == 1)
+		? godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_LINEAR
+		: godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_NEAREST;
 
 	godot::RID root_draw = rs->canvas_item_create();
 	rs->canvas_item_set_parent(root_draw, get_canvas_item());
 	rs->canvas_item_set_material(root_draw, mat_rid);
-	rs->canvas_item_set_default_texture_filter(root_draw, item_filter);
 	_scissor_items.push_back(root_draw);
 
 	struct LayerState {
@@ -353,20 +352,24 @@ void RmlContext::_draw() {
 	godot::RID run_material;
 	bool run_scissored = false;
 	godot::Rect2 run_rect;
+	godot::RenderingServer::CanvasItemTextureFilter run_filter =
+		godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT;
 	int run_draw_index = 0;
 
 	auto invalidate_run = [&]() { run_item = godot::RID(); };
 
 	auto target_for = [&](godot::RID parent, godot::RID material,
-			bool scissored, const godot::Rect2& rect) -> godot::RID {
+			bool scissored, const godot::Rect2& rect,
+			godot::RenderingServer::CanvasItemTextureFilter filter) -> godot::RID {
 		if (run_item.is_valid() && run_parent == parent && run_material == material &&
-			run_scissored == scissored && (!scissored || run_rect == rect)) {
+			run_scissored == scissored && run_filter == filter &&
+			(!scissored || run_rect == rect)) {
 			return run_item;
 		}
 		godot::RID item = rs->canvas_item_create();
 		rs->canvas_item_set_parent(item, parent);
 		rs->canvas_item_set_material(item, material);
-		rs->canvas_item_set_default_texture_filter(item, item_filter);
+		rs->canvas_item_set_default_texture_filter(item, filter);
 		rs->canvas_item_set_draw_index(item, run_draw_index++);
 		if (material == scissor_mat_rid) {
 			godot::Vector4 rv = scissored
@@ -380,6 +383,7 @@ void RmlContext::_draw() {
 		run_material = material;
 		run_scissored = scissored;
 		run_rect = rect;
+		run_filter = filter;
 		return item;
 	};
 
@@ -391,7 +395,6 @@ void RmlContext::_draw() {
 		case CmdType::PUSH_LAYER: {
 			invalidate_run();
 			godot::RID group_item = rs->canvas_item_create();
-			rs->canvas_item_set_default_texture_filter(group_item, item_filter);
 			rs->canvas_item_set_parent(group_item, layer_stack.back().canvas_item);
 			rs->canvas_item_set_material(group_item, mat_rid);
 			rs->canvas_item_set_canvas_group_mode(group_item,
@@ -520,6 +523,12 @@ void RmlContext::_draw() {
 			godot::Ref<godot::Texture2D> draw_tex = _render_interface.get_texture_or_white(cmd.texture);
 			godot::RID tex_rid = draw_tex.is_valid() ? draw_tex->get_rid() : godot::RID();
 
+			// Glyph-atlas draws use the explicit text filter; everything else
+			// follows the project default.
+			const auto cmd_filter = _render_interface.is_generated_texture(cmd.texture)
+				? text_filter
+				: godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT;
+
 			bool fully_inside = (mesh_left >= clip_rect.position.x &&
 				mesh_top >= clip_rect.position.y &&
 				mesh_right <= clip_rect.position.x + clip_rect.size.x &&
@@ -532,20 +541,20 @@ void RmlContext::_draw() {
 			bool gpu_path = use_gpu && !is_shader;
 
 			if (gpu_path) {
-				godot::RID target = target_for(draw_target, scissor_mat_rid, needs_scissor, clip_rect);
+				godot::RID target = target_for(draw_target, scissor_mat_rid, needs_scissor, clip_rect, cmd_filter);
 				rs->canvas_item_add_mesh(target, mesh->get_rid(), xform,
 					godot::Color(1, 1, 1, 1), tex_rid);
 			} else if (needs_scissor) {
 				const auto* raw = _render_interface.get_raw_geometry(cmd.geometry);
 				if (raw && _clip_mesh_to_rect(*raw, xform, clip_rect, clip_buf)) {
-					godot::RID target = target_for(draw_target, geo_material, false, clip_rect);
+					godot::RID target = target_for(draw_target, geo_material, false, clip_rect, cmd_filter);
 					rs->canvas_item_add_triangle_array(target,
 						clip_buf.indices, clip_buf.positions, clip_buf.colors,
 						clip_buf.uvs, godot::PackedInt32Array(),
 						godot::PackedFloat32Array(), tex_rid);
 				}
 			} else {
-				godot::RID target = target_for(draw_target, geo_material, false, clip_rect);
+				godot::RID target = target_for(draw_target, geo_material, false, clip_rect, cmd_filter);
 				rs->canvas_item_add_mesh(target, mesh->get_rid(), xform,
 					godot::Color(1, 1, 1, 1), tex_rid);
 			}

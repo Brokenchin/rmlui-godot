@@ -1,9 +1,8 @@
 extends SceneTree
-## RmlContext.texture_filter must reach the RS-created draw items — raw RS
-## items skip node-tree filter inheritance, so without explicit propagation
-## the node property silently did nothing (only the project default applied).
-## Probe: text rendered at a fractional dp_ratio samples off the texel grid,
-## so NEAREST vs LINEAR must produce different pixels.
+## text_filtering_mode applies an explicit filter to GLYPH draws only
+## (default Nearest — crisp like Godot text — independent of the project
+## default and the node texture_filter). Probe: at a fractional dp_ratio,
+## glyphs sample off the texel grid, so Nearest vs Linear must differ.
 
 const DOC := """<rml>
 <head>
@@ -50,22 +49,20 @@ func _step() -> void:
 	match _phase:
 		0:
 			_img_default = _sv.get_texture().get_image()
-			_ctx.set("texture_filter", CanvasItem.TEXTURE_FILTER_NEAREST)
-			# texture_filter setter doesn't trigger our redraw — force one.
-			_ctx.queue_redraw()
+			_ctx.set("text_filtering_mode", 1)  # Linear (default is Nearest)
 			_phase = 1
 			create_timer(0.5).timeout.connect(_step)
 		1:
-			var img_nearest := _sv.get_texture().get_image()
+			var img_linear := _sv.get_texture().get_image()
 			var diff := 0
-			for y in range(0, img_nearest.get_height(), 1):
-				for x in range(0, img_nearest.get_width(), 1):
+			for y in range(0, img_linear.get_height(), 1):
+				for x in range(0, img_linear.get_width(), 1):
 					var a := _img_default.get_pixel(x, y)
-					var b := img_nearest.get_pixel(x, y)
+					var b := img_linear.get_pixel(x, y)
 					if absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b) > 0.04:
 						diff += 1
-			print("  pixels differing default vs nearest: ", diff)
-			_check("node texture_filter reaches RS items", diff > 0)
+			print("  pixels differing nearest vs linear: ", diff)
+			_check("text_filtering_mode reaches glyph draws", diff > 0)
 			print("ALL PASSED" if _fails == 0 else "%d FAILED" % _fails)
 			quit(_fails)
 

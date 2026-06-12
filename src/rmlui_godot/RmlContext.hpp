@@ -168,6 +168,9 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 
 	ADD_GROUP("Text Rendering", "");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_render_mode", godot::PROPERTY_HINT_ENUM, "Default,SubPixel Offset,Godot Native,RmlUI Native"), "set_text_render_mode", "get_text_render_mode");
+	godot::ClassDB::bind_method(godot::D_METHOD("get_text_filtering_mode"), &RmlContext::get_text_filtering_mode);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_text_filtering_mode", "mode"), &RmlContext::set_text_filtering_mode);
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "text_filtering_mode", godot::PROPERTY_HINT_ENUM, "Nearest,Linear"), "set_text_filtering_mode", "get_text_filtering_mode");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "font_pixel_snap"), "set_font_pixel_snap", "get_font_pixel_snap");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "font_layout_mode", godot::PROPERTY_HINT_ENUM, "Manual,Integer Advance,Shaped"), "set_font_layout_mode", "get_font_layout_mode");
 
@@ -247,6 +250,17 @@ public:
 
 	int get_text_render_mode() const { return _text_render_mode; }
 	void set_text_render_mode(int mode);
+
+	// Texture filter for TEXT GLYPHS only (Nearest=0 default, Linear=1).
+	// Deliberately independent of the node's texture_filter and the project
+	// default: glyph quads currently sample off the texel grid under linear
+	// (see the SUBPIX_OFFSET alignment follow-up), so text defaults to
+	// nearest — crisp like Godot's own — while images keep normal filtering.
+	int get_text_filtering_mode() const { return _text_filtering_mode; }
+	void set_text_filtering_mode(int mode) {
+		_text_filtering_mode = mode;
+		_render_dirty = true;
+	}
 
 	int get_font_hinting() const { return _font_hinting; }
 	void set_font_hinting(int hinting);
@@ -347,6 +361,7 @@ private:
 	// Stop shortcut and F9 its Pause, both fatal/disruptive.
 	int64_t _debugger_toggle_key = static_cast<int64_t>(godot::KEY_F10);
 	int _text_render_mode = 0;    // DEFAULT (resolves to SUBPIX_OFFSET)
+	int _text_filtering_mode = 0; // 0 = Nearest (crisp), 1 = Linear
 	// Granular font tuning (defaults match Godot's FontFile import + Label).
 	int _font_hinting = 1;        // Light
 	int _font_antialiasing = 1;   // Gray

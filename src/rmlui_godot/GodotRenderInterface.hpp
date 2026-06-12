@@ -8,6 +8,7 @@
 #include <godot_cpp/variant/vector2.hpp>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace RmlGodot {
@@ -118,6 +119,9 @@ public:
 		_prev_deferred_geometry_release.swap(_deferred_geometry_release);
 	}
 	void release_all_resources();
+	bool is_generated_texture(Rml::TextureHandle handle) const {
+		return _generated_textures.count(static_cast<uintptr_t>(handle)) != 0;
+	}
 
 	godot::Ref<godot::ArrayMesh> get_mesh(Rml::CompiledGeometryHandle handle) const;
 	const RawGeometry* get_raw_geometry(Rml::CompiledGeometryHandle handle) const;
@@ -166,6 +170,12 @@ private:
 
 	uintptr_t _next_geo_handle = 1;
 	uintptr_t _next_tex_handle = 1;
+
+	// Handles created by GenerateTexture (raw pixel span). In this integration
+	// that path is used exclusively by the font engine's atlas callbacks —
+	// files go through LoadTexture, layer snapshots through SaveLayerAsTexture
+	// — so "generated" == "text glyph atlas" for filtering purposes.
+	std::unordered_set<uintptr_t> _generated_textures;
 	uintptr_t _next_filter_handle = 1;
 	uintptr_t _next_shader_handle = 1;
 	Rml::LayerHandle _next_layer_handle = 1;

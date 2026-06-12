@@ -197,11 +197,13 @@ Rml::TextureHandle GodotRenderInterface::GenerateTexture(
 
 	uintptr_t handle = _next_tex_handle++;
 	_textures[handle] = tex;
+	_generated_textures.insert(handle);
 	return handle;
 }
 
 void GodotRenderInterface::ReleaseTexture(Rml::TextureHandle texture) {
 	_textures.erase(texture);
+	_generated_textures.erase(static_cast<uintptr_t>(texture));
 }
 
 // --- Scissor ---
@@ -420,6 +422,7 @@ void GodotRenderInterface::ReleaseShader(Rml::CompiledShaderHandle shader) {
 // --- Lifecycle ---
 
 void GodotRenderInterface::release_all_resources() {
+	_generated_textures.clear();
 	_geometry.clear();
 	_raw_geometry.clear();
 	_textures.clear();
