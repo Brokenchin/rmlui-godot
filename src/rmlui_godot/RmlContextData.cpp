@@ -209,6 +209,7 @@ void RmlContext::set_data_variable(const godot::String& model_name,
 	std::string vname(variable_name.utf8().get_data());
 	model->variables[vname] = godot_to_rml_variant(value);
 	model->handle.DirtyVariable(Rml::String(vname));
+	_render_dirty = true;
 }
 
 godot::Variant RmlContext::get_data_variable(const godot::String& model_name,
@@ -268,6 +269,7 @@ void RmlContext::dirty_data_variable(const godot::String& model_name,
 	if (model == nullptr) return;
 
 	model->handle.DirtyVariable(Rml::String(std::string(variable_name.utf8().get_data())));
+	_render_dirty = true;
 }
 
 void RmlContext::dirty_all_variables(const godot::String& model_name) {
@@ -277,6 +279,7 @@ void RmlContext::dirty_all_variables(const godot::String& model_name) {
 	if (model == nullptr) return;
 
 	model->handle.DirtyAllVariables();
+	_render_dirty = true;
 }
 
 bool RmlContext::create_data_model_from_dict(const godot::String& model_name,
@@ -307,6 +310,7 @@ void RmlContext::update_data_model(const godot::String& model_name,
 		if (var_it != model->variables.end()) {
 			var_it->second = godot_to_rml_variant(variables[key]);
 			model->handle.DirtyVariable(Rml::String(vname));
+			_render_dirty = true;
 		}
 	}
 }
@@ -358,6 +362,7 @@ void RmlContext::set_data_array(const godot::String& model_name,
 
 	*arr = godot_array_to_rml_string_vector(array);
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
+	_render_dirty = true;
 }
 
 void RmlContext::push_data_array_item(const godot::String& model_name,
@@ -371,6 +376,7 @@ void RmlContext::push_data_array_item(const godot::String& model_name,
 
 	arr->push_back(godot_variant_to_rml_string(value));
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
+	_render_dirty = true;
 }
 
 void RmlContext::remove_data_array_item(const godot::String& model_name,
@@ -390,6 +396,7 @@ void RmlContext::remove_data_array_item(const godot::String& model_name,
 
 	arr->erase(arr->begin() + index);
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
+	_render_dirty = true;
 }
 
 void RmlContext::set_data_array_item(const godot::String& model_name,
@@ -409,6 +416,7 @@ void RmlContext::set_data_array_item(const godot::String& model_name,
 
 	(*arr)[index] = godot_variant_to_rml_string(value);
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
+	_render_dirty = true;
 }
 
 int RmlContext::get_data_array_size(const godot::String& model_name,
@@ -434,6 +442,7 @@ void RmlContext::clear_data_array(const godot::String& model_name,
 
 	arr->clear();
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
+	_render_dirty = true;
 }
 
 // --- Phase 5: Custom element instancers ---

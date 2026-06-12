@@ -202,6 +202,11 @@ public:
 	bool get_gamepad_navigation() const { return _gamepad_navigation; }
 	void set_gamepad_navigation(bool enabled);
 	void toggle_debugger();
+	// Request a redraw on the next frame. Called by every state-mutating API
+	// (DOM, data binding, element handles) — the dirty-flag render gate
+	// otherwise skips frames and external mutations never show until input
+	// or an animation forces an update.
+	void mark_render_dirty() { _render_dirty = true; }
 	int64_t get_debugger_toggle_key() const { return _debugger_toggle_key; }
 	void set_debugger_toggle_key(int64_t key) {
 		_debugger_toggle_key = key;

@@ -1,11 +1,26 @@
 #include "RmlElementHandle.hpp"
 
 #include "GodotEventListener.hpp"
+#include "RmlContext.hpp"
+#include "RmlManager.hpp"
 
+#include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 namespace RmlGodot {
+
+// Handle mutations bypass RmlContext entirely — without this the dirty-flag
+// render gate never sees them and the change stays invisible until input or
+// an animation forces a redraw.
+static void _mark_owner_dirty(Rml::Element* element) {
+	if (element == nullptr) return;
+	auto* manager = RmlManager::get_singleton();
+	Rml::Context* ctx = element->GetContext();
+	if (manager == nullptr || ctx == nullptr) return;
+	RmlContext* node = manager->find_context_node(ctx);
+	if (node != nullptr) node->mark_render_dirty();
+}
 
 godot::String RmlElementHandle::get_id() const {
 	if (_element == nullptr) return {};
@@ -18,6 +33,7 @@ void RmlElementHandle::set_id(const godot::String& id) {
 		return;
 	}
 	_element->SetId(Rml::String(id.utf8().get_data()));
+	_mark_owner_dirty(_element);
 }
 
 godot::String RmlElementHandle::get_tag_name() const {
@@ -36,6 +52,7 @@ void RmlElementHandle::set_inner_rml(const godot::String& rml) {
 		return;
 	}
 	_element->SetInnerRML(Rml::String(rml.utf8().get_data()));
+	_mark_owner_dirty(_element);
 }
 
 godot::String RmlElementHandle::get_attribute(const godot::String& name,
@@ -56,11 +73,13 @@ void RmlElementHandle::set_attribute(const godot::String& name, const godot::Str
 	_element->SetAttribute(
 		Rml::String(name.utf8().get_data()),
 		Rml::String(value.utf8().get_data()));
+	_mark_owner_dirty(_element);
 }
 
 void RmlElementHandle::remove_attribute(const godot::String& name) {
 	if (_element == nullptr) return;
 	_element->RemoveAttribute(Rml::String(name.utf8().get_data()));
+	_mark_owner_dirty(_element);
 }
 
 bool RmlElementHandle::has_attribute(const godot::String& name) const {
@@ -81,14 +100,17 @@ bool RmlElementHandle::set_property(const godot::String& name, const godot::Stri
 		godot::UtilityFunctions::push_warning("[RmlUi] RmlElementHandle::set_property — invalid element");
 		return false;
 	}
-	return _element->SetProperty(
+	bool ok = _element->SetProperty(
 		Rml::String(name.utf8().get_data()),
 		Rml::String(value.utf8().get_data()));
+	if (ok) _mark_owner_dirty(_element);
+	return ok;
 }
 
 void RmlElementHandle::remove_property(const godot::String& name) {
 	if (_element == nullptr) return;
 	_element->RemoveProperty(Rml::String(name.utf8().get_data()));
+	_mark_owner_dirty(_element);
 }
 
 void RmlElementHandle::set_class(const godot::String& class_name, bool activate) {
@@ -97,6 +119,7 @@ void RmlElementHandle::set_class(const godot::String& class_name, bool activate)
 		return;
 	}
 	_element->SetClass(Rml::String(class_name.utf8().get_data()), activate);
+	_mark_owner_dirty(_element);
 }
 
 bool RmlElementHandle::is_class_set(const godot::String& class_name) const {
@@ -110,6 +133,7 @@ void RmlElementHandle::set_pseudo_class(const godot::String& pseudo_class, bool 
 		return;
 	}
 	_element->SetPseudoClass(Rml::String(pseudo_class.utf8().get_data()), activate);
+	_mark_owner_dirty(_element);
 }
 
 bool RmlElementHandle::is_pseudo_class_set(const godot::String& pseudo_class) const {

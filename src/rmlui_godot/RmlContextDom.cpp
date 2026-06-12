@@ -157,9 +157,11 @@ bool RmlContext::set_element_property(const godot::String& element_id,
 		return false;
 	}
 
-	return el->SetProperty(
+	bool ok = el->SetProperty(
 		Rml::String(property.utf8().get_data()),
 		Rml::String(value.utf8().get_data()));
+	if (ok) _render_dirty = true;
+	return ok;
 }
 
 void RmlContext::remove_element_property(const godot::String& element_id,
@@ -173,6 +175,7 @@ void RmlContext::remove_element_property(const godot::String& element_id,
 	}
 
 	el->RemoveProperty(Rml::String(property.utf8().get_data()));
+	_render_dirty = true;
 }
 
 void RmlContext::set_element_class(const godot::String& element_id,
@@ -186,6 +189,7 @@ void RmlContext::set_element_class(const godot::String& element_id,
 	}
 
 	el->SetClass(Rml::String(class_name.utf8().get_data()), activate);
+	_render_dirty = true;
 }
 
 void RmlContext::set_element_inner_rml(const godot::String& element_id, const godot::String& rml) {
@@ -197,6 +201,7 @@ void RmlContext::set_element_inner_rml(const godot::String& element_id, const go
 	}
 
 	el->SetInnerRML(Rml::String(rml.utf8().get_data()));
+	_render_dirty = true;
 }
 
 godot::String RmlContext::get_element_outer_rml(const godot::String& element_id) const {
@@ -237,6 +242,7 @@ void RmlContext::set_element_attribute(const godot::String& element_id,
 	el->SetAttribute(
 		Rml::String(attribute.utf8().get_data()),
 		Rml::String(value.utf8().get_data()));
+	_render_dirty = true;
 }
 
 // --- Texture registration ---
