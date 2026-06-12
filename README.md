@@ -3,11 +3,12 @@
 [![Godot 4.2+](https://img.shields.io/badge/Godot-4.2%2B-478cbf?logo=godotengine&logoColor=white)](https://godotengine.org/)
 [![RmlUi](https://img.shields.io/badge/RmlUi-6.3-orange)](https://github.com/mikke89/RmlUi)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![AI: Claude Opus 4.6](https://img.shields.io/badge/AI-Claude_Opus_4.6-cc785c?logo=anthropic&logoColor=white)](https://anthropic.com)
+[![AI: Claude Opus](https://img.shields.io/badge/AI-Claude_Opus-cc785c?logo=anthropic&logoColor=white)](https://anthropic.com)
 
 A GDExtension plugin that integrates [RmlUi](https://github.com/mikke89/RmlUi) into [Godot 4.2+](https://godotengine.org/), giving you CSS/HTML-style UI with full GDScript interop.
 
-> **Status:** Active development. Core API is stable.
+> **Status:** v1.0.0 released — grab the prebuilt addon from
+> [Releases](https://github.com/Brokenchin/rmlui-godot/releases) (Windows / Linux / macOS).
 
 ## Documentation
 
@@ -46,6 +47,27 @@ A GDExtension plugin that integrates [RmlUi](https://github.com/mikke89/RmlUi) i
 
 ### Custom Elements
 - `register_custom_element(tag, on_create, on_attribute_change)` — extend RML with custom tags backed by GDScript callables
+
+### Inline GDScript
+Write behavior directly inside `.rml` documents — no `.gd` file needed:
+- `<script>` blocks are full GDScript classes (vars, funcs, signals, `await`); `<script src="res://*.gd">` for IDE-grade editing
+- `onclick="gdscript:method"` on any `on*` event attribute; `var rml_context` auto-injected
+- Game-code bridge: `get_document_script()` / `get_document_scripts()` — connect to block signals, call block methods
+- Error lines map to the `.rml` file — parse errors and runtime stack frames alike
+
+### Input Actions & Gamepad Navigation
+- `input_actions` — watched InputMap actions dispatch to `<script>` blocks (`_on_input_action`) and the `rml_input_action` signal
+- `gamepad_navigation` — Godot's `ui_*` actions drive RmlUi's focus engine: spatial navigation (`nav: auto`), tab order, accept-to-click. D-pad/stick work out of the box, all rebindable
+- RmlUi debugger overlay on **F10** (configurable `debugger_toggle_key`, or `toggle_debugger()`)
+
+### Editor Tooling
+Ships in the addon — enable the "RmlUI-Godot" plugin:
+- Syntax highlighting for `.rml` and `.rcss`, including embedded `<style>`/`style=""` RCSS and `<script>` GDScript regions
+- Autocomplete: RCSS properties/values (live from the engine), RML tags/attributes with auto-closing tags, GDScript member completion (`rml_context.` lists real methods via reflection)
+- **Live preview panel**: select an RmlContext to render its document; unsaved buffer edits apply live; mouse hover/click/scroll work in-panel; `editor_mock_data` feeds `data-for`/`{{ }}` bindings
+- Inline diagnostics: parse errors tint the offending line + error bar, ~0.5s after you stop typing
+- Inspector: configuration warnings, Edit/Create document buttons, live context stats
+- Documents render in the editor's 2D viewport (set `document_path` — zero code)
 
 ### Drag & Drop
 Bridges RML elements to Godot's native drag system (`_get_drag_data` / `_can_drop_data` / `_drop_data`). Sources and targets must be registered from GDScript — they cannot be defined in RML/RCSS alone.
@@ -90,7 +112,9 @@ git clone --recursive https://github.com/Brokenchin/rmlui-godot.git
 cd rmlui-godot
 ```
 
-Or if already cloned: `git submodule update --init`
+Or if already cloned: `git submodule update --init` (dependencies) —
+examples are fetched automatically at configure time, or manually via
+`git submodule update --init --checkout examples`.
 
 ### 2. Configure and build
 
@@ -131,6 +155,10 @@ CMake will copy only the editor plugin files (GDScript, plugin.cfg, base.rcss) t
 
 ## Quick Start
 
+Zero-code: drop an `RmlContext` node in a scene and set its
+**Document Path** + **Font Paths** in the inspector — it renders in the
+editor immediately. Or from script:
+
 ```gdscript
 # Your RmlContext node is in the scene tree (add via editor or code)
 @onready var rml: RmlContext = $RmlContext
@@ -151,8 +179,7 @@ func _ready():
     rml.add_event_listener("start_button", "click", _on_start_clicked)
 
 func _on_start_clicked(event: Dictionary):
-    rml.set_data_variable("ui", "player_name", "Adventurer")
-    rml.dirty_data_variable("ui", "player_name")
+    rml.set_data_variable("ui", "player_name", "Adventurer")  # auto-dirties
 ```
 
 ```html
@@ -180,6 +207,8 @@ Example scenes are available in a [separate repository](https://github.com/Broke
 | `data_binding` | Data models, variable binding, data events |
 | `events` | Click, hover, class toggle, DOM manipulation |
 | `list_binding` | Array binding with data-for loops |
+| `inline_script` | Interactive counter — all behavior in the document `<script>` block |
+| `gamepad_nav` | Keyboard/gamepad focus navigation, accept-to-click, `ui_cancel` handling |
 
 ### advanced/ — Deeper Features
 | Example | Demonstrates |
@@ -187,11 +216,15 @@ Example scenes are available in a [separate repository](https://github.com/Broke
 | `custom_elements` | Custom RML tags backed by GDScript callables |
 | `textures` | Spritesheets, decorators, CSS animations, transitions |
 | `drag_and_drop` | Cross-context drag using native C++ drag API |
+| `inline_drag` | Full drag & drop implemented inline, with a signal bridged to Godot |
 
 ### showcase/ — Unique Selling Points
 | Example | Demonstrates |
 |---------|-------------|
 | `visual_parity` | Side-by-side Godot native vs RmlUI + native drag interop |
+| `decorator_shaders` | Custom Godot shaders as RCSS decorators |
+| `font_comparison` | Text render mode comparison (SubPixel / Godot Native / RmlUI Native) |
+| `font_effects` | Glow, outline, shadow, blur font-effect layers |
 
 ### stress/ — Stability Proof
 | Example | Demonstrates |
@@ -199,6 +232,8 @@ Example scenes are available in a [separate repository](https://github.com/Broke
 | `context_churn` | Create/destroy contexts rapidly — proves cleanup works |
 | `multi_context` | 4 simultaneous contexts with heavy DOM content |
 | `error_recovery` | Malformed RML, missing resources, graceful degradation |
+| `scissor_limits` | Clipping edge cases (CPU + GPU scissor) |
+| `zindex_stacking` | Deep z-index stacking correctness |
 
 ## Architecture
 
@@ -206,19 +241,18 @@ Example scenes are available in a [separate repository](https://github.com/Broke
 rmlui-godot/
 ├── src/rmlui_godot/          # C++ plugin source
 ├── project/                  # Standalone Godot project
-│   ├── addons/rmlui-godot/   # Plugin (bin + .gdextension + editor)
-│   ├── examples/             # Examples (submodule, opt-in)
-│   │   ├── basic/            # Getting started examples
-│   │   ├── advanced/         # Deeper feature examples
-│   │   ├── showcase/         # Unique selling points
-│   │   ├── stress/           # Stability proof / CI tests
-│   │   ├── fonts/            # Shared fonts
-│   │   └── assets/           # Shared assets
+│   ├── addons/rmlui-godot/   # Plugin (bin + editor tools + shaders;
+│   │                         #   examples synced here by the build)
+│   ├── tests/                # Automated test suite (tests/run_all.sh)
 │   └── project.godot
+├── examples/                 # Examples submodule (rmlui-godot-examples)
+│   ├── basic/ advanced/ showcase/ stress/
+│   └── fonts/ assets/
+├── docs/                     # API.md, AUTHORING.md, RCSS.md
 ├── dependencies/             # Git submodules
 │   ├── godot-cpp/            # Godot C++ bindings
 │   └── RmlUi/                # RmlUi multicontext fork
-├── .github/workflows/        # CI: build + release
+├── .github/workflows/        # CI: build + release on v* tags
 ├── CMakeLists.txt
 ├── LICENSE
 └── README.md
@@ -236,16 +270,20 @@ rmlui-godot/
 | Texture registry | Global (RmlManager) + per-context |
 | Hot reload | Per-document and all-documents |
 | Stylesheet injection | Runtime RCSS injection |
-| Font handling | Global + per-context, premultiplied alpha |
+| Font handling | Global + per-context, premultiplied alpha, dedup |
+| Inline GDScript | `<script>` blocks, `gdscript:` handlers, signal bridge, rml-accurate error lines |
+| Input actions | InputMap actions → documents + signal |
+| Gamepad navigation | Spatial focus, tab order, accept-to-click via `ui_*` actions |
+| Editor tooling | Highlighting, autocomplete, live preview, diagnostics, inspector |
+| Test suite | 21 automated tests — `tests/run_all.sh` |
 
 ## Planned
 
 | Feature | Notes |
 |---------|-------|
-| Inline GDScript in RML | Execute GDScript blocks embedded directly in `.rml` files |
-| Editor integration | Live preview of RML documents in the Godot editor — interactive, clickable, draggable |
-| Gamepad / input actions | Better input handling — register Godot input actions to forward to RmlUi instead of raw key events |
-| Documentation & wiki | Usage guides, API reference, and example walkthroughs |
+| File icons | Custom `.rml`/`.rcss` icons in the FileSystem dock |
+| Navigation polish | Held-key repeat for gamepad nav, per-panel focus memory |
+| Inline-script breakpoints | Requires registering a `ScriptLanguageExtension` — research stage |
 
 ## License
 
