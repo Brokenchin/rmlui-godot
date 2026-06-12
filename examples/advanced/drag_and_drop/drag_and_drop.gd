@@ -44,5 +44,8 @@ func _on_drop(element_id: String, data: Variant, ctx: RmlContext) -> void:
 
 
 func _on_drop_received(element_id: String, data: Dictionary, ctx: RmlContext) -> void:
+	# The rml_drop_received signal mirrors what the drop_handler already gets —
+	# update the status line instead of console noise.
 	var name := "A" if ctx == ctx_a else "B"
-	print("[DragDemo] Drop received on '%s' in Context %s: %s" % [element_id, name, str(data)])
+	ctx.set_element_inner_rml("status",
+		"Signal: drop of %s on %s (Context %s)" % [data.get("label", "?"), element_id, name])

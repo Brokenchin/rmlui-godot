@@ -76,8 +76,8 @@ func damage(amount: int):
 evaluating against the data model (not GDScript).
 
 **Editor preview:** set `editor_mock_data` on the node
-(`{"hud": {"hp": 80, "log_lines": ["a", "b"]}}`) and the preview panel renders
-bindings without running the game.
+(`{"hud": {"hp": 80, "log_lines": ["a", "b"]}}`) and bindings render without
+running the game — both in the preview panel and the 2D viewport.
 
 ## Inline GDScript
 
@@ -234,4 +234,7 @@ Everything ships in the addon (`plugin.cfg` → enable "RmlUI"):
 - **Main thread only** — marshal worker-thread results via `call_deferred`.
 - **`RmlManager` signal connections from lambdas** must be disconnected before
   quit (singleton outlives GDScript teardown).
-- **F8** toggles the RmlUi debugger at runtime (element inspector).
+- **F9** toggles the RmlUi debugger overlay at runtime (element inspector).
+  Configurable via `RmlContext.debugger_toggle_key` (0 disables) or call
+  `toggle_debugger()` from code. (F8 is Godot's Stop shortcut — with the 4.5
+  embedded game window it kills the running game.)

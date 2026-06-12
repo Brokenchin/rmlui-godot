@@ -37,6 +37,17 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 	_render_dirty = true;
 }
 
+void RmlContext::toggle_debugger() {
+	if (_rml_context == nullptr) return;
+	static bool s_debugger_inited = false;
+	if (!s_debugger_inited) {
+		Rml::Debugger::Initialise(_rml_context);
+		s_debugger_inited = true;
+	}
+	Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+	_render_dirty = true;
+}
+
 void RmlContext::set_input_actions(const godot::PackedStringArray& actions) {
 	_input_actions = actions;
 	_update_unhandled_input_processing();
@@ -493,14 +504,12 @@ void RmlContext::_forward_key_event(const godot::Ref<godot::InputEvent>& event) 
 		rml_key = Rml::Input::KI_TAB;
 	} else if (keycode == godot::KEY_ESCAPE) {
 		rml_key = Rml::Input::KI_ESCAPE;
-	} else if (keycode == godot::KEY_F8) {
+	} else if (_debugger_toggle_key != 0 &&
+			static_cast<int64_t>(keycode) == static_cast<int64_t>(_debugger_toggle_key)) {
+		// Default F9 — NOT F8: with Godot 4.5's embedded game window the
+		// editor's Stop shortcut (F8) fires first and kills the game.
 		if (key->is_pressed()) {
-			static bool s_debugger_inited = false;
-			if (!s_debugger_inited) {
-				Rml::Debugger::Initialise(_rml_context);
-				s_debugger_inited = true;
-			}
-			Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+			toggle_debugger();
 		}
 		return;
 	}

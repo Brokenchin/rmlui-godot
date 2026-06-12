@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://gbkn5ks88cwa"]
 
-[ext_resource type="Script" uid="uid://3q7kib14ulow" path="res://addons/rmlui-godot/examples/showcase/visual_parity/test_visual_parity.gd" id="1"]
+[ext_resource type="Script" uid="uid://3q7kib14ulow" path="res://addons/rmlui-godot/examples/showcase/visual_parity/visual_parity.gd" id="1"]
 [ext_resource type="Script" uid="uid://bvituknd10jk" path="res://addons/rmlui-godot/examples/showcase/visual_parity/parity_godot_slot.gd" id="2"]
 
 [node name="TestVisualParity" type="Control"]
