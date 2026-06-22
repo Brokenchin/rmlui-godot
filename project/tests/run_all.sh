@@ -41,6 +41,7 @@ run tests/test_diagnostics.gd headless
 run tests/test_log_chain.gd headless
 run tests/test_property_export.gd headless
 run tests/test_inline_gdscript.gd headless
+run tests/test_external_script.gd headless
 run tests/test_shutdown_stress.gd headless
 run tests/test_leak_churn.gd headless
 run tests/test_error_fuzz.gd headless

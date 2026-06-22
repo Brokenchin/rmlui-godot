@@ -1,0 +1,8 @@
+<rml>
+<head>
+	<script src="view_frame_doc.gd"></script>
+</head>
+<body onload="gdscript:_on_load">
+	<div>relative src</div>
+</body>
+</rml>

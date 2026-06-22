@@ -63,13 +63,35 @@ void GodotScriptDocument::LoadInlineScript(const Rml::String& content,
 }
 
 void GodotScriptDocument::LoadExternalScript(const Rml::String& source_path) {
+	// RmlUi stores every external resource path with ':' URL-encoded as '|'
+	// (see XMLNodeHandlerHead::Absolutepath / DocumentHeader::MergePaths), so
+	// the document's "res://" scheme arrives here as "res|//…". The RCSS
+	// <link href> loader works because its path is routed through
+	// StreamFile::Open, which decodes '|' back to ':' before touching the file
+	// interface; <script src> paths skip that and reach LoadExternalScript()
+	// still encoded. Decode them the same way (matching StreamFile and
+	// GodotFileInterface) so the Godot ResourceLoader gets a valid path.
+	//
+	// This also gives <script src> the same resolution semantics as
+	// <link href>: RmlUi has already joined a *relative* src against the
+	// document's directory, and an absolute "res://…"/"user://…" src passes
+	// through JoinPath untouched — so both forms land here correctly.
+	godot::String gd_path = godot::String(source_path.c_str()).replace("|", ":");
+
+	// Fall back to res:// when no scheme survives (e.g. a src that couldn't be
+	// joined against the document path), keeping ResourceLoader happy — same
+	// default GodotFileInterface::Open applies to file reads.
+	if (!gd_path.begins_with("res://") && !gd_path.begins_with("user://") &&
+		!gd_path.begins_with("/")) {
+		gd_path = godot::String("res://") + gd_path;
+	}
+
 	godot::Ref<godot::Resource> res =
-		godot::ResourceLoader::get_singleton()->load(godot::String(source_path.c_str()));
+		godot::ResourceLoader::get_singleton()->load(gd_path);
 	godot::Ref<godot::GDScript> script = res;
 	if (script.is_null()) {
 		godot::UtilityFunctions::push_error(
-			godot::String("[RmlUi] <script src> is not a GDScript: ") +
-			godot::String(source_path.c_str()));
+			godot::String("[RmlUi] <script src> is not a GDScript: ") + gd_path);
 		return;
 	}
 
