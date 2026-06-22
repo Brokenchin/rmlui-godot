@@ -207,6 +207,42 @@ void RmlContext::register_drop_target(const godot::String& element_id,
 	_drop_targets.push_back({id, drop_handler});
 }
 
+// --- Hover bridge ---
+
+// Walk up from the topmost hovered element to the nearest ancestor (itself
+// included) carrying a non-empty id, so hovering a slot's inner content still
+// resolves to the slot. Returns "" when nothing opted-in is under the cursor.
+std::string RmlContext::_resolve_hovered_id() const {
+	if (_rml_context == nullptr) return {};
+	// Stop at the context root: its id is the context name (e.g. "default"),
+	// an internal artifact — never an author opt-in, and it would otherwise be
+	// reported for every cursor position over empty space.
+	Rml::Element* root = _rml_context->GetRootElement();
+	for (Rml::Element* el = _rml_context->GetHoverElement(); el != nullptr && el != root; el = el->GetParentNode()) {
+		const Rml::String& id = el->GetId();
+		if (!id.empty()) return std::string(id.c_str());
+	}
+	return {};
+}
+
+godot::String RmlContext::get_hovered_element_id() const {
+	return godot::String(_resolve_hovered_id().c_str());
+}
+
+void RmlContext::_update_hover_tracking() {
+	std::string id = _resolve_hovered_id();
+	if (id == _last_hovered_id) return;
+
+	if (!_last_hovered_id.empty()) {
+		emit_signal("rml_element_unhovered", godot::String(_last_hovered_id.c_str()));
+	}
+	_last_hovered_id = std::move(id);
+	if (!_last_hovered_id.empty()) {
+		emit_signal("rml_element_hovered",
+			godot::String(_last_hovered_id.c_str()), get_global_mouse_position());
+	}
+}
+
 bool RmlContext::_point_in_element(Rml::Element* el, float x, float y) const {
 	Rml::Vector2f offset = el->GetAbsoluteOffset(Rml::BoxArea::Border);
 	Rml::Vector2f size = el->GetBox().GetSize(Rml::BoxArea::Border);

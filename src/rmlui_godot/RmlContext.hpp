@@ -105,6 +105,16 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
 		godot::PropertyInfo(godot::Variant::DICTIONARY, "data")));
 
+	// Hover bridge — mirrors the drag bridge for tooltips drawn in a separate
+	// overlay context (resolved by element id at event time, so it works for
+	// dynamically-inserted slots that data-binding attributes can't reach).
+	godot::ClassDB::bind_method(godot::D_METHOD("get_hovered_element_id"), &RmlContext::get_hovered_element_id);
+	ADD_SIGNAL(godot::MethodInfo("rml_element_hovered",
+		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
+		godot::PropertyInfo(godot::Variant::VECTOR2, "global_position")));
+	ADD_SIGNAL(godot::MethodInfo("rml_element_unhovered",
+		godot::PropertyInfo(godot::Variant::STRING, "element_id")));
+
 	// Input actions & navigation (see input_actions / gamepad_navigation)
 	godot::ClassDB::bind_method(godot::D_METHOD("set_input_actions", "actions"), &RmlContext::set_input_actions);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_input_actions"), &RmlContext::get_input_actions);
@@ -337,6 +347,10 @@ public:
 	// A4: Drag-and-drop (gd_drag interop)
 	void register_drag_source(const godot::String& element_id, const godot::Callable& payload_builder = godot::Callable(), const godot::Callable& ghost_builder = godot::Callable());
 	void register_drop_target(const godot::String& element_id, const godot::Callable& drop_handler = godot::Callable());
+
+	// Hover bridge: id of the element currently under the cursor (nearest
+	// ancestor carrying an id), or "" when nothing opted-in is hovered.
+	godot::String get_hovered_element_id() const;
 	godot::Variant _get_drag_data(const godot::Vector2& p_at_position) override;
 	bool _can_drop_data(const godot::Vector2& p_at_position, const godot::Variant& p_data) const override;
 	void _drop_data(const godot::Vector2& p_at_position, const godot::Variant& p_data) override;
@@ -433,6 +447,13 @@ private:
 		godot::Callable drop_handler;
 	};
 	std::vector<DropTargetEntry> _drop_targets;
+
+	// Hover bridge: last id reported via rml_element_hovered ("" = none).
+	// Polled in _process after the context Update so it tracks the live hover
+	// chain (including elements streamed in via set_element_inner_rml).
+	std::string _last_hovered_id;
+	std::string _resolve_hovered_id() const;
+	void _update_hover_tracking();
 
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);

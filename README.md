@@ -77,6 +77,12 @@ Bridges RML elements to Godot's native drag system (`_get_drag_data` / `_can_dro
 - Ghost is a real transient `RmlContext` used as Godot's `drag_preview`
 - **Cross-system interop:** because it bridges to Godot's native drag, items can be dragged between RmlUI contexts and native Godot Controls seamlessly — drag from a Godot node into an RML panel or vice versa
 
+### Hover Bridge
+Mirrors the drag bridge for tooltips that must escape the source document's clipping (ancestor `overflow` *and* the context viewport). Resolved by element id at event time, so it works for slots streamed in via `set_element_inner_rml`.
+- Signals: `rml_element_hovered(element_id, global_position)` / `rml_element_unhovered(element_id)` — fire on enter/leave for the nearest ancestor carrying an `id`
+- `get_hovered_element_id()` — poll the current hovered id (option B, for following tooltips)
+- Render the tooltip in a separate, screen-sized overlay context so it draws unclipped beside the hovered slot
+
 ### Rendering
 - Premultiplied alpha pipeline — correct blending for fonts, sprites, and textures
 - Per-context `GodotRenderInterface` with Godot's `CanvasItem` drawing API
@@ -266,6 +272,7 @@ rmlui-godot/
 | Data binding | Scalars, arrays, events, batch dict setup |
 | Custom elements | GDScript callables for create + attribute change |
 | Drag & drop | Bridges to Godot's native drag — GDScript registration, auto-ghost, cross-system interop |
+| Hover bridge | `rml_element_hovered`/`unhovered` signals + `get_hovered_element_id()` for tooltips drawn in an overlay context |
 | DOM manipulation | Get/set properties, classes, attributes, inner RML |
 | Texture registry | Global (RmlManager) + per-context |
 | Hot reload | Per-document and all-documents |
