@@ -14,36 +14,70 @@ double GodotSystemInterface::GetElapsedTime() {
 	return time->get_ticks_msec() / 1000.0;
 }
 
+namespace {
+// Per-element environment noise RmlUi emits in the editor. Fonts, data models and
+// decorator shaders are all runtime/script-bound — registered from GDScript, which
+// never runs in the editor — so a document re-emits these for EVERY affected
+// element. The preview panel and diagnostics reload the whole document on every
+// keystroke, so an unguarded push_warning here freezes live editing (issue #29:
+// a missing font face alone produced ~21k warnings per reload). The editor's own
+// diagnostics already classify exactly these as non-errors (rml_diagnostics.gd),
+// so dropping them in the editor loses nothing actionable.
+bool is_editor_env_noise(const Rml::String& message) {
+	return message.find("No font face defined") != Rml::String::npos
+		|| message.find("Could not locate data model") != Rml::String::npos
+		|| message.find("Could not add data-") != Rml::String::npos
+		|| message.find("Could not generate decorator element data") != Rml::String::npos;
+}
+} // namespace
+
 bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& message) {
+	auto* engine = godot::Engine::get_singleton();
+	const bool in_editor = engine != nullptr && engine->is_editor_hint();
+	auto* manager = RmlManager::get_singleton();
+
+	// Editor log-storm guard (issue #29). Both checks run BEFORE the muted/console
+	// branches so they bound the rml_log signal volume too (diagnostics validates
+	// muted and would otherwise emit one signal per element).
+	if (in_editor) {
+		// 1. Drop the known per-element environment noise outright.
+		if (is_editor_env_noise(message)) {
+			return true;
+		}
+		// 2. Backstop for any OTHER warning that turns out to be per-element: cap
+		//    the burst so an unknown storm can't freeze editing either. Errors and
+		//    asserts always pass through. The window is shared across all editor
+		//    contexts (preview + diagnostics + 2D viewport), which is intended —
+		//    a single keystroke reloads several of them at once.
+		if (type != Rml::Log::LT_ERROR && type != Rml::Log::LT_ASSERT) {
+			static double s_window_start = 0.0;
+			static int s_count = 0;
+			static bool s_notified = false;
+			auto* time = godot::Time::get_singleton();
+			const double now = time != nullptr ? static_cast<double>(time->get_ticks_msec()) : 0.0;
+			if (now - s_window_start > 200.0) {
+				s_window_start = now;
+				s_count = 0;
+				s_notified = false;
+			}
+			if (++s_count > 25) {
+				if (!s_notified) {
+					s_notified = true;
+					godot::UtilityFunctions::print(
+						"[RmlUi] (editor) suppressing a burst of warnings while editing — "
+						"run/preview the document at runtime for the full log");
+				}
+				return true;
+			}
+		}
+	}
+
 	godot::String msg = godot::String("[RmlUi] ") + godot::String(message.c_str());
 
 	// Console muted (editor diagnostics validating a buffer): skip Godot's
 	// console entirely but keep the recent-log/signal forwarding below.
-	auto* mute_manager = RmlManager::get_singleton();
-	if (mute_manager != nullptr && mute_manager->is_console_log_muted()) {
-		mute_manager->notify_log(static_cast<int>(type), godot::String(message.c_str()));
-		return true;
-	}
-
-	// Data models are bound at runtime from script — inside the editor a
-	// document referencing one is expected, not an error. Downgrade so the
-	// editor console isn't spammed red on every selection/preview.
-	auto* engine = godot::Engine::get_singleton();
-	const bool in_editor = engine != nullptr && engine->is_editor_hint();
-	if (type == Rml::Log::LT_ERROR && in_editor &&
-		message.find("Could not locate data model") != Rml::String::npos) {
-		type = Rml::Log::LT_WARNING;
-	}
-
-	// Editor-only: a decorator whose shader is registered from GDScript (which
-	// never runs in the editor) fails to generate data for EVERY decorated
-	// element, and RmlUi emits one warning per element. With per-keystroke
-	// preview reloads this push_warning storm freezes editing (issue #29). The
-	// root cause is already reported once via "No decorator shader registered
-	// for ..." (GodotRenderInterface::CompileShader), so these per-element
-	// follow-ups are redundant noise here — drop them entirely.
-	if (in_editor && type == Rml::Log::LT_WARNING &&
-		message.find("Could not generate decorator element data") != Rml::String::npos) {
+	if (manager != nullptr && manager->is_console_log_muted()) {
+		manager->notify_log(static_cast<int>(type), godot::String(message.c_str()));
 		return true;
 	}
 
@@ -62,7 +96,7 @@ bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& me
 
 	// Forward to RmlManager so tooling (editor preview panel, validators)
 	// can subscribe via the "rml_log" signal.
-	if (auto* manager = RmlManager::get_singleton()) {
+	if (manager != nullptr) {
 		manager->notify_log(static_cast<int>(type), godot::String(message.c_str()));
 	}
 	return true;
