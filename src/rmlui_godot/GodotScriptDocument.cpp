@@ -6,6 +6,7 @@
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Event.h>
 
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -128,6 +129,24 @@ godot::Object* GodotScriptDocument::_ensure_instance(ScriptBlock& block) {
 	godot::Object* obj = block.instance.operator godot::Object*();
 	if (obj != nullptr) return obj;
 
+	// Resolve the owning node once — needed both for the editor gate below and
+	// for the rml_context injection further down.
+	auto* manager = RmlManager::get_singleton();
+	RmlContext* node = (manager != nullptr && GetContext() != nullptr)
+		? manager->find_context_node(GetContext()) : nullptr;
+
+	// Editor gate (issue #29): never instantiate/run inline-script blocks in the
+	// editor unless this context opted in (the preview panel's "Run inline
+	// scripts" checkbox flips set_editor_scripts_enabled). Arbitrary user
+	// game-logic running in the editor process freezes it on any loop/blocking
+	// call. Compilation already happened at load, so parse-error diagnostics are
+	// unaffected — only execution is withheld. Always runs at runtime.
+	auto* engine = godot::Engine::get_singleton();
+	if (engine != nullptr && engine->is_editor_hint() &&
+		(node == nullptr || !node->is_editor_scripts_enabled())) {
+		return nullptr;
+	}
+
 	block.instance = block.script->call("new");
 	obj = block.instance.operator godot::Object*();
 	if (obj == nullptr) {
@@ -138,12 +157,8 @@ godot::Object* GodotScriptDocument::_ensure_instance(ScriptBlock& block) {
 
 	// Inject the owning RmlContext into `var rml_context` if declared
 	// (Object::set is a silent no-op for undeclared properties).
-	auto* manager = RmlManager::get_singleton();
-	if (manager != nullptr && GetContext() != nullptr) {
-		RmlContext* node = manager->find_context_node(GetContext());
-		if (node != nullptr) {
-			obj->set("rml_context", node);
-		}
+	if (node != nullptr) {
+		obj->set("rml_context", node);
 	}
 	return obj;
 }
@@ -169,17 +184,30 @@ void GodotInlineScriptListener::ProcessEvent(Rml::Event& event) {
 	Rml::Element* element = event.GetCurrentElement();
 	if (element == nullptr) return;
 
-	// 1. The document's own <script> blocks.
-	auto* doc = rmlui_dynamic_cast<GodotScriptDocument*>(element->GetOwnerDocument());
-	if (doc != nullptr && doc->dispatch_to_scripts(method, args)) {
-		return;
-	}
-
-	// 2./3. The RmlContext node's attached script, then its parent node.
 	auto* manager = RmlManager::get_singleton();
 	Rml::Context* rml_ctx = element->GetContext();
 	RmlContext* node = (manager != nullptr && rml_ctx != nullptr)
 		? manager->find_context_node(rml_ctx) : nullptr;
+
+	// Inline-script execution gate (issue #29): the document's <script> blocks
+	// are RefCounted classes WE instantiate, bypassing Godot's @tool rule, so in
+	// the editor they must stay inert unless the context opted in. The node /
+	// parent fallbacks below are ordinary attached GDScript whose own @tool-ness
+	// already governs editor execution — left untouched.
+	auto* engine = godot::Engine::get_singleton();
+	const bool inline_scripts_gated = engine != nullptr && engine->is_editor_hint() &&
+		(node == nullptr || !node->is_editor_scripts_enabled());
+
+	// 1. The document's own <script> blocks (skipped when gated in the editor;
+	//    _ensure_instance would no-op anyway, but skipping is explicit).
+	if (!inline_scripts_gated) {
+		auto* doc = rmlui_dynamic_cast<GodotScriptDocument*>(element->GetOwnerDocument());
+		if (doc != nullptr && doc->dispatch_to_scripts(method, args)) {
+			return;
+		}
+	}
+
+	// 2./3. The RmlContext node's attached script, then its parent node.
 	if (node != nullptr) {
 		if (node->has_method(method)) {
 			node->callv(method, args);
@@ -191,6 +219,10 @@ void GodotInlineScriptListener::ProcessEvent(Rml::Event& event) {
 			return;
 		}
 	}
+
+	// Suppress the not-found warning when the intended target was a gated inline
+	// handler — otherwise every onload/onclick in a preview spams the log.
+	if (inline_scripts_gated) return;
 
 	godot::UtilityFunctions::push_warning(
 		godot::String("[RmlUi] gdscript handler not found: ") + method +

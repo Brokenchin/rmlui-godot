@@ -158,6 +158,12 @@ Rules of the model:
   persistent state in data models or game-side.
 - No `_process`/`_ready` (not a Node) and no debugger breakpoints — put
   complex logic in a `<script src="...">` file instead.
+- **Editor behaviour:** inline blocks do **not** run in the editor by default —
+  they are real game logic, and a stray loop or blocking call would freeze the
+  editor. The document still renders (layout, RCSS, mock-data bindings); only
+  script execution is withheld. To exercise scripts in the live preview panel,
+  tick **Run inline scripts** in its toolbar (per-session, off by default).
+  Compilation still happens, so parse-error diagnostics work regardless.
 
 ## Gamepad & keyboard navigation
 
@@ -254,7 +260,9 @@ Everything ships in the addon (`plugin.cfg` → enable "RmlUI"):
 - **Live preview** (bottom panel): select an RmlContext to render its
   document; edits to open `.rml`/`.rcss` buffers apply live without saving;
   mouse hover/click/scroll work inside the panel; parse errors appear in the
-  status line. `editor_mock_data` feeds bindings.
+  status line. `editor_mock_data` feeds bindings. Inline `<script>` blocks stay
+  inert here unless you tick **Run inline scripts** (off by default — they are
+  real game logic and can freeze the editor).
 - **Inspector**: Edit/Create buttons for the document and its linked `.rcss`,
   a live status line, and a Preview shortcut.
 
