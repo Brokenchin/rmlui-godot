@@ -269,6 +269,10 @@ void RmlContext::_process(double /*delta*/) {
 	_sync_dimensions();
 	_rml_context->Update();
 
+	// Hover bridge: detect hover-chain changes after the Update settled them and
+	// push rml_element_hovered / rml_element_unhovered to any external overlay.
+	_update_hover_tracking();
+
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
 		int fv = manager->get_font_interface().get_global_version();
@@ -573,6 +577,14 @@ void RmlContext::_notification(int p_what) {
 			_rml_context->Update();
 			_render_dirty = true;
 		}
+	} else if (p_what == godot::Control::NOTIFICATION_MOUSE_EXIT) {
+		// Godot stops delivering motion once the cursor leaves the Control, so
+		// RmlUi never learns the mouse left and the hover chain would stay stuck.
+		// Clear it explicitly — _process then emits the pending unhover.
+		if (_rml_context != nullptr) {
+			_rml_context->ProcessMouseLeave();
+			_render_dirty = true;
+		}
 	} else if (p_what == godot::Node::NOTIFICATION_ENTER_TREE) {
 		// Re-entering the tree (editor scene-tab switch, reparenting): the
 		// visuals were freed on exit — repaint from the still-alive context.
@@ -648,6 +660,7 @@ void RmlContext::_cleanup() {
 	bool rmlui_alive = manager && manager->is_initialized();
 
 	_listener_records.clear();
+	_last_hovered_id.clear();
 
 	if (rmlui_alive) {
 		for (auto& ld : _loaded_documents) {

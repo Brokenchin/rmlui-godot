@@ -46,6 +46,8 @@ nonexistent document/font files, and no-fonts-anywhere setups.
 |---|---|---|
 | `rml_drag_started` | `element_id: String, payload: Dictionary` | A registered drag source started dragging. |
 | `rml_drop_received` | `element_id: String, data: Dictionary` | A registered drop target received a drop. |
+| `rml_element_hovered` | `element_id: String, global_position: Vector2` | The cursor entered an element carrying an id (nearest id ancestor). |
+| `rml_element_unhovered` | `element_id: String` | The cursor left the previously-hovered element. |
 | `rml_input_action` | `action: String, pressed: bool` | A watched InputMap action (see `input_actions`) was pressed/released. |
 
 ### Documents
@@ -142,6 +144,26 @@ register_drop_target(element_id, drop_handler := Callable())
 optional `ghost_builder` returns custom ghost RML. Bridges Godot's native drag
 system — works across RmlContexts *and* native Controls. Callables from inline
 `<script>` blocks work (`rml_context.register_drag_source(...)`).
+
+### Hover bridge
+
+```gdscript
+get_hovered_element_id() -> String   # nearest id under the cursor, or ""
+# signal rml_element_hovered(element_id: String, global_position: Vector2)
+# signal rml_element_unhovered(element_id: String)
+```
+
+Mirrors the drag bridge for tooltips that must escape the source document's
+clipping. Connect `rml_element_hovered` / `rml_element_unhovered` and render the
+tooltip in a **separate, screen-sized overlay context** so it isn't clipped by
+ancestor `overflow` or this context's viewport. Resolution is by element id at
+event time (the nearest ancestor carrying an `id`), so it works for slots
+streamed in via `set_element_inner_rml` — the case where data-binding attributes
+don't reliably bind. `global_position` is the cursor's position when the hover
+began. The signal fires once on enter and once on leave, not on motion within
+the element; poll `get_hovered_element_id()` on mouse motion if you need a
+following tooltip. Leaving the context entirely (cursor exits the Control) also
+emits `rml_element_unhovered`.
 
 ### Styling & rendering
 
