@@ -161,6 +161,8 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("reset_base_rcss"), &RmlContext::reset_base_rcss);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_editor_mock_data", "data"), &RmlContext::set_editor_mock_data);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_editor_mock_data"), &RmlContext::get_editor_mock_data);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_editor_scripts_enabled", "enabled"), &RmlContext::set_editor_scripts_enabled);
+	godot::ClassDB::bind_method(godot::D_METHOD("is_editor_scripts_enabled"), &RmlContext::is_editor_scripts_enabled);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "rml_context_name"), "set_rml_context_name", "get_rml_context_name");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "dp_ratio", godot::PROPERTY_HINT_RANGE, "0.25,4.0,0.25"), "set_dp_ratio", "get_dp_ratio");
@@ -255,6 +257,10 @@ public:
 	void set_document_path(const godot::String& path);
 	godot::Dictionary get_editor_mock_data() const { return _editor_mock_data; }
 	void set_editor_mock_data(const godot::Dictionary& data) { _editor_mock_data = data; }
+	// No ADD_PROPERTY: this is a preview-panel toggle, not an authored setting —
+	// kept off the inspector so scenes never persist "run scripts in editor".
+	bool is_editor_scripts_enabled() const { return _editor_scripts_enabled; }
+	void set_editor_scripts_enabled(bool enabled) { _editor_scripts_enabled = enabled; }
 	godot::PackedStringArray get_font_paths() const { return _font_paths; }
 	void set_font_paths(const godot::PackedStringArray& paths);
 
@@ -368,6 +374,12 @@ private:
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
 	godot::Dictionary _editor_mock_data;
+	// Editor-only gate for inline <script>/gdscript: execution. Default false:
+	// in the editor user game-logic must not run (a stray loop/blocking call
+	// freezes the editor — issue #29). Ignored at runtime, where scripts always
+	// run. The preview panel flips this on its throwaway context when the user
+	// opts in via the "Run inline scripts" checkbox.
+	bool _editor_scripts_enabled = false;
 	godot::PackedStringArray _input_actions;
 	bool _gamepad_navigation = false;
 	// Key toggling the RmlUi debugger overlay (godot::Key value, 0 = disabled).

@@ -167,6 +167,12 @@ private:
 	// CompileShader so author-set uniforms persist while element_dimensions
 	// stays per-instance.
 	std::unordered_map<std::string, godot::Ref<godot::ShaderMaterial>> _registered_shaders;
+	// Shader names already reported missing — warn once per name, not once per
+	// element. A grid of N slots sharing one decorator would otherwise emit N
+	// identical warnings on every reload; in the editor each push_warning carries
+	// a backtrace + debugger round-trip, so per-keystroke reloads freeze editing
+	// (issue #29). Cleared when the shader set changes (register/unregister).
+	std::unordered_set<std::string> _warned_missing_shaders;
 
 	uintptr_t _next_geo_handle = 1;
 	uintptr_t _next_tex_handle = 1;

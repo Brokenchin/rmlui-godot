@@ -70,6 +70,13 @@ pipeline.
 .shader { decorator: shader(scanlines); }                    /* register_decorator_shader */
 ```
 
+Shader decorators are registered from GDScript (`register_decorator_shader` /
+`register_decorator_material`), which doesn't run in the editor — so in the
+**editor preview / 2D viewport** these elements render without their shader
+(falling back to plain geometry). The missing shader is reported once per name
+to the preview/diagnostics error bar, not per element, so it never floods the
+editor.
+
 `filter` / `backdrop-filter` accept `blur()`, `brightness()`, `contrast()`,
 `drop-shadow()`, `grayscale()`, `hue-rotate()`, `invert()`, `opacity()`,
 `saturate()`, `sepia()`.

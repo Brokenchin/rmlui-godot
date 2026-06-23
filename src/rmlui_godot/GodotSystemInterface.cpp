@@ -29,9 +29,22 @@ bool GodotSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& me
 	// document referencing one is expected, not an error. Downgrade so the
 	// editor console isn't spammed red on every selection/preview.
 	auto* engine = godot::Engine::get_singleton();
-	if (type == Rml::Log::LT_ERROR && engine != nullptr && engine->is_editor_hint() &&
+	const bool in_editor = engine != nullptr && engine->is_editor_hint();
+	if (type == Rml::Log::LT_ERROR && in_editor &&
 		message.find("Could not locate data model") != Rml::String::npos) {
 		type = Rml::Log::LT_WARNING;
+	}
+
+	// Editor-only: a decorator whose shader is registered from GDScript (which
+	// never runs in the editor) fails to generate data for EVERY decorated
+	// element, and RmlUi emits one warning per element. With per-keystroke
+	// preview reloads this push_warning storm freezes editing (issue #29). The
+	// root cause is already reported once via "No decorator shader registered
+	// for ..." (GodotRenderInterface::CompileShader), so these per-element
+	// follow-ups are redundant noise here — drop them entirely.
+	if (in_editor && type == Rml::Log::LT_WARNING &&
+		message.find("Could not generate decorator element data") != Rml::String::npos) {
+		return true;
 	}
 
 	switch (type) {
