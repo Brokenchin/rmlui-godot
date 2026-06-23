@@ -4,6 +4,7 @@
 #include <RmlUi/Core/Types.h>
 #include <RmlUi/Core/Variant.h>
 
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/classes/object.hpp>
@@ -345,17 +346,23 @@ bool GodotRenderInterface::register_shader(const std::string& name, const godot:
 	material.instantiate();
 	material->set_shader(shader);
 	_registered_shaders[name] = material;
+	// The shader set changed — re-arm the "missing shader" warning so a later
+	// removal of this name reports again instead of staying silently deduped.
+	_warned_missing_shaders.clear();
 	return true;
 }
 
 bool GodotRenderInterface::register_shader_material(const std::string& name, const godot::Ref<godot::ShaderMaterial>& material) {
 	if (!material.is_valid() || !material->get_shader().is_valid()) return false;
 	_registered_shaders[name] = material;
+	_warned_missing_shaders.clear();
 	return true;
 }
 
 bool GodotRenderInterface::unregister_shader(const std::string& name) {
-	return _registered_shaders.erase(name) > 0;
+	const bool erased = _registered_shaders.erase(name) > 0;
+	if (erased) _warned_missing_shaders.clear();
+	return erased;
 }
 
 Rml::CompiledShaderHandle GodotRenderInterface::CompileShader(
@@ -371,9 +378,30 @@ Rml::CompiledShaderHandle GodotRenderInterface::CompileShader(
 	if (reg_it == _registered_shaders.end() || !reg_it->second.is_valid()) {
 		// No Godot shader registered for this name — returning 0 makes RmlUi fall
 		// back to ordinary geometry rendering for this decorator.
-		godot::UtilityFunctions::push_warning(
-			godot::String("[RmlUi] No decorator shader registered for: ") +
-			godot::String(shader_name.c_str()));
+		//
+		// Warn ONCE per shader name (issue #29): RmlUi calls this per decorated
+		// element on every (re)load, and the editor reloads the document on every
+		// keystroke (live preview + diagnostics). An unguarded push_warning here —
+		// expensive in the editor (backtrace + debugger round-trip) — turned a
+		// grid of slots into a per-keystroke editor freeze. Decorator shaders are
+		// registered from GDScript, which never runs in the editor, so the editor
+		// can't satisfy them anyway: route a cheap structured notice to tooling
+		// (the preview/diagnostics error bar via rml_log) and reserve the costly
+		// console warning for runtime, where it's actionable.
+		if (_warned_missing_shaders.insert(shader_name).second) {
+			const godot::String msg = godot::String("[RmlUi] No decorator shader registered for: ") +
+				godot::String(shader_name.c_str());
+			auto* manager = RmlManager::get_singleton();
+			if (manager != nullptr) {
+				manager->notify_log(3 /*Rml::Log::LT_WARNING*/, msg);
+			}
+			auto* engine = godot::Engine::get_singleton();
+			const bool in_editor = engine != nullptr && engine->is_editor_hint();
+			const bool muted = manager != nullptr && manager->is_console_log_muted();
+			if (!in_editor && !muted) {
+				godot::UtilityFunctions::push_warning(msg);
+			}
+		}
 		return 0;
 	}
 
@@ -431,6 +459,7 @@ void GodotRenderInterface::release_all_resources() {
 	_draw_commands.clear();
 	_registered_textures.clear();
 	_registered_shaders.clear();
+	_warned_missing_shaders.clear();
 	_white_texture.unref();
 	_next_geo_handle = 1;
 	_next_tex_handle = 1;
