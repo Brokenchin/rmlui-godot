@@ -93,7 +93,9 @@ func _build_toolbar() -> void:
 	_scripts_check.tooltip_text = (
 		"Execute inline <script>/gdscript: blocks in the preview.\n"
 		+ "Off by default — these run real game logic, and a stray loop or\n"
-		+ "blocking call will freeze the editor. Enable only for trusted documents."
+		+ "blocking call will freeze the editor. While on, a mid-edit GDScript\n"
+		+ "syntax error can also break into the debugger. Enable only for\n"
+		+ "trusted documents you're not actively editing."
 	)
 	_scripts_check.toggled.connect(_on_run_scripts_toggled)
 	toolbar.add_child(_scripts_check)

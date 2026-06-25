@@ -12,6 +12,29 @@
 
 namespace RmlGodot {
 
+namespace {
+
+// Inline <script>/gdscript: blocks must stay inert in the editor unless the
+// owning context opted in (the preview panel's "Run inline scripts" checkbox
+// flips set_editor_scripts_enabled). This single predicate governs BOTH:
+//   - compilation (issue #36): get_or_compile_script() calls GDScript::reload(),
+//     which on a mid-edit syntax error (e.g. an unclosed array literal) triggers
+//     a GDScript debugger break that FREEZES the editor. The diagnostics
+//     validator reloads the document on every keystroke, so editing an inline
+//     script would otherwise freeze the editor mid-edit.
+//   - execution (issue #29): the blocks are RefCounted classes WE instantiate,
+//     bypassing Godot's @tool rule, so a stray loop/blocking call would freeze.
+// Inert at runtime (is_editor_hint() == false). A null node in the editor is
+// treated as "not opted in" — conservative, and the registered context is
+// resolvable by the time any document parses or dispatches.
+bool inline_scripts_gated_in_editor(RmlContext* node) {
+	auto* engine = godot::Engine::get_singleton();
+	return engine != nullptr && engine->is_editor_hint() &&
+		(node == nullptr || !node->is_editor_scripts_enabled());
+}
+
+} // namespace
+
 // --- GodotScriptDocument ---
 
 GodotScriptDocument::GodotScriptDocument(const Rml::String& tag) :
@@ -24,6 +47,18 @@ void GodotScriptDocument::LoadInlineScript(const Rml::String& content,
 
 	auto* manager = RmlManager::get_singleton();
 	if (manager == nullptr) return;
+
+	// Editor gate (issue #36): skip compilation entirely when inline scripts are
+	// gated in the editor. Compiling here would call GDScript::reload() on the
+	// possibly-mid-edit source and break into the debugger, freezing the editor.
+	// The preview rebuilds the document when the user toggles scripts on, so the
+	// block recompiles then. XML/RCSS diagnostics are unaffected — only the
+	// GDScript compile is withheld.
+	RmlContext* gate_node = (GetContext() != nullptr)
+		? manager->find_context_node(GetContext()) : nullptr;
+	if (inline_scripts_gated_in_editor(gate_node)) {
+		return;
+	}
 
 	// dedent(): the XML parser delivers the block with its .rml indentation,
 	// which whitespace-sensitive GDScript rejects ("Unexpected Indent").
@@ -135,15 +170,11 @@ godot::Object* GodotScriptDocument::_ensure_instance(ScriptBlock& block) {
 	RmlContext* node = (manager != nullptr && GetContext() != nullptr)
 		? manager->find_context_node(GetContext()) : nullptr;
 
-	// Editor gate (issue #29): never instantiate/run inline-script blocks in the
-	// editor unless this context opted in (the preview panel's "Run inline
-	// scripts" checkbox flips set_editor_scripts_enabled). Arbitrary user
-	// game-logic running in the editor process freezes it on any loop/blocking
-	// call. Compilation already happened at load, so parse-error diagnostics are
-	// unaffected — only execution is withheld. Always runs at runtime.
-	auto* engine = godot::Engine::get_singleton();
-	if (engine != nullptr && engine->is_editor_hint() &&
-		(node == nullptr || !node->is_editor_scripts_enabled())) {
+	// Editor gate (issues #29/#36): never instantiate/run inline-script blocks in
+	// the editor unless this context opted in. With the gate active the block was
+	// also never compiled (LoadInlineScript skips it), so there is nothing to
+	// instantiate here anyway — this stays as the explicit execution guard.
+	if (inline_scripts_gated_in_editor(node)) {
 		return nullptr;
 	}
 
@@ -189,14 +220,12 @@ void GodotInlineScriptListener::ProcessEvent(Rml::Event& event) {
 	RmlContext* node = (manager != nullptr && rml_ctx != nullptr)
 		? manager->find_context_node(rml_ctx) : nullptr;
 
-	// Inline-script execution gate (issue #29): the document's <script> blocks
-	// are RefCounted classes WE instantiate, bypassing Godot's @tool rule, so in
-	// the editor they must stay inert unless the context opted in. The node /
-	// parent fallbacks below are ordinary attached GDScript whose own @tool-ness
+	// Inline-script execution gate (issues #29/#36): the document's <script>
+	// blocks are RefCounted classes WE instantiate, bypassing Godot's @tool rule,
+	// so in the editor they must stay inert unless the context opted in. The node
+	// / parent fallbacks below are ordinary attached GDScript whose own @tool-ness
 	// already governs editor execution — left untouched.
-	auto* engine = godot::Engine::get_singleton();
-	const bool inline_scripts_gated = engine != nullptr && engine->is_editor_hint() &&
-		(node == nullptr || !node->is_editor_scripts_enabled());
+	const bool inline_scripts_gated = inline_scripts_gated_in_editor(node);
 
 	// 1. The document's own <script> blocks (skipped when gated in the editor;
 	//    _ensure_instance would no-op anyway, but skipping is explicit).

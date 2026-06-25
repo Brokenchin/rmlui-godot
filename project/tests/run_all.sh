@@ -43,6 +43,7 @@ run tests/test_property_export.gd headless
 run tests/test_inline_gdscript.gd headless
 run tests/test_external_script.gd headless
 run tests/test_editor_script_gate.gd headless
+run tests/test_inline_script_freeze.gd headless
 run tests/test_decorator_shader_warn.gd windowed
 run tests/test_shutdown_stress.gd headless
 run tests/test_leak_churn.gd headless
