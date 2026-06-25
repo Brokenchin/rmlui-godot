@@ -36,6 +36,7 @@ run tests/test_runner.gd headless
 # Standalone regression scripts (each quits with its failure count)
 run tests/test_rcss_tokenizer.gd headless
 run tests/test_completion_helpers.gd headless
+run tests/test_link_navigation.gd headless
 run tests/test_splice_rcss.gd headless
 run tests/test_diagnostics.gd headless
 run tests/test_log_chain.gd headless

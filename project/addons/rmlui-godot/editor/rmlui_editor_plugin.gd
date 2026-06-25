@@ -8,6 +8,7 @@ var _preview_panel: RmlPreviewPanel
 var _completion_provider: RcssCompletionProvider
 var _completion_timer: Timer
 var _diagnostics: RmlDiagnostics
+var _link_nav: RmlLinkNavigation
 
 func _enter_tree():
 	_register_textfile_extensions()
@@ -30,6 +31,9 @@ func _enter_tree():
 
 	_diagnostics = RmlDiagnostics.new()
 	add_child(_diagnostics)
+
+	_link_nav = RmlLinkNavigation.new()
+	add_child(_link_nav)
 
 	_inspector_plugin = RmlInspectorPlugin.new()
 	_inspector_plugin.preview_opener = _open_preview_for
@@ -76,6 +80,13 @@ func _ensure_completion_hook() -> void:
 		kind = "rcss"
 	if _diagnostics:
 		_diagnostics.attach(ce if kind != "" else null, kind)
+
+	# Ctrl-click link navigation (issue #23) follows the tab too. The script
+	# editor exposes no API for the edited text file's path, so read it from the
+	# tab tooltip (full res:// path) to resolve relative src/href/url targets.
+	if _link_nav:
+		_link_nav.attach(ce if kind != "" else null,
+			_edited_file_path(ed) if kind != "" else "")
 
 	# Auto-close: typing '>' after an opening tag inserts the matching
 	# closing tag, caret stays between them (RML is XML — no anonymous </>).
