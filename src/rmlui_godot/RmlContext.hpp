@@ -14,6 +14,11 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/rid.hpp>
+#include <godot_cpp/variant/transform2d.hpp>
+#include <godot_cpp/variant/vector4.hpp>
+#include <godot_cpp/variant/color.hpp>
+#include <godot_cpp/variant/rect2.hpp>
 
 #include "GodotRenderInterface.hpp"
 #include "RmlElementHandle.hpp"
@@ -402,9 +407,63 @@ private:
 		Rml::ElementDocument* document = nullptr;
 	};
 	std::vector<LoadedDocument> _loaded_documents;
-	std::vector<godot::RID> _scissor_items;
-	std::vector<godot::RID> _layer_items;
 	godot::Ref<godot::Material> _active_material;
+
+	// --- Persistent canvas-item slot model (redraw coalescing, issue #14) ---
+	// Each frame _draw() builds a flat, ordered list of canvas-item "slots"
+	// (the root item, layer/clip-mask group items, and batched geometry "runs")
+	// as plain descriptors — no RenderingServer calls. _reconcile_slots() then
+	// diffs that list against the previous frame's slots by position: an
+	// identical slot keeps its RID untouched (zero RS work), a changed slot
+	// reuses the same RID via canvas_item_clear + re-add, and trailing slots no
+	// longer produced are freed. RmlUi already caches compiled geometry per
+	// element (unchanged elements keep a stable, monotonically-allocated
+	// CompiledGeometryHandle), so a localized change — e.g. one cell's :hover —
+	// touches only the handful of slots that actually differ instead of tearing
+	// down and rebuilding the whole tree every frame.
+	struct SlotPrim {
+		enum Kind : uint8_t { MESH, TRI_ARRAY };
+		Kind kind = MESH;
+		// Identity (compared to decide reuse). Geometry handles are never
+		// recycled, so an unchanged element keeps the same handle and a
+		// recompiled one gets a fresh handle — exact change detection.
+		uintptr_t geo_handle = 0;
+		uintptr_t tex_handle = 0;
+		godot::Transform2D xform;
+		godot::Color modulate{1, 1, 1, 1};
+		godot::Rect2 clip_rect;      // TRI_ARRAY: CPU-clip rect (re-clipped on apply)
+		// Resolved resources used to (re)build the draw on apply.
+		godot::RID mesh_rid;
+		godot::RID tex_rid;
+	};
+
+	struct SlotDesc {
+		enum Kind : uint8_t { ROOT, GROUP, RUN };
+		Kind kind = RUN;
+		int parent = -1;             // slot index of parent; -1 => get_canvas_item()
+		godot::RID material;
+		int filter = 0;              // RenderingServer::CanvasItemTextureFilter
+		int draw_index = -1;         // -1 => leave default (root/groups)
+		int group_mode = -1;         // -1 => don't set; else CanvasGroupMode
+		bool modulate_set = false;
+		godot::Color modulate{1, 1, 1, 1};
+		bool set_scissor_param = false;
+		godot::Vector4 scissor_param;
+		std::vector<SlotPrim> prims; // drawn directly into this item
+	};
+
+	struct Slot {
+		SlotDesc desc;
+		godot::RID rid;
+		godot::RID parent_rid;
+	};
+	// Two ping-ponged slot buffers: one holds the previous frame, the other is
+	// (re)built this frame. Reusing the buffers — and each Slot's prims vector
+	// (cleared, not destroyed) — means steady-state frames allocate nothing,
+	// which is what keeps the all-mutated worst case from regressing.
+	std::vector<Slot> _slots_buf[2];
+	uint8_t _slots_cur = 0;    // buffer index holding the previous frame
+	size_t _slots_count = 0;   // valid slot count in the previous buffer
 
 	bool _gpu_scissor = false;
 	bool _render_dirty = true;
@@ -476,8 +535,17 @@ private:
 	void _cleanup();
 
 	void _sync_dimensions();
-	void _free_scissor_items();
-	void _free_layer_items();
+	// Diff the freshly-built slot buffer (the first `used` entries of the
+	// non-current buffer) against the previous frame and emit the minimal set
+	// of RenderingServer calls; then flips _slots_cur.
+	void _reconcile_slots(size_t used);
+	static bool _prim_equal(const SlotPrim& a, const SlotPrim& b);
+	static bool _desc_equal(const SlotDesc& a, const SlotDesc& b);
+	// (Re)apply a slot's full state to its canvas item: parent, material,
+	// filter, draw index, group mode, modulate, scissor uniform, and prims.
+	void _apply_slot(int slot_index, const SlotDesc& desc, const godot::RID& parent_rid,
+		const godot::RID& canvas_item);
+	void _free_all_slots();
 	void _forward_mouse_event(const godot::Ref<godot::InputEvent>& event);
 	void _forward_key_event(const godot::Ref<godot::InputEvent>& event);
 };
