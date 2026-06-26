@@ -273,6 +273,11 @@ void RmlContext::_process(double /*delta*/) {
 	// push rml_element_hovered / rml_element_unhovered to any external overlay.
 	_update_hover_tracking();
 
+	// Issue #37: keep the active drag ghost (if any) pinned under the cursor.
+	if (_ghost_layer != nullptr) {
+		_update_ghost_position();
+	}
+
 	// Issue #47: a passive mouse-move (no _render_dirty set by _gui_input) only
 	// matters visually when the hover chain changes. The deepest hovered
 	// element's ancestry IS the hover chain, so a change in that element means
@@ -642,6 +647,10 @@ void RmlContext::_notification(int p_what) {
 			_rml_context->ProcessMouseLeave();
 			_render_dirty = true;
 		}
+	} else if (p_what == godot::Node::NOTIFICATION_DRAG_END) {
+		// Issue #37: the drag finished (dropped or canceled — this fires for both,
+		// propagated to every node) — tear down the ghost's CanvasLayer.
+		_destroy_active_ghost();
 	} else if (p_what == godot::Node::NOTIFICATION_ENTER_TREE) {
 		// Re-entering the tree (editor scene-tab switch, reparenting): the
 		// visuals were freed on exit — repaint from the still-alive context.

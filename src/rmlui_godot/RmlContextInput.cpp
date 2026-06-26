@@ -326,7 +326,11 @@ godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
 			}
 		}
 
-		_create_drag_ghost(source.element_id, source.ghost_builder);
+		// Offset from the source element's top-left to the grab point, so the
+		// ghost can keep the cursor pinned where the drag started (issue #37).
+		Rml::Vector2f el_off = el->GetAbsoluteOffset(Rml::BoxArea::Border);
+		godot::Vector2 grab_offset(p_at_position.x - el_off.x, p_at_position.y - el_off.y);
+		_create_drag_ghost(source.element_id, source.ghost_builder, grab_offset);
 
 		emit_signal("rml_drag_started",
 			godot::String(source.element_id.c_str()), payload);
@@ -445,7 +449,7 @@ Rml::String RmlContext::_build_ghost_rml(Rml::Element* el, int w, int h) {
 }
 
 void RmlContext::_create_drag_ghost(const std::string& source_element_id,
-	const godot::Callable& ghost_builder) {
+	const godot::Callable& ghost_builder, const godot::Vector2& grab_offset) {
 
 	Rml::Element* el = _find_element(godot::String(source_element_id.c_str()));
 	if (el == nullptr) {
@@ -507,7 +511,42 @@ void RmlContext::_create_drag_ghost(const std::string& source_element_id,
 	doc->Show();
 	ghost->_rml_context->Update();
 
-	set_drag_preview(ghost);
+	// Issue #37: instead of Godot's source-relative set_drag_preview (which draws
+	// the ghost at the source context's stacking level — so it slips under
+	// sibling widgets sharing/straddling a CanvasLayer, direction-dependently),
+	// parent the ghost to a dedicated CanvasLayer at RmlManager's configurable
+	// index. That layer sits above arbitrary game UI, so the ghost renders
+	// consistently on top no matter which widget the drag began from. Native
+	// drag data / drop detection are unaffected: the payload is still returned
+	// from _get_drag_data, and _can_drop_data / _drop_data don't depend on the
+	// preview existing.
+	_destroy_active_ghost(); // never leak a ghost from a prior, unfinished drag
+
+	godot::CanvasLayer* layer = memnew(godot::CanvasLayer);
+	layer->set_layer(manager->get_drag_ghost_layer());
+	layer->add_child(ghost);
+	add_child(layer);
+
+	_ghost_layer = layer;
+	_ghost_grab_offset = grab_offset;
+	_update_ghost_position();
+}
+
+void RmlContext::_update_ghost_position() {
+	if (_ghost_layer == nullptr || _ghost_layer->get_child_count() == 0) return;
+	godot::Viewport* vp = get_viewport();
+	if (vp == nullptr) return;
+	auto* ghost = godot::Object::cast_to<godot::Control>(_ghost_layer->get_child(0));
+	if (ghost == nullptr) return;
+	// Viewport-space mouse matches a default (non-following) CanvasLayer's
+	// coordinates, so the ghost tracks the actual cursor pixel.
+	ghost->set_position(vp->get_mouse_position() - _ghost_grab_offset);
+}
+
+void RmlContext::_destroy_active_ghost() {
+	if (_ghost_layer == nullptr) return;
+	_ghost_layer->queue_free(); // frees the ghost child with it
+	_ghost_layer = nullptr;
 }
 
 // --- Phase 8b: Dev tools & extended document management ---

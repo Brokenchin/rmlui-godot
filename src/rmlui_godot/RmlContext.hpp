@@ -2,6 +2,7 @@
 
 #include "RmlGD.hpp"
 #include <godot_cpp/classes/canvas_item_material.hpp>
+#include <godot_cpp/classes/canvas_layer.hpp>
 #include <godot_cpp/classes/material.hpp>
 #include <godot_cpp/classes/shader.hpp>
 #include <godot_cpp/classes/shader_material.hpp>
@@ -537,7 +538,21 @@ private:
 
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);
-	void _create_drag_ghost(const std::string& source_element_id, const godot::Callable& ghost_builder);
+	void _create_drag_ghost(const std::string& source_element_id,
+		const godot::Callable& ghost_builder, const godot::Vector2& grab_offset);
+
+	// Issue #37: drag ghost on its own CanvasLayer. Godot's native
+	// set_drag_preview renders the ghost at the *source context's* stacking
+	// level, so it slips under sibling widgets depending on draw order. Instead
+	// the source context owns a dedicated CanvasLayer (at RmlManager's
+	// configurable index) holding the ghost: it always draws above arbitrary
+	// game UI. The layer follows the cursor in _process and is freed on
+	// NOTIFICATION_DRAG_END (drop or cancel). _ghost_grab_offset keeps the
+	// cursor at the point on the ghost where the drag was grabbed.
+	godot::CanvasLayer* _ghost_layer = nullptr;
+	godot::Vector2 _ghost_grab_offset;
+	void _update_ghost_position();
+	void _destroy_active_ghost();
 
 	void _create_context();
 	void _destroy_context();

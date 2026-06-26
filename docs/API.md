@@ -145,6 +145,21 @@ optional `ghost_builder` returns custom ghost RML. Bridges Godot's native drag
 system — works across RmlContexts *and* native Controls. Callables from inline
 `<script>` blocks work (`rml_context.register_drag_source(...)`).
 
+The drag ghost renders on its **own dedicated `CanvasLayer`** (following the
+cursor, freed on drop) rather than via Godot's source-relative
+`set_drag_preview`, so it always draws above the rest of the UI regardless of
+which widget the drag started from. The layer index is configurable globally:
+
+```gdscript
+RmlManager.drag_ghost_layer = 128          # or RmlManager.set_drag_ghost_layer(128)
+```
+
+It defaults to `128` (the top `CanvasLayer`) and is seeded from the
+`rmlui/drag/ghost_layer` project setting; values are clamped to the
+`CanvasLayer` range `[-128, 128]`. Lower it to slot the ghost into a custom
+layer scheme (e.g. above panels but below a modal). Native drop detection
+(`register_drop_target`) is unaffected.
+
 ### Hover bridge
 
 ```gdscript
