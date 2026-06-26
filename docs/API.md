@@ -165,6 +165,23 @@ the element; poll `get_hovered_element_id()` on mouse motion if you need a
 following tooltip. Leaving the context entirely (cursor exits the Control) also
 emits `rml_element_unhovered`.
 
+### Mouse input & hit-testing
+
+An `RmlContext` is a `Control` and keeps `mouse_filter = STOP` so RmlUi receives
+clicks, but it does **not** consume mouse events over its whole rect. It overrides
+`_has_point()` to hit-test the live DOM: Godot's mouse picking only "sees" the
+context where an RML element actually sits under the cursor, so empty / transparent
+gaps fall through to controls (and lower `CanvasLayer`s) behind it. This makes a
+fullscreen or sparse context (a centered panel, a HUD with gaps, scattered widgets)
+non-blocking where there's no content.
+
+- A bare document **body** counts as a hit only when it paints something — an
+  opaque `background-color` or a `decorator`. A transparent fullscreen body passes
+  through; give it a background (or wrap content in a sized element) to capture
+  clicks on its empty area.
+- Opt a specific element out of hit-testing with RCSS `pointer-events: none` —
+  it (and its bare areas) then pass through to whatever is below.
+
 ### Styling & rendering
 
 ```gdscript

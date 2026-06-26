@@ -215,6 +215,10 @@ public:
 	void _notification(int p_what);
 	void _gui_input(const godot::Ref<godot::InputEvent>& event) override;
 	void _unhandled_input(const godot::Ref<godot::InputEvent>& event) override;
+	// Per-element mouse picking (#46): with mouse_filter = STOP a Control claims
+	// every event over its whole rect. Override so Godot only "sees" the context
+	// where an RML element actually is — empty/transparent gaps fall through.
+	bool _has_point(const godot::Vector2& point) const override;
 	godot::PackedStringArray _get_configuration_warnings() const override;
 
 	godot::PackedStringArray get_input_actions() const { return _input_actions; }
