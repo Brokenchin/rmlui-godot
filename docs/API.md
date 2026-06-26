@@ -165,6 +165,64 @@ the element; poll `get_hovered_element_id()` on mouse motion if you need a
 following tooltip. Leaving the context entirely (cursor exits the Control) also
 emits `rml_element_unhovered`.
 
+### Input pre-handler (game-first routing)
+
+```gdscript
+set_input_prehandler(handler := Callable())   # handler(event: InputEvent) -> bool
+set_input_tick(handler := Callable())         # handler(delta: float) -> void
+```
+
+The high-level bridges above (`on*` events, `register_drag`, the hover bridge)
+are the RmlUi-*first* path. The pre-handler is the low-level game-*first* one:
+`handler` runs on every `_gui_input` event **before** RmlUi (and the native
+drag) sees it. Return `true` to **consume** the event — RmlUi and the native
+drag both skip it; return `false` (or nothing) to **forward** it, leaving click
+/ hover / drag / `on*` exactly as they are today. Mirrors Godot's `_input`
+chain. Pass an empty `Callable()` to clear either handler.
+
+Inside the handler you can call `get_hovered_element_id()` and read the in-flight
+drag payload to know *what* you're acting on, then route to bound InputMap
+actions however your game wants (rebinding, controller gestures) — all in
+GDScript, not the addon.
+
+`set_input_tick` delivers a per-frame callback so **time-based** gestures work
+without a node. An event hook alone can't fire long-press (it triggers on
+elapsed time with no further event); the tick lets a document `<script>` detect
+"held 400 ms in place" itself. With *events + tick*, long-press, double-tap
+timeout, hold-to-charge, and chords are all pure game code — zero addon work per
+gesture. The tick runs each frame after the context update (so it sees a settled
+layout and hover chain).
+
+If the pre-handler consumes the mouse press that would have begun a native drag,
+the drag is suppressed for that gesture, so a long-press timer started on a slot
+doesn't fight `register_drag_source`.
+
+```gdscript
+# Long-press → context selector, no onlongpress addon feature needed:
+var _hold_id := ""
+var _hold_t := 0.0
+func _ready():
+    rml_context.set_input_prehandler(_route_input)
+    rml_context.set_input_tick(_tick)
+
+func _route_input(event: InputEvent) -> bool:
+    if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+        if event.pressed:
+            _hold_id = rml_context.get_hovered_element_id()
+            _hold_t = 0.0
+        else:
+            _hold_id = ""                       # released early — let RmlUi click
+    return false                                # forward; we only time the hold
+
+func _tick(delta: float) -> void:
+    if _hold_id == "":
+        return
+    _hold_t += delta
+    if _hold_t >= 0.4:
+        open_selector(_hold_id)
+        _hold_id = ""
+```
+
 ### Styling & rendering
 
 ```gdscript

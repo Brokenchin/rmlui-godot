@@ -32,9 +32,41 @@ namespace RmlGodot {
 void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 	if (_rml_context == nullptr) return;
 
+	// Game-first pre-handler (issue #41): the game gets the raw event before
+	// RmlUi, so it can implement whatever gesture/action policy it wants and
+	// have RmlUi be second in line. Returning true consumes the event — RmlUi
+	// and the native drag both skip it, mirroring Godot's _input chain. A false
+	// (or non-bool) return forwards as usual, leaving click / hover / drag / on*
+	// untouched.
+	if (_input_prehandler.is_valid()) {
+		const godot::Variant ret = _input_prehandler.call(event);
+		const bool consumed = ret.get_type() == godot::Variant::BOOL && static_cast<bool>(ret);
+
+		// Remember the decision across the press so the native drag — driven by
+		// Godot's _get_drag_data, which only fires after the press plus a move —
+		// honours the same call the press did.
+		auto* mb = godot::Object::cast_to<godot::InputEventMouseButton>(event.ptr());
+		if (mb != nullptr && mb->is_pressed()) {
+			_prehandler_consumed_press = consumed;
+		}
+
+		if (consumed) return;
+	}
+
 	_forward_mouse_event(event);
 	_forward_key_event(event);
 	_render_dirty = true;
+}
+
+void RmlContext::set_input_prehandler(const godot::Callable& handler) {
+	_input_prehandler = handler;
+	// A removed handler must not keep a stale press-consume flag suppressing
+	// the native drag.
+	if (!_input_prehandler.is_valid()) _prehandler_consumed_press = false;
+}
+
+void RmlContext::set_input_tick(const godot::Callable& handler) {
+	_input_tick = handler;
 }
 
 void RmlContext::toggle_debugger() {
@@ -251,6 +283,10 @@ bool RmlContext::_point_in_element(Rml::Element* el, float x, float y) const {
 }
 
 godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
+	// The pre-handler consumed the press that would have started this drag
+	// (issue #41) — e.g. it began a long-press timer on the same slot. Honour
+	// the consume so the gesture and the native drag don't fight.
+	if (_prehandler_consumed_press) return {};
 	if (_rml_context == nullptr || _drag_sources.empty()) return {};
 
 	for (const auto& source : _drag_sources) {
