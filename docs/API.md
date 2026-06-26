@@ -32,7 +32,7 @@ process-wide (see RmlManager).
 | `font_pixel_snap`, `font_layout_mode`, `font_hinting`, `font_antialiasing`, `font_subpixel`, `font_oversampling` | — | Granular text tuning; apply process-wide via the shared font engine. |
 | `gpu_scissor` | bool | Shader-based scissoring instead of CPU clipping. |
 | `text_filtering_mode` | enum (Nearest/Linear) | Texture filter for **text glyphs only** — default **Nearest** (crisp, like Godot's own text), independent of the project default and the node's `texture_filter`. Images/decorators keep normal project filtering. Linear is available for smooth-scaled UI; glyph sampling under linear is softness-prone until the SUBPIX_OFFSET alignment follow-up lands. |
-| `editor_mock_data` | Dictionary | `{model_name: {var_name: value}}` — mock models stood up **in the editor only** (preview panel and 2D viewport) so `data-for`/`{{ }}` render without running the game. Arrays become data arrays. |
+| `editor_mock_data` | Dictionary | `{model_name: {var_name: value}}` — mock models stood up **in the editor only** (preview panel and 2D viewport) so `data-for`/`{{ }}` render without running the game. Arrays become data arrays — arrays of dictionaries drive struct-array `data-for` rows for preview. |
 | `input_actions` | PackedStringArray | InputMap actions this context watches via `_unhandled_input`. Each press/release emits `rml_input_action` **and** dispatches to the documents' `<script>` blocks (`_on_input_action(action, pressed)`). Empty = zero input overhead. |
 | `debugger_toggle_key` | int (godot Key) | Key toggling the RmlUi debugger overlay. Default `KEY_F10`, `0` disables. (F8/F9 collide with the editor's Stop/Pause shortcuts for the embedded game window.) Also callable directly: `toggle_debugger()`. |
 | `gamepad_navigation` | bool | Routes Godot's `ui_up/down/left/right`, `ui_focus_next/prev`, `ui_accept`, `ui_cancel` into RmlUi's built-in focus engine: spatial navigation over elements with `nav: auto` (or explicit `nav-*`), tab order via `tab-index: auto`, accept = click on the focused element. Works for keyboard *and* gamepad (the default `ui_*` bindings include D-pad/sticks). A consumed press is marked handled so gameplay doesn't double-react. First directional press auto-focuses the first tabbable element. |
@@ -108,8 +108,13 @@ clear_data_array(model_name, array_name)
 
 Models must exist **before** the document that references them loads
 (`data-model="name"`), or the document logs "Could not locate data model".
-Arrays are arrays-of-strings on the RmlUi side; non-string values are
-stringified. All mutators auto-dirty.
+
+Arrays may hold scalars **or dictionaries**. A dictionary element becomes a
+struct whose keys are accessible as members inside the repeated element
+(`data-for="slot : slots"` → `slot.icon`, `slot.count > 1`, …); field types are
+preserved, and dictionaries/arrays nest arbitrarily. All array mutators
+(`set_data_array`, `push_data_array_item`, `set_data_array_item`, …) accept the
+same scalar-or-dictionary values. All mutators auto-dirty.
 
 ### Elements & events
 
