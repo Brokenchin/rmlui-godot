@@ -37,6 +37,40 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 	_render_dirty = true;
 }
 
+// Godot calls _has_point for GUI mouse picking. The default Control reports the
+// whole node rect, so with mouse_filter = STOP an RmlContext swallows every
+// event over its bounding box — even where no element sits under the cursor —
+// blocking input to anything behind it (#46). Hit-test the live DOM instead:
+// report a point only where an element actually is, so transparent gaps fall
+// through to controls / lower CanvasLayers below while elements still get input.
+bool RmlContext::_has_point(const godot::Vector2& point) const {
+	if (_rml_context == nullptr) return false;
+
+	// GetElementAtPoint honours `pointer-events` and returns the youngest
+	// element under the point (context-local coords, which match the Control's
+	// local coords). Over empty space it returns the context root element.
+	Rml::Element* el = _rml_context->GetElementAtPoint(
+		Rml::Vector2f(static_cast<float>(point.x), static_cast<float>(point.y)));
+	if (el == nullptr) return false;
+
+	// The context root spans the entire node rect — never a real hit.
+	if (el == _rml_context->GetRootElement()) return false;
+
+	// A document body also covers the whole context when stretched (the common
+	// fullscreen-overlay case). Count its bare area as a hit only when it paints
+	// something — an opaque background or a decorator — so a transparent overlay
+	// passes through instead of swallowing input over all its empty space.
+	// Authored content inside the body (any non-document element) always counts:
+	// its bounding box is the interactive surface, and per-element pass-through
+	// is opted into with `pointer-events: none` (already honoured above).
+	if (rmlui_dynamic_cast<Rml::ElementDocument*>(el) != nullptr) {
+		const auto& cv = el->GetComputedValues();
+		return cv.background_color().alpha > 0 || cv.has_decorator();
+	}
+
+	return true;
+}
+
 void RmlContext::toggle_debugger() {
 	if (_rml_context == nullptr) return;
 	static bool s_debugger_inited = false;
