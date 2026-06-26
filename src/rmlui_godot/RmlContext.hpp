@@ -530,6 +530,11 @@ private:
 	std::string _resolve_hovered_id() const;
 	void _update_hover_tracking();
 
+	// Issue #47: deepest hovered element observed last _process(), used to gate
+	// repaints on passive mouse-moves (a change here == the hover chain changed).
+	// Compared by pointer identity only; never dereferenced.
+	Rml::Element* _last_hover_element = nullptr;
+
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);
 	void _create_drag_ghost(const std::string& source_element_id, const godot::Callable& ghost_builder);
