@@ -34,7 +34,24 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 
 	_forward_mouse_event(event);
 	_forward_key_event(event);
-	_render_dirty = true;
+
+	// Issue #47: don't blanket-dirty on every input. InputEventMouseMotion fires
+	// continuously while the cursor moves over the context, and dirtying here
+	// forced a full document re-render every one of those frames — even hovering
+	// empty space where nothing changes — roughly halving FPS.
+	//
+	// A passive mouse-move's only visual effect is a hover-chain change, which
+	// _process() detects after Update() (the GetHoverElement() check there) and
+	// dirties then, so free hovering now costs ~0 redraws. Everything else still
+	// dirties immediately: button/wheel/key events can change visuals directly,
+	// and a motion with a button held is an active drag/text-selection whose
+	// per-frame visual update RmlUi has no other way to signal to us.
+	auto* motion = godot::Object::cast_to<godot::InputEventMouseMotion>(event.ptr());
+	const bool passive_move = motion != nullptr &&
+		static_cast<int64_t>(motion->get_button_mask()) == 0;
+	if (!passive_move) {
+		_render_dirty = true;
+	}
 }
 
 void RmlContext::toggle_debugger() {
