@@ -131,6 +131,15 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 		godot::PropertyInfo(godot::Variant::STRING, "action"),
 		godot::PropertyInfo(godot::Variant::BOOL, "pressed")));
 
+	// Issue #41: game-first input routing. A registerable pre-handler runs
+	// BEFORE RmlUi (and the native drag) sees an event; returning true
+	// consumes it. An optional per-frame tick lets time-based gestures
+	// (long-press, hold-to-charge) run from a document <script> with no node.
+	godot::ClassDB::bind_method(godot::D_METHOD("set_input_prehandler", "handler"), &RmlContext::set_input_prehandler, DEFVAL(godot::Callable()));
+	godot::ClassDB::bind_method(godot::D_METHOD("get_input_prehandler"), &RmlContext::get_input_prehandler);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_input_tick", "handler"), &RmlContext::set_input_tick, DEFVAL(godot::Callable()));
+	godot::ClassDB::bind_method(godot::D_METHOD("get_input_tick"), &RmlContext::get_input_tick);
+
 	// Phase 8b: Dev tools & extended document management
 	godot::ClassDB::bind_method(godot::D_METHOD("inject_stylesheet", "rcss_string"), &RmlContext::inject_stylesheet);
 	godot::ClassDB::bind_method(godot::D_METHOD("unload_document", "path"), &RmlContext::unload_document);
@@ -368,6 +377,17 @@ public:
 	// Hover bridge: id of the element currently under the cursor (nearest
 	// ancestor carrying an id), or "" when nothing opted-in is hovered.
 	godot::String get_hovered_element_id() const;
+
+	// Issue #41: game-first input pre-handler. `handler(event: InputEvent) ->
+	// bool` runs before RmlUi (and the native drag) processes the event; a true
+	// return consumes it (RmlUi + drag skip it), false/non-bool forwards as
+	// usual. `tick(delta: float) -> void` is invoked every frame so time-based
+	// gestures can run without a node. Pass an empty Callable to clear either.
+	void set_input_prehandler(const godot::Callable& handler = godot::Callable());
+	godot::Callable get_input_prehandler() const { return _input_prehandler; }
+	void set_input_tick(const godot::Callable& handler = godot::Callable());
+	godot::Callable get_input_tick() const { return _input_tick; }
+
 	godot::Variant _get_drag_data(const godot::Vector2& p_at_position) override;
 	bool _can_drop_data(const godot::Vector2& p_at_position, const godot::Variant& p_data) const override;
 	void _drop_data(const godot::Vector2& p_at_position, const godot::Variant& p_data) override;
@@ -530,6 +550,14 @@ private:
 	std::string _resolve_hovered_id() const;
 	void _update_hover_tracking();
 
+	// Issue #41: game-first input routing.
+	godot::Callable _input_prehandler;   // handler(event) -> bool (true = consume)
+	godot::Callable _input_tick;         // tick(delta) -> void, every frame
+	// The native drag (Godot's _get_drag_data) fires only after a press plus a
+	// move, so a press the pre-handler consumed must be remembered to suppress
+	// the drag that the same gesture would otherwise start. Set on each mouse
+	// press to that press's consume decision; checked in _get_drag_data.
+	bool _prehandler_consumed_press = false;
 	// Issue #47: deepest hovered element observed last _process(), used to gate
 	// repaints on passive mouse-moves (a change here == the hover chain changed).
 	// Compared by pointer identity only; never dereferenced.

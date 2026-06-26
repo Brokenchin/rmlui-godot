@@ -263,7 +263,7 @@ void RmlContext::_apply_editor_mock_data() {
 	}
 }
 
-void RmlContext::_process(double /*delta*/) {
+void RmlContext::_process(double delta) {
 	if (_rml_context == nullptr) return;
 
 	_sync_dimensions();
@@ -273,6 +273,14 @@ void RmlContext::_process(double /*delta*/) {
 	// push rml_element_hovered / rml_element_unhovered to any external overlay.
 	_update_hover_tracking();
 
+	// Game-first per-frame tick (issue #41): lets time-based gestures — long-
+	// press, double-tap timeout, hold-to-charge — run from a document <script>
+	// without a node's _process. Fires after Update so the handler observes a
+	// settled layout and hover chain; any DOM it mutates marks the frame dirty
+	// through the usual mutation APIs and is picked up by the redraw gate below.
+	if (_input_tick.is_valid()) {
+		_input_tick.call(delta);
+  }
 	// Issue #37: keep the active drag ghost (if any) pinned under the cursor.
 	if (_ghost_layer != nullptr) {
 		_update_ghost_position();
