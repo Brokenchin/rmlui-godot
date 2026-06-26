@@ -35,7 +35,7 @@ A GDExtension plugin that integrates [RmlUi](https://github.com/mikke89/RmlUi) i
 ### Data Binding
 - `create_data_model` / `bind_data_variable` / `set_data_variable` / `get_data_variable`
 - Batch setup via `create_data_model_from_dict()` / `update_data_model()`
-- Array binding: `bind_data_array`, `push_data_array_item`, `remove_data_array_item`, `set_data_array_item`, `clear_data_array`
+- Array binding: `bind_data_array`, `push_data_array_item`, `remove_data_array_item`, `set_data_array_item`, `clear_data_array` — scalars **or arrays of dictionaries** (struct rows: `data-for="slot : slots"` → `slot.icon`, `slot.count`)
 - Data events: `bind_data_event()` routes RmlUi data events to GDScript `Callable`
 - Dirty tracking: `dirty_data_variable()` / `dirty_all_variables()`
 

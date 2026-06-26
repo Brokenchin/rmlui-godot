@@ -81,9 +81,40 @@ func damage(amount: int):
 `{{ hp > 50 ? 'fine' : 'hurt' }}`. This is RmlUi's own expression language
 evaluating against the data model (not GDScript).
 
+### Struct / object arrays
+
+`bind_data_array` accepts arrays of **dictionaries**, not just scalars. Each row
+exposes its keys as members, so a `data-for` row can reference `slot.icon`,
+`slot.count`, etc. — no GDScript string-templating needed:
+
+```gdscript
+ctx.bind_data_array("bag", "slots", [
+    {"icon": "texture://sword", "rarity": "legendary", "count": 5, "locked": false},
+    {"icon": "", "rarity": "", "count": 0, "locked": true},
+])
+# later: ctx.set_data_array(...), push_data_array_item("bag", "slots", {...}),
+#        set_data_array_item("bag", "slots", 0, {...}), remove_data_array_item(...)
+```
+
+```xml
+<div data-for="slot : slots" class="slot">
+    <div class="slot-box" data-class-locked="slot.locked">
+        <img class="slot-icon" data-attr-src="slot.icon" data-if="slot.icon != ''" />
+        <span class="slot-count" data-if="slot.count > 1">x{{ slot.count }}</span>
+    </div>
+</div>
+```
+
+Field types are preserved (a dictionary `count: 5` stays an int, so `slot.count > 1`
+compares numerically). Dictionaries and arrays nest arbitrarily. Plain scalar
+arrays (`["a", "b"]`) still work — each element is just a value.
+
 **Editor preview:** set `editor_mock_data` on the node
 (`{"hud": {"hp": 80, "log_lines": ["a", "b"]}}`) and bindings render without
-running the game — both in the preview panel and the 2D viewport.
+running the game — both in the preview panel and the 2D viewport. Mock arrays of
+dictionaries drive struct-array `data-for` rows too, so an inventory grid can be
+previewed with static demo rows (the data model is otherwise empty in the editor,
+since no GDScript runs there).
 
 ## Inline GDScript
 

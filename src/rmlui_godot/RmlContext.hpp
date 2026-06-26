@@ -23,6 +23,7 @@
 
 #include "GodotRenderInterface.hpp"
 #include "RmlElementHandle.hpp"
+#include "RmlDynamicData.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -496,19 +497,17 @@ private:
 		Rml::DataModelHandle handle;
 		std::unordered_map<std::string, Rml::Variant> variables;
 		std::unordered_map<std::string, godot::Callable> event_callbacks;
-		std::unordered_map<std::string, Rml::Vector<Rml::String>> arrays;
+		// Dynamic struct/scalar array backing — created lazily on first
+		// bind_data_array. Owns both the custom VariableDefinitions and the
+		// node trees that RmlUi points into.
+		std::unique_ptr<RmlGodot::DynDataRegistry> dyn_arrays;
 	};
 	std::unordered_map<std::string, DataModelEntry> _data_models;
-
-	// RmlUi's data type register is per-context — must not be shared globally.
-	bool _array_type_registered = false;
 
 	// Lookup helpers — return nullptr (optionally warning) when not found.
 	DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true);
 	const DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true) const;
-	static Rml::Vector<Rml::String>* _get_data_array(DataModelEntry& model,
-		const godot::String& array_name, bool warn = true);
-	static const Rml::Vector<Rml::String>* _get_data_array(const DataModelEntry& model,
+	static RmlGodot::DynNode* _get_data_array(DataModelEntry& model,
 		const godot::String& array_name, bool warn = true);
 
 	struct DragSourceEntry {
