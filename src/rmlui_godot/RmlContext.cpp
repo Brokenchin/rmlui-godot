@@ -280,6 +280,23 @@ void RmlContext::_process(double delta) {
 	// through the usual mutation APIs and is picked up by the redraw gate below.
 	if (_input_tick.is_valid()) {
 		_input_tick.call(delta);
+  }
+	// Issue #37: keep the active drag ghost (if any) pinned under the cursor.
+	if (_ghost_layer != nullptr) {
+		_update_ghost_position();
+	}
+
+	// Issue #47: a passive mouse-move (no _render_dirty set by _gui_input) only
+	// matters visually when the hover chain changes. The deepest hovered
+	// element's ancestry IS the hover chain, so a change in that element means
+	// some element gained or lost :hover and we must repaint. Compared by pointer
+	// identity only — never dereferenced — so a value left dangling by a
+	// since-freed element is harmless (worst case one missed frame, corrected on
+	// the next move).
+	Rml::Element* hover = _rml_context->GetHoverElement();
+	if (hover != _last_hover_element) {
+		_last_hover_element = hover;
+		_render_dirty = true;
 	}
 
 	auto* manager = RmlGodot::RmlManager::get_singleton();
@@ -638,6 +655,10 @@ void RmlContext::_notification(int p_what) {
 			_rml_context->ProcessMouseLeave();
 			_render_dirty = true;
 		}
+	} else if (p_what == godot::Node::NOTIFICATION_DRAG_END) {
+		// Issue #37: the drag finished (dropped or canceled — this fires for both,
+		// propagated to every node) — tear down the ghost's CanvasLayer.
+		_destroy_active_ghost();
 	} else if (p_what == godot::Node::NOTIFICATION_ENTER_TREE) {
 		// Re-entering the tree (editor scene-tab switch, reparenting): the
 		// visuals were freed on exit — repaint from the still-alive context.
@@ -713,6 +734,7 @@ void RmlContext::_cleanup() {
 
 	_listener_records.clear();
 	_last_hovered_id.clear();
+	_last_hover_element = nullptr;
 
 	if (rmlui_alive) {
 		for (auto& ld : _loaded_documents) {

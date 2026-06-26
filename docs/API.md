@@ -32,7 +32,7 @@ process-wide (see RmlManager).
 | `font_pixel_snap`, `font_layout_mode`, `font_hinting`, `font_antialiasing`, `font_subpixel`, `font_oversampling` | — | Granular text tuning; apply process-wide via the shared font engine. |
 | `gpu_scissor` | bool | Shader-based scissoring instead of CPU clipping. |
 | `text_filtering_mode` | enum (Nearest/Linear) | Texture filter for **text glyphs only** — default **Nearest** (crisp, like Godot's own text), independent of the project default and the node's `texture_filter`. Images/decorators keep normal project filtering. Linear is available for smooth-scaled UI; glyph sampling under linear is softness-prone until the SUBPIX_OFFSET alignment follow-up lands. |
-| `editor_mock_data` | Dictionary | `{model_name: {var_name: value}}` — mock models stood up **in the editor only** (preview panel and 2D viewport) so `data-for`/`{{ }}` render without running the game. Arrays become data arrays. |
+| `editor_mock_data` | Dictionary | `{model_name: {var_name: value}}` — mock models stood up **in the editor only** (preview panel and 2D viewport) so `data-for`/`{{ }}` render without running the game. Arrays become data arrays — arrays of dictionaries drive struct-array `data-for` rows for preview. |
 | `input_actions` | PackedStringArray | InputMap actions this context watches via `_unhandled_input`. Each press/release emits `rml_input_action` **and** dispatches to the documents' `<script>` blocks (`_on_input_action(action, pressed)`). Empty = zero input overhead. |
 | `debugger_toggle_key` | int (godot Key) | Key toggling the RmlUi debugger overlay. Default `KEY_F10`, `0` disables. (F8/F9 collide with the editor's Stop/Pause shortcuts for the embedded game window.) Also callable directly: `toggle_debugger()`. |
 | `gamepad_navigation` | bool | Routes Godot's `ui_up/down/left/right`, `ui_focus_next/prev`, `ui_accept`, `ui_cancel` into RmlUi's built-in focus engine: spatial navigation over elements with `nav: auto` (or explicit `nav-*`), tab order via `tab-index: auto`, accept = click on the focused element. Works for keyboard *and* gamepad (the default `ui_*` bindings include D-pad/sticks). A consumed press is marked handled so gameplay doesn't double-react. First directional press auto-focuses the first tabbable element. |
@@ -110,8 +110,13 @@ clear_data_array(model_name, array_name)
 
 Models must exist **before** the document that references them loads
 (`data-model="name"`), or the document logs "Could not locate data model".
-Arrays are arrays-of-strings on the RmlUi side; non-string values are
-stringified. All mutators auto-dirty.
+
+Arrays may hold scalars **or dictionaries**. A dictionary element becomes a
+struct whose keys are accessible as members inside the repeated element
+(`data-for="slot : slots"` → `slot.icon`, `slot.count > 1`, …); field types are
+preserved, and dictionaries/arrays nest arbitrarily. All array mutators
+(`set_data_array`, `push_data_array_item`, `set_data_array_item`, …) accept the
+same scalar-or-dictionary values. All mutators auto-dirty.
 
 ### Elements & events
 
@@ -144,6 +149,21 @@ register_drop_target(element_id, drop_handler := Callable())
 optional `ghost_builder` returns custom ghost RML. Bridges Godot's native drag
 system — works across RmlContexts *and* native Controls. Callables from inline
 `<script>` blocks work (`rml_context.register_drag_source(...)`).
+
+The drag ghost renders on its **own dedicated `CanvasLayer`** (following the
+cursor, freed on drop) rather than via Godot's source-relative
+`set_drag_preview`, so it always draws above the rest of the UI regardless of
+which widget the drag started from. The layer index is configurable globally:
+
+```gdscript
+RmlManager.drag_ghost_layer = 128          # or RmlManager.set_drag_ghost_layer(128)
+```
+
+It defaults to `128` (the top `CanvasLayer`) and is seeded from the
+`rmlui/drag/ghost_layer` project setting; values are clamped to the
+`CanvasLayer` range `[-128, 128]`. Lower it to slot the ghost into a custom
+layer scheme (e.g. above panels but below a modal). Native drop detection
+(`register_drop_target`) is unaffected.
 
 ### Hover bridge
 
@@ -222,6 +242,22 @@ func _tick(delta: float) -> void:
         open_selector(_hold_id)
         _hold_id = ""
 ```
+### Mouse input & hit-testing
+
+An `RmlContext` is a `Control` and keeps `mouse_filter = STOP` so RmlUi receives
+clicks, but it does **not** consume mouse events over its whole rect. It overrides
+`_has_point()` to hit-test the live DOM: Godot's mouse picking only "sees" the
+context where an RML element actually sits under the cursor, so empty / transparent
+gaps fall through to controls (and lower `CanvasLayer`s) behind it. This makes a
+fullscreen or sparse context (a centered panel, a HUD with gaps, scattered widgets)
+non-blocking where there's no content.
+
+- A bare document **body** counts as a hit only when it paints something — an
+  opaque `background-color` or a `decorator`. A transparent fullscreen body passes
+  through; give it a background (or wrap content in a sized element) to capture
+  clicks on its empty area.
+- Opt a specific element out of hit-testing with RCSS `pointer-events: none` —
+  it (and its bare areas) then pass through to whatever is below.
 
 ### Styling & rendering
 

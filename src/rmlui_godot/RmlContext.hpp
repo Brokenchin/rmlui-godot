@@ -2,6 +2,7 @@
 
 #include "RmlGD.hpp"
 #include <godot_cpp/classes/canvas_item_material.hpp>
+#include <godot_cpp/classes/canvas_layer.hpp>
 #include <godot_cpp/classes/material.hpp>
 #include <godot_cpp/classes/shader.hpp>
 #include <godot_cpp/classes/shader_material.hpp>
@@ -22,6 +23,7 @@
 
 #include "GodotRenderInterface.hpp"
 #include "RmlElementHandle.hpp"
+#include "RmlDynamicData.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -224,6 +226,10 @@ public:
 	void _notification(int p_what);
 	void _gui_input(const godot::Ref<godot::InputEvent>& event) override;
 	void _unhandled_input(const godot::Ref<godot::InputEvent>& event) override;
+	// Per-element mouse picking (#46): with mouse_filter = STOP a Control claims
+	// every event over its whole rect. Override so Godot only "sees" the context
+	// where an RML element actually is — empty/transparent gaps fall through.
+	bool _has_point(const godot::Vector2& point) const override;
 	godot::PackedStringArray _get_configuration_warnings() const override;
 
 	godot::PackedStringArray get_input_actions() const { return _input_actions; }
@@ -511,19 +517,17 @@ private:
 		Rml::DataModelHandle handle;
 		std::unordered_map<std::string, Rml::Variant> variables;
 		std::unordered_map<std::string, godot::Callable> event_callbacks;
-		std::unordered_map<std::string, Rml::Vector<Rml::String>> arrays;
+		// Dynamic struct/scalar array backing — created lazily on first
+		// bind_data_array. Owns both the custom VariableDefinitions and the
+		// node trees that RmlUi points into.
+		std::unique_ptr<RmlGodot::DynDataRegistry> dyn_arrays;
 	};
 	std::unordered_map<std::string, DataModelEntry> _data_models;
-
-	// RmlUi's data type register is per-context — must not be shared globally.
-	bool _array_type_registered = false;
 
 	// Lookup helpers — return nullptr (optionally warning) when not found.
 	DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true);
 	const DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true) const;
-	static Rml::Vector<Rml::String>* _get_data_array(DataModelEntry& model,
-		const godot::String& array_name, bool warn = true);
-	static const Rml::Vector<Rml::String>* _get_data_array(const DataModelEntry& model,
+	static RmlGodot::DynNode* _get_data_array(DataModelEntry& model,
 		const godot::String& array_name, bool warn = true);
 
 	struct DragSourceEntry {
@@ -554,10 +558,28 @@ private:
 	// the drag that the same gesture would otherwise start. Set on each mouse
 	// press to that press's consume decision; checked in _get_drag_data.
 	bool _prehandler_consumed_press = false;
+	// Issue #47: deepest hovered element observed last _process(), used to gate
+	// repaints on passive mouse-moves (a change here == the hover chain changed).
+	// Compared by pointer identity only; never dereferenced.
+	Rml::Element* _last_hover_element = nullptr;
 
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);
-	void _create_drag_ghost(const std::string& source_element_id, const godot::Callable& ghost_builder);
+	void _create_drag_ghost(const std::string& source_element_id,
+		const godot::Callable& ghost_builder, const godot::Vector2& grab_offset);
+
+	// Issue #37: drag ghost on its own CanvasLayer. Godot's native
+	// set_drag_preview renders the ghost at the *source context's* stacking
+	// level, so it slips under sibling widgets depending on draw order. Instead
+	// the source context owns a dedicated CanvasLayer (at RmlManager's
+	// configurable index) holding the ghost: it always draws above arbitrary
+	// game UI. The layer follows the cursor in _process and is freed on
+	// NOTIFICATION_DRAG_END (drop or cancel). _ghost_grab_offset keeps the
+	// cursor at the point on the ghost where the drag was grabbed.
+	godot::CanvasLayer* _ghost_layer = nullptr;
+	godot::Vector2 _ghost_grab_offset;
+	void _update_ghost_position();
+	void _destroy_active_ghost();
 
 	void _create_context();
 	void _destroy_context();
