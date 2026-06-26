@@ -203,39 +203,12 @@ func _create_text_file(path: String, content: String) -> bool:
 	return true
 
 
-## Open a text file in the script editor. There is no public API for this
-## (ScriptEditor::open_file is internal), but FileSystemDock's activation
-## handler reaches it natively for registered textfile extensions: select the
-## file via navigate_to_path, then fire the dock Tree's item_activated — the
-## exact double-click code path. Degrades to just selecting the file in the
-## dock if the internal layout ever changes.
-static func open_in_editor(path: String) -> void:
-	if not FileAccess.file_exists(path):
-		push_warning("RmlUI: File not found: %s" % path)
-		return
-	var dock := EditorInterface.get_file_system_dock()
-	dock.navigate_to_path(path)
-	var tree := _find_tree(dock)
-	if tree:
-		tree.item_activated.emit()
-	else:
-		push_warning("RmlUI: FileSystem dock tree not found — file selected, open it manually")
-
-
-static func _find_tree(node: Node) -> Tree:
-	for child in node.get_children():
-		if child is Tree:
-			return child
-		var found := _find_tree(child)
-		if found:
-			return found
-	return null
-
-
-## Instance wrapper: opens the file, then restores the inspector to the
-## context node — opening pushes the file into the Inspector natively, but
-## from these buttons the user is working ON the node.
+## Instance wrapper: opens the file via the shared opener (which handles text
+## files through the FileSystem-dock double-click — no public open-text-file
+## API exists), then restores the inspector to the context node, since opening
+## can push the file into the Inspector but from these buttons the user is
+## working ON the node.
 func _open_in_editor(path: String, refocus: Node = null) -> void:
-	open_in_editor(path)
+	RmlEditorOpen.open_file(path)
 	if refocus and is_instance_valid(refocus):
 		EditorInterface.edit_node.call_deferred(refocus)

@@ -269,6 +269,28 @@ void RmlContext::_process(double /*delta*/) {
 	_sync_dimensions();
 	_rml_context->Update();
 
+	// Hover bridge: detect hover-chain changes after the Update settled them and
+	// push rml_element_hovered / rml_element_unhovered to any external overlay.
+	_update_hover_tracking();
+
+	// Issue #37: keep the active drag ghost (if any) pinned under the cursor.
+	if (_ghost_layer != nullptr) {
+		_update_ghost_position();
+	}
+
+	// Issue #47: a passive mouse-move (no _render_dirty set by _gui_input) only
+	// matters visually when the hover chain changes. The deepest hovered
+	// element's ancestry IS the hover chain, so a change in that element means
+	// some element gained or lost :hover and we must repaint. Compared by pointer
+	// identity only — never dereferenced — so a value left dangling by a
+	// since-freed element is harmless (worst case one missed frame, corrected on
+	// the next move).
+	Rml::Element* hover = _rml_context->GetHoverElement();
+	if (hover != _last_hover_element) {
+		_last_hover_element = hover;
+		_render_dirty = true;
+	}
+
 	auto* manager = RmlGodot::RmlManager::get_singleton();
 	if (manager && manager->is_initialized()) {
 		int fv = manager->get_font_interface().get_global_version();
@@ -290,10 +312,10 @@ void RmlContext::_draw() {
 	auto* rs = godot::RenderingServer::get_singleton();
 	if (rs == nullptr) return;
 
-	// Free previous frame's canvas items and deferred geometry BEFORE Render()
-	// so old RIDs are removed from the rendering tree before we release meshes.
-	_free_scissor_items();
-	_free_layer_items();
+	// Release meshes retired two frames ago. Their canvas-item references were
+	// dropped when the owning slot last changed (canvas_item_clear), so freeing
+	// the RIDs now is safe. Canvas items are NOT torn down here — they persist
+	// across frames and are reconciled at the end of this function.
 	_render_interface.flush_deferred_releases();
 
 	_render_interface.clear_draw_commands();
@@ -301,7 +323,33 @@ void RmlContext::_draw() {
 
 	const auto& commands = _render_interface.get_draw_commands();
 
-	if (!_active_material.is_valid()) return;
+	// Build this frame's slots into the non-current ping-pong buffer, reusing
+	// its Slot storage (and each Slot's prims vector) so the steady state
+	// performs no per-frame heap allocation. `nb[i].desc` is the i-th slot;
+	// new_slot() resets and hands out the next one.
+	std::vector<Slot>& nb = _slots_buf[1 - _slots_cur];
+	size_t used = 0;
+	auto new_slot = [&](SlotDesc::Kind kind) -> int {
+		if (used >= nb.size()) nb.emplace_back();
+		SlotDesc& d = nb[used].desc;
+		d.kind = kind;
+		d.parent = -1;
+		d.material = godot::RID();
+		d.filter = godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT;
+		d.draw_index = -1;
+		d.group_mode = -1;
+		d.modulate_set = false;
+		d.modulate = godot::Color(1, 1, 1, 1);
+		d.set_scissor_param = false;
+		d.scissor_param = godot::Vector4();
+		d.prims.clear(); // retains capacity
+		return static_cast<int>(used++);
+	};
+
+	if (!_active_material.is_valid()) {
+		_reconcile_slots(0); // frees everything from the last frame
+		return;
+	}
 	godot::RID mat_rid = _active_material->get_rid();
 
 	if (_gpu_scissor) _ensure_scissor_material();
@@ -320,22 +368,18 @@ void RmlContext::_draw() {
 	// texture_filter is deliberately NOT consulted — raw RS items skip
 	// node-tree inheritance anyway, and text crispness should not depend on
 	// project-wide or per-node image filtering.
-	const auto text_filter = (_text_filtering_mode == 1)
+	const int text_filter = (_text_filtering_mode == 1)
 		? godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_LINEAR
 		: godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_NEAREST;
 
-	godot::RID root_draw = rs->canvas_item_create();
-	rs->canvas_item_set_parent(root_draw, get_canvas_item());
-	rs->canvas_item_set_material(root_draw, mat_rid);
-	_scissor_items.push_back(root_draw);
+	// Root slot (index 0): a child canvas item of this control's canvas item.
+	new_slot(SlotDesc::ROOT);
+	nb[0].desc.material = mat_rid;
 
-	struct LayerState {
-		godot::RID canvas_item;
-	};
-	std::vector<LayerState> layer_stack;
-	layer_stack.push_back({root_draw});
-
-	godot::RID draw_target = root_draw;
+	// Layer/draw-target tracking by slot index (was canvas-item RIDs).
+	std::vector<int> layer_stack;
+	layer_stack.push_back(0);
+	int draw_target_index = 0;
 
 	// Unified ordered sub-item pipeline.
 	// Every drawable command paints into a child canvas item ("run") of the
@@ -347,44 +391,42 @@ void RmlContext::_draw() {
 	// mixing direct draws with child items would reorder geometry. Routing
 	// everything through ordered runs keeps z-index, GPU-scissor sub-items, and
 	// decorator-shader material switches all consistent.
-	godot::RID run_item;
-	godot::RID run_parent;
+	int cur_run = -1;
+	int run_parent = -1;
 	godot::RID run_material;
 	bool run_scissored = false;
 	godot::Rect2 run_rect;
-	godot::RenderingServer::CanvasItemTextureFilter run_filter =
-		godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT;
+	int run_filter = godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT;
 	int run_draw_index = 0;
 
-	auto invalidate_run = [&]() { run_item = godot::RID(); };
+	auto invalidate_run = [&]() { cur_run = -1; };
 
-	auto target_for = [&](godot::RID parent, godot::RID material,
-			bool scissored, const godot::Rect2& rect,
-			godot::RenderingServer::CanvasItemTextureFilter filter) -> godot::RID {
-		if (run_item.is_valid() && run_parent == parent && run_material == material &&
+	auto target_for = [&](int parent_idx, godot::RID material,
+			bool scissored, const godot::Rect2& rect, int filter) -> int {
+		if (cur_run != -1 && run_parent == parent_idx && run_material == material &&
 			run_scissored == scissored && run_filter == filter &&
 			(!scissored || run_rect == rect)) {
-			return run_item;
+			return cur_run;
 		}
-		godot::RID item = rs->canvas_item_create();
-		rs->canvas_item_set_parent(item, parent);
-		rs->canvas_item_set_material(item, material);
-		rs->canvas_item_set_default_texture_filter(item, filter);
-		rs->canvas_item_set_draw_index(item, run_draw_index++);
+		int idx = new_slot(SlotDesc::RUN);
+		SlotDesc& d = nb[idx].desc;
+		d.parent = parent_idx;
+		d.material = material;
+		d.filter = filter;
+		d.draw_index = run_draw_index++;
 		if (material == scissor_mat_rid) {
-			godot::Vector4 rv = scissored
+			d.set_scissor_param = true;
+			d.scissor_param = scissored
 				? godot::Vector4(rect.position.x + global_pos.x, rect.position.y + global_pos.y, rect.size.x, rect.size.y)
 				: godot::Vector4(-1000000.0f, -1000000.0f, 2000000.0f, 2000000.0f);
-			rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", rv);
 		}
-		_scissor_items.push_back(item);
-		run_item = item;
-		run_parent = parent;
+		cur_run = idx;
+		run_parent = parent_idx;
 		run_material = material;
 		run_scissored = scissored;
 		run_rect = rect;
 		run_filter = filter;
-		return item;
+		return cur_run;
 	};
 
 	for (int ci = 0; ci < static_cast<int>(commands.size()); ci++) {
@@ -394,21 +436,21 @@ void RmlContext::_draw() {
 
 		case CmdType::PUSH_LAYER: {
 			invalidate_run();
-			godot::RID group_item = rs->canvas_item_create();
-			rs->canvas_item_set_parent(group_item, layer_stack.back().canvas_item);
-			rs->canvas_item_set_material(group_item, mat_rid);
-			rs->canvas_item_set_canvas_group_mode(group_item,
-				godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT);
-			_layer_items.push_back(group_item);
-			layer_stack.push_back({group_item});
-			draw_target = group_item;
+			int parent_idx = layer_stack.back();
+			int gi = new_slot(SlotDesc::GROUP);
+			SlotDesc& d = nb[gi].desc;
+			d.parent = parent_idx;
+			d.material = mat_rid;
+			d.group_mode = godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT;
+			layer_stack.push_back(gi);
+			draw_target_index = gi;
 			break;
 		}
 
 		case CmdType::COMPOSITE_LAYERS: {
 			invalidate_run();
 			if (layer_stack.size() < 2) break;
-			godot::RID current_layer = layer_stack.back().canvas_item;
+			int cur = layer_stack.back();
 
 			float opacity = 1.0f;
 			for (auto filter_handle : cmd.filters) {
@@ -420,8 +462,8 @@ void RmlContext::_draw() {
 			}
 
 			if (opacity < 1.0f) {
-				rs->canvas_item_set_modulate(current_layer,
-					godot::Color(1.0f, 1.0f, 1.0f, opacity));
+				nb[cur].desc.modulate_set = true;
+				nb[cur].desc.modulate = godot::Color(1.0f, 1.0f, 1.0f, opacity);
 			}
 			break;
 		}
@@ -430,7 +472,7 @@ void RmlContext::_draw() {
 			invalidate_run();
 			if (layer_stack.size() > 1) {
 				layer_stack.pop_back();
-				draw_target = layer_stack.back().canvas_item;
+				draw_target_index = layer_stack.back();
 			}
 			break;
 		}
@@ -438,14 +480,10 @@ void RmlContext::_draw() {
 		case CmdType::ENABLE_CLIP_MASK: {
 			invalidate_run();
 			if (layer_stack.size() < 2) break;
-			godot::RID current_layer = layer_stack.back().canvas_item;
-			if (cmd.clip_mask_enabled) {
-				rs->canvas_item_set_canvas_group_mode(current_layer,
-					godot::RenderingServer::CANVAS_GROUP_MODE_CLIP_AND_DRAW);
-			} else {
-				rs->canvas_item_set_canvas_group_mode(current_layer,
-					godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT);
-			}
+			int cur = layer_stack.back();
+			nb[cur].desc.group_mode = cmd.clip_mask_enabled
+				? godot::RenderingServer::CANVAS_GROUP_MODE_CLIP_AND_DRAW
+				: godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT;
 			break;
 		}
 
@@ -465,8 +503,16 @@ void RmlContext::_draw() {
 
 			godot::Ref<godot::Texture2D> tex = _render_interface.get_texture_or_white(0);
 			godot::RID tex_rid = tex.is_valid() ? tex->get_rid() : godot::RID();
-			rs->canvas_item_add_mesh(draw_target, mask_mesh->get_rid(), xform,
-				godot::Color(1, 1, 1, 1), tex_rid);
+			// Clip-mask geometry draws directly into the group item (it must
+			// paint before the group's children); recorded as a prim of that slot.
+			SlotPrim p;
+			p.kind = SlotPrim::MESH;
+			p.geo_handle = static_cast<uintptr_t>(cmd.geometry);
+			p.tex_handle = 0;
+			p.xform = xform;
+			p.mesh_rid = mask_mesh->get_rid();
+			p.tex_rid = tex_rid;
+			nb[draw_target_index].desc.prims.push_back(std::move(p));
 			break;
 		}
 
@@ -518,14 +564,14 @@ void RmlContext::_draw() {
 				continue;
 			}
 
-			draw_target = layer_stack.back().canvas_item;
+			draw_target_index = layer_stack.back();
 
 			godot::Ref<godot::Texture2D> draw_tex = _render_interface.get_texture_or_white(cmd.texture);
 			godot::RID tex_rid = draw_tex.is_valid() ? draw_tex->get_rid() : godot::RID();
 
 			// Glyph-atlas draws use the explicit text filter; everything else
 			// follows the project default.
-			const auto cmd_filter = _render_interface.is_generated_texture(cmd.texture)
+			const int cmd_filter = _render_interface.is_generated_texture(cmd.texture)
 				? text_filter
 				: godot::RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT;
 
@@ -541,22 +587,41 @@ void RmlContext::_draw() {
 			bool gpu_path = use_gpu && !is_shader;
 
 			if (gpu_path) {
-				godot::RID target = target_for(draw_target, scissor_mat_rid, needs_scissor, clip_rect, cmd_filter);
-				rs->canvas_item_add_mesh(target, mesh->get_rid(), xform,
-					godot::Color(1, 1, 1, 1), tex_rid);
+				int target = target_for(draw_target_index, scissor_mat_rid, needs_scissor, clip_rect, cmd_filter);
+				SlotPrim p;
+				p.kind = SlotPrim::MESH;
+				p.geo_handle = static_cast<uintptr_t>(cmd.geometry);
+				p.tex_handle = static_cast<uintptr_t>(cmd.texture);
+				p.xform = xform;
+				p.mesh_rid = mesh->get_rid();
+				p.tex_rid = tex_rid;
+				nb[target].desc.prims.push_back(std::move(p));
 			} else if (needs_scissor) {
+				// CPU clip: validate it produces output now (so an empty clip
+				// skips the draw exactly as before); the clipped triangle array
+				// is recomputed in _apply_slot only when the slot actually changes.
 				const auto* raw = _render_interface.get_raw_geometry(cmd.geometry);
 				if (raw && _clip_mesh_to_rect(*raw, xform, clip_rect, clip_buf)) {
-					godot::RID target = target_for(draw_target, geo_material, false, clip_rect, cmd_filter);
-					rs->canvas_item_add_triangle_array(target,
-						clip_buf.indices, clip_buf.positions, clip_buf.colors,
-						clip_buf.uvs, godot::PackedInt32Array(),
-						godot::PackedFloat32Array(), tex_rid);
+					int target = target_for(draw_target_index, geo_material, false, clip_rect, cmd_filter);
+					SlotPrim p;
+					p.kind = SlotPrim::TRI_ARRAY;
+					p.geo_handle = static_cast<uintptr_t>(cmd.geometry);
+					p.tex_handle = static_cast<uintptr_t>(cmd.texture);
+					p.xform = xform;
+					p.clip_rect = clip_rect;
+					p.tex_rid = tex_rid;
+					nb[target].desc.prims.push_back(std::move(p));
 				}
 			} else {
-				godot::RID target = target_for(draw_target, geo_material, false, clip_rect, cmd_filter);
-				rs->canvas_item_add_mesh(target, mesh->get_rid(), xform,
-					godot::Color(1, 1, 1, 1), tex_rid);
+				int target = target_for(draw_target_index, geo_material, false, clip_rect, cmd_filter);
+				SlotPrim p;
+				p.kind = SlotPrim::MESH;
+				p.geo_handle = static_cast<uintptr_t>(cmd.geometry);
+				p.tex_handle = static_cast<uintptr_t>(cmd.texture);
+				p.xform = xform;
+				p.mesh_rid = mesh->get_rid();
+				p.tex_rid = tex_rid;
+				nb[target].desc.prims.push_back(std::move(p));
 			}
 			break;
 		}
@@ -564,6 +629,7 @@ void RmlContext::_draw() {
 		} // switch
 	}
 
+	_reconcile_slots(used);
 }
 
 void RmlContext::_notification(int p_what) {
@@ -573,6 +639,18 @@ void RmlContext::_notification(int p_what) {
 			_rml_context->Update();
 			_render_dirty = true;
 		}
+	} else if (p_what == godot::Control::NOTIFICATION_MOUSE_EXIT) {
+		// Godot stops delivering motion once the cursor leaves the Control, so
+		// RmlUi never learns the mouse left and the hover chain would stay stuck.
+		// Clear it explicitly — _process then emits the pending unhover.
+		if (_rml_context != nullptr) {
+			_rml_context->ProcessMouseLeave();
+			_render_dirty = true;
+		}
+	} else if (p_what == godot::Node::NOTIFICATION_DRAG_END) {
+		// Issue #37: the drag finished (dropped or canceled — this fires for both,
+		// propagated to every node) — tear down the ghost's CanvasLayer.
+		_destroy_active_ghost();
 	} else if (p_what == godot::Node::NOTIFICATION_ENTER_TREE) {
 		// Re-entering the tree (editor scene-tab switch, reparenting): the
 		// visuals were freed on exit — repaint from the still-alive context.
@@ -584,8 +662,7 @@ void RmlContext::_notification(int p_what) {
 		// Full teardown happens in the destructor.
 		auto* rs = godot::RenderingServer::get_singleton();
 		if (rs != nullptr) {
-			_free_scissor_items();
-			_free_layer_items();
+			_free_all_slots();
 			_render_interface.flush_deferred_releases();
 		}
 	}
@@ -648,6 +725,8 @@ void RmlContext::_cleanup() {
 	bool rmlui_alive = manager && manager->is_initialized();
 
 	_listener_records.clear();
+	_last_hovered_id.clear();
+	_last_hover_element = nullptr;
 
 	if (rmlui_alive) {
 		for (auto& ld : _loaded_documents) {
@@ -667,8 +746,7 @@ void RmlContext::_cleanup() {
 
 	_destroy_context();
 
-	_free_scissor_items();
-	_free_layer_items();
+	_free_all_slots();
 
 	_render_interface.release_all_resources();
 }
@@ -802,22 +880,128 @@ void RmlContext::_sync_dimensions() {
 	}
 }
 
-void RmlContext::_free_scissor_items() {
-	if (_scissor_items.empty()) return;
-	auto* rs = godot::RenderingServer::get_singleton();
-	for (auto& rid : _scissor_items) {
-		rs->free_rid(rid);
-	}
-	_scissor_items.clear();
+bool RmlContext::_prim_equal(const SlotPrim& a, const SlotPrim& b) {
+	if (a.kind != b.kind || a.geo_handle != b.geo_handle || a.tex_handle != b.tex_handle)
+		return false;
+	if (a.xform != b.xform || a.modulate != b.modulate)
+		return false;
+	if (a.kind == SlotPrim::TRI_ARRAY && a.clip_rect != b.clip_rect)
+		return false;
+	return true;
 }
 
-void RmlContext::_free_layer_items() {
-	if (_layer_items.empty()) return;
-	auto* rs = godot::RenderingServer::get_singleton();
-	for (auto& rid : _layer_items) {
-		rs->free_rid(rid);
+bool RmlContext::_desc_equal(const SlotDesc& a, const SlotDesc& b) {
+	if (a.kind != b.kind || a.parent != b.parent || a.material != b.material ||
+		a.filter != b.filter || a.draw_index != b.draw_index ||
+		a.group_mode != b.group_mode || a.modulate_set != b.modulate_set ||
+		a.set_scissor_param != b.set_scissor_param ||
+		a.prims.size() != b.prims.size())
+		return false;
+	if (a.modulate_set && a.modulate != b.modulate) return false;
+	if (a.set_scissor_param && a.scissor_param != b.scissor_param) return false;
+	for (size_t i = 0; i < a.prims.size(); ++i) {
+		if (!_prim_equal(a.prims[i], b.prims[i])) return false;
 	}
-	_layer_items.clear();
+	return true;
+}
+
+// (Re)apply a slot's complete state to its canvas item. Always sets every
+// property to a defined value (not just the ones that differ from defaults) so
+// a recycled RID never carries stale group-mode/modulate/material from whatever
+// it held last frame. Called only for new or changed slots.
+void RmlContext::_apply_slot(int slot_index, const SlotDesc& desc,
+		const godot::RID& parent_rid, const godot::RID& item) {
+	auto* rs = godot::RenderingServer::get_singleton();
+	if (rs == nullptr) return;
+
+	rs->canvas_item_set_parent(item, parent_rid);
+	rs->canvas_item_set_material(item, desc.material);
+	rs->canvas_item_set_default_texture_filter(item,
+		static_cast<godot::RenderingServer::CanvasItemTextureFilter>(desc.filter));
+	if (desc.draw_index >= 0)
+		rs->canvas_item_set_draw_index(item, desc.draw_index);
+	rs->canvas_item_set_canvas_group_mode(item,
+		desc.group_mode >= 0
+			? static_cast<godot::RenderingServer::CanvasGroupMode>(desc.group_mode)
+			: godot::RenderingServer::CANVAS_GROUP_MODE_DISABLED);
+	rs->canvas_item_set_modulate(item, desc.modulate);
+	if (desc.set_scissor_param)
+		rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", desc.scissor_param);
+
+	ClipResult clip_buf;
+	for (const auto& p : desc.prims) {
+		if (p.kind == SlotPrim::MESH) {
+			rs->canvas_item_add_mesh(item, p.mesh_rid, p.xform, p.modulate, p.tex_rid);
+		} else {
+			const auto* raw = _render_interface.get_raw_geometry(
+				static_cast<Rml::CompiledGeometryHandle>(p.geo_handle));
+			if (raw && _clip_mesh_to_rect(*raw, p.xform, p.clip_rect, clip_buf)) {
+				rs->canvas_item_add_triangle_array(item,
+					clip_buf.indices, clip_buf.positions, clip_buf.colors,
+					clip_buf.uvs, godot::PackedInt32Array(),
+					godot::PackedFloat32Array(), p.tex_rid);
+			}
+		}
+	}
+}
+
+// Diff this frame's slot descriptors against the previous frame's slots by
+// position. Identical slot -> reuse its canvas item untouched (zero RS calls);
+// changed slot -> reuse the same RID via canvas_item_clear + re-apply; surplus
+// previous slots -> freed. Slots are processed in creation order, so a parent
+// is always finalized before its children read its (possibly new) RID.
+void RmlContext::_reconcile_slots(size_t used) {
+	auto* rs = godot::RenderingServer::get_singleton();
+	if (rs == nullptr) return;
+
+	const godot::RID root_canvas = get_canvas_item();
+
+	std::vector<Slot>& prev = _slots_buf[_slots_cur];
+	std::vector<Slot>& next = _slots_buf[1 - _slots_cur];
+
+	for (size_t i = 0; i < used; ++i) {
+		Slot& s = next[i];
+		const godot::RID parent_rid = (s.desc.parent < 0) ? root_canvas : next[s.desc.parent].rid;
+		s.parent_rid = parent_rid;
+
+		const bool have_prev = (i < _slots_count) && prev[i].rid.is_valid();
+		if (have_prev && prev[i].desc.kind == s.desc.kind) {
+			s.rid = prev[i].rid;
+			const bool same = prev[i].parent_rid == parent_rid &&
+				_desc_equal(prev[i].desc, s.desc);
+			if (!same) {
+				rs->canvas_item_clear(s.rid);
+				_apply_slot(static_cast<int>(i), s.desc, parent_rid, s.rid);
+			}
+			// else: fully reuse — the canvas item already holds the right state.
+		} else {
+			if (have_prev) rs->free_rid(prev[i].rid); // kind changed at this slot
+			s.rid = rs->canvas_item_create();
+			_apply_slot(static_cast<int>(i), s.desc, parent_rid, s.rid);
+		}
+	}
+
+	// Free previous-frame slots that this frame no longer produces.
+	for (size_t i = used; i < _slots_count; ++i) {
+		if (prev[i].rid.is_valid()) rs->free_rid(prev[i].rid);
+	}
+
+	_slots_count = used;
+	_slots_cur = static_cast<uint8_t>(1 - _slots_cur);
+}
+
+void RmlContext::_free_all_slots() {
+	auto* rs = godot::RenderingServer::get_singleton();
+	std::vector<Slot>& prev = _slots_buf[_slots_cur];
+	if (rs != nullptr) {
+		for (size_t i = 0; i < _slots_count && i < prev.size(); ++i) {
+			if (prev[i].rid.is_valid()) {
+				rs->free_rid(prev[i].rid);
+				prev[i].rid = godot::RID();
+			}
+		}
+	}
+	_slots_count = 0;
 }
 
 // --- Public: Data binding ---

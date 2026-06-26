@@ -189,6 +189,12 @@ Rules of the model:
   persistent state in data models or game-side.
 - No `_process`/`_ready` (not a Node) and no debugger breakpoints — put
   complex logic in a `<script src="...">` file instead.
+- **Editor behaviour:** inline blocks do **not** run in the editor by default —
+  they are real game logic, and a stray loop or blocking call would freeze the
+  editor. The document still renders (layout, RCSS, mock-data bindings); only
+  script execution is withheld. To exercise scripts in the live preview panel,
+  tick **Run inline scripts** in its toolbar (per-session, off by default).
+  Compilation still happens, so parse-error diagnostics work regardless.
 
 ## Gamepad & keyboard navigation
 
@@ -229,6 +235,33 @@ Bridges Godot's native drag — drags cross between RmlContexts and native
 Controls freely. See `examples/advanced/inline_drag` for a fully inline
 implementation with a signal bridged back to a Godot Label.
 
+## Hover bridge (unclipped tooltips)
+
+A tooltip authored inside the document (`.slot:hover .card`) is clipped by
+ancestor `overflow` *and* this context's viewport, so it gets cut off at the
+panel edge. To draw it unclipped, render the tooltip in a **separate,
+screen-sized overlay context** and drive it from the hover signals:
+
+```gdscript
+inventory_ctx.rml_element_hovered.connect(_on_slot_hovered)
+inventory_ctx.rml_element_unhovered.connect(_on_slot_unhovered)
+
+func _on_slot_hovered(element_id: String, global_position: Vector2) -> void:
+    var item := items[element_id]
+    overlay_ctx.set_element_inner_rml("tooltip", _card_rml(item))
+    overlay_ctx.set_element_property("tooltip", "left", str(global_position.x) + "px")
+    overlay_ctx.set_element_property("tooltip", "top", str(global_position.y) + "px")
+
+func _on_slot_unhovered(_element_id: String) -> void:
+    overlay_ctx.set_element_property("tooltip", "display", "none")
+```
+
+The id reported is the nearest ancestor with an `id`, resolved at event time —
+so it works for slots streamed in via `set_element_inner_rml`, where
+data-binding attributes don't reliably bind. Signals fire once on enter and
+once on leave; poll `ctx.get_hovered_element_id()` on mouse motion instead if
+you want a tooltip that follows the cursor.
+
 ## Godot textures & shader decorators
 
 ```gdscript
@@ -258,7 +291,9 @@ Everything ships in the addon (`plugin.cfg` → enable "RmlUI"):
 - **Live preview** (bottom panel): select an RmlContext to render its
   document; edits to open `.rml`/`.rcss` buffers apply live without saving;
   mouse hover/click/scroll work inside the panel; parse errors appear in the
-  status line. `editor_mock_data` feeds bindings.
+  status line. `editor_mock_data` feeds bindings. Inline `<script>` blocks stay
+  inert here unless you tick **Run inline scripts** (off by default — they are
+  real game logic and can freeze the editor).
 - **Inspector**: Edit/Create buttons for the document and its linked `.rcss`,
   a live status line, and a Preview shortcut.
 

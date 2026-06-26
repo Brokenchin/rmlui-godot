@@ -34,7 +34,58 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 
 	_forward_mouse_event(event);
 	_forward_key_event(event);
-	_render_dirty = true;
+
+	// Issue #47: don't blanket-dirty on every input. InputEventMouseMotion fires
+	// continuously while the cursor moves over the context, and dirtying here
+	// forced a full document re-render every one of those frames — even hovering
+	// empty space where nothing changes — roughly halving FPS.
+	//
+	// A passive mouse-move's only visual effect is a hover-chain change, which
+	// _process() detects after Update() (the GetHoverElement() check there) and
+	// dirties then, so free hovering now costs ~0 redraws. Everything else still
+	// dirties immediately: button/wheel/key events can change visuals directly,
+	// and a motion with a button held is an active drag/text-selection whose
+	// per-frame visual update RmlUi has no other way to signal to us.
+	auto* motion = godot::Object::cast_to<godot::InputEventMouseMotion>(event.ptr());
+	const bool passive_move = motion != nullptr &&
+		static_cast<int64_t>(motion->get_button_mask()) == 0;
+	if (!passive_move) {
+		_render_dirty = true;
+	}
+}
+
+// Godot calls _has_point for GUI mouse picking. The default Control reports the
+// whole node rect, so with mouse_filter = STOP an RmlContext swallows every
+// event over its bounding box — even where no element sits under the cursor —
+// blocking input to anything behind it (#46). Hit-test the live DOM instead:
+// report a point only where an element actually is, so transparent gaps fall
+// through to controls / lower CanvasLayers below while elements still get input.
+bool RmlContext::_has_point(const godot::Vector2& point) const {
+	if (_rml_context == nullptr) return false;
+
+	// GetElementAtPoint honours `pointer-events` and returns the youngest
+	// element under the point (context-local coords, which match the Control's
+	// local coords). Over empty space it returns the context root element.
+	Rml::Element* el = _rml_context->GetElementAtPoint(
+		Rml::Vector2f(static_cast<float>(point.x), static_cast<float>(point.y)));
+	if (el == nullptr) return false;
+
+	// The context root spans the entire node rect — never a real hit.
+	if (el == _rml_context->GetRootElement()) return false;
+
+	// A document body also covers the whole context when stretched (the common
+	// fullscreen-overlay case). Count its bare area as a hit only when it paints
+	// something — an opaque background or a decorator — so a transparent overlay
+	// passes through instead of swallowing input over all its empty space.
+	// Authored content inside the body (any non-document element) always counts:
+	// its bounding box is the interactive surface, and per-element pass-through
+	// is opted into with `pointer-events: none` (already honoured above).
+	if (rmlui_dynamic_cast<Rml::ElementDocument*>(el) != nullptr) {
+		const auto& cv = el->GetComputedValues();
+		return cv.background_color().alpha > 0 || cv.has_decorator();
+	}
+
+	return true;
 }
 
 void RmlContext::toggle_debugger() {
@@ -207,6 +258,42 @@ void RmlContext::register_drop_target(const godot::String& element_id,
 	_drop_targets.push_back({id, drop_handler});
 }
 
+// --- Hover bridge ---
+
+// Walk up from the topmost hovered element to the nearest ancestor (itself
+// included) carrying a non-empty id, so hovering a slot's inner content still
+// resolves to the slot. Returns "" when nothing opted-in is under the cursor.
+std::string RmlContext::_resolve_hovered_id() const {
+	if (_rml_context == nullptr) return {};
+	// Stop at the context root: its id is the context name (e.g. "default"),
+	// an internal artifact — never an author opt-in, and it would otherwise be
+	// reported for every cursor position over empty space.
+	Rml::Element* root = _rml_context->GetRootElement();
+	for (Rml::Element* el = _rml_context->GetHoverElement(); el != nullptr && el != root; el = el->GetParentNode()) {
+		const Rml::String& id = el->GetId();
+		if (!id.empty()) return std::string(id.c_str());
+	}
+	return {};
+}
+
+godot::String RmlContext::get_hovered_element_id() const {
+	return godot::String(_resolve_hovered_id().c_str());
+}
+
+void RmlContext::_update_hover_tracking() {
+	std::string id = _resolve_hovered_id();
+	if (id == _last_hovered_id) return;
+
+	if (!_last_hovered_id.empty()) {
+		emit_signal("rml_element_unhovered", godot::String(_last_hovered_id.c_str()));
+	}
+	_last_hovered_id = std::move(id);
+	if (!_last_hovered_id.empty()) {
+		emit_signal("rml_element_hovered",
+			godot::String(_last_hovered_id.c_str()), get_global_mouse_position());
+	}
+}
+
 bool RmlContext::_point_in_element(Rml::Element* el, float x, float y) const {
 	Rml::Vector2f offset = el->GetAbsoluteOffset(Rml::BoxArea::Border);
 	Rml::Vector2f size = el->GetBox().GetSize(Rml::BoxArea::Border);
@@ -239,7 +326,11 @@ godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
 			}
 		}
 
-		_create_drag_ghost(source.element_id, source.ghost_builder);
+		// Offset from the source element's top-left to the grab point, so the
+		// ghost can keep the cursor pinned where the drag started (issue #37).
+		Rml::Vector2f el_off = el->GetAbsoluteOffset(Rml::BoxArea::Border);
+		godot::Vector2 grab_offset(p_at_position.x - el_off.x, p_at_position.y - el_off.y);
+		_create_drag_ghost(source.element_id, source.ghost_builder, grab_offset);
 
 		emit_signal("rml_drag_started",
 			godot::String(source.element_id.c_str()), payload);
@@ -358,7 +449,7 @@ Rml::String RmlContext::_build_ghost_rml(Rml::Element* el, int w, int h) {
 }
 
 void RmlContext::_create_drag_ghost(const std::string& source_element_id,
-	const godot::Callable& ghost_builder) {
+	const godot::Callable& ghost_builder, const godot::Vector2& grab_offset) {
 
 	Rml::Element* el = _find_element(godot::String(source_element_id.c_str()));
 	if (el == nullptr) {
@@ -420,7 +511,42 @@ void RmlContext::_create_drag_ghost(const std::string& source_element_id,
 	doc->Show();
 	ghost->_rml_context->Update();
 
-	set_drag_preview(ghost);
+	// Issue #37: instead of Godot's source-relative set_drag_preview (which draws
+	// the ghost at the source context's stacking level — so it slips under
+	// sibling widgets sharing/straddling a CanvasLayer, direction-dependently),
+	// parent the ghost to a dedicated CanvasLayer at RmlManager's configurable
+	// index. That layer sits above arbitrary game UI, so the ghost renders
+	// consistently on top no matter which widget the drag began from. Native
+	// drag data / drop detection are unaffected: the payload is still returned
+	// from _get_drag_data, and _can_drop_data / _drop_data don't depend on the
+	// preview existing.
+	_destroy_active_ghost(); // never leak a ghost from a prior, unfinished drag
+
+	godot::CanvasLayer* layer = memnew(godot::CanvasLayer);
+	layer->set_layer(manager->get_drag_ghost_layer());
+	layer->add_child(ghost);
+	add_child(layer);
+
+	_ghost_layer = layer;
+	_ghost_grab_offset = grab_offset;
+	_update_ghost_position();
+}
+
+void RmlContext::_update_ghost_position() {
+	if (_ghost_layer == nullptr || _ghost_layer->get_child_count() == 0) return;
+	godot::Viewport* vp = get_viewport();
+	if (vp == nullptr) return;
+	auto* ghost = godot::Object::cast_to<godot::Control>(_ghost_layer->get_child(0));
+	if (ghost == nullptr) return;
+	// Viewport-space mouse matches a default (non-following) CanvasLayer's
+	// coordinates, so the ghost tracks the actual cursor pixel.
+	ghost->set_position(vp->get_mouse_position() - _ghost_grab_offset);
+}
+
+void RmlContext::_destroy_active_ghost() {
+	if (_ghost_layer == nullptr) return;
+	_ghost_layer->queue_free(); // frees the ghost child with it
+	_ghost_layer = nullptr;
 }
 
 // --- Phase 8b: Dev tools & extended document management ---

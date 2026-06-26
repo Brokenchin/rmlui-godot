@@ -153,6 +153,17 @@ private:
 	void _ensure_white_texture();
 	godot::Ref<godot::ImageTexture> _white_texture;
 
+	// Built-in gradient decorators (linear/radial/conic + repeating-*) all draw
+	// through one procedural canvas shader, loaded on first use and shared as a
+	// template; each element gets its own ShaderMaterial with per-element uniforms.
+	godot::Ref<godot::Shader> _gradient_shader;
+	Rml::CompiledShaderHandle _compile_gradient_shader(
+		const Rml::String& name, const Rml::Dictionary& parameters);
+	// Once-per-key structured notice for shader-decorator gaps (missing custom
+	// shader, unsupported built-in). Dedupes via _warned_missing_shaders and keeps
+	// the costly console warning out of the editor (issue #29).
+	void _notify_shader_issue(const std::string& key, const godot::String& msg);
+
 	std::unordered_map<uintptr_t, godot::Ref<godot::ArrayMesh>> _geometry;
 	std::vector<godot::Ref<godot::ArrayMesh>> _deferred_geometry_release;
 	std::vector<godot::Ref<godot::ArrayMesh>> _prev_deferred_geometry_release;
@@ -167,6 +178,12 @@ private:
 	// CompileShader so author-set uniforms persist while element_dimensions
 	// stays per-instance.
 	std::unordered_map<std::string, godot::Ref<godot::ShaderMaterial>> _registered_shaders;
+	// Shader names already reported missing — warn once per name, not once per
+	// element. A grid of N slots sharing one decorator would otherwise emit N
+	// identical warnings on every reload; in the editor each push_warning carries
+	// a backtrace + debugger round-trip, so per-keystroke reloads freeze editing
+	// (issue #29). Cleared when the shader set changes (register/unregister).
+	std::unordered_set<std::string> _warned_missing_shaders;
 
 	uintptr_t _next_geo_handle = 1;
 	uintptr_t _next_tex_handle = 1;

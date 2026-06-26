@@ -2,6 +2,7 @@
 
 #include "RmlGD.hpp"
 #include <godot_cpp/classes/canvas_item_material.hpp>
+#include <godot_cpp/classes/canvas_layer.hpp>
 #include <godot_cpp/classes/material.hpp>
 #include <godot_cpp/classes/shader.hpp>
 #include <godot_cpp/classes/shader_material.hpp>
@@ -14,6 +15,11 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/rid.hpp>
+#include <godot_cpp/variant/transform2d.hpp>
+#include <godot_cpp/variant/vector4.hpp>
+#include <godot_cpp/variant/color.hpp>
+#include <godot_cpp/variant/rect2.hpp>
 
 #include "GodotRenderInterface.hpp"
 #include "RmlElementHandle.hpp"
@@ -106,6 +112,16 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
 		godot::PropertyInfo(godot::Variant::DICTIONARY, "data")));
 
+	// Hover bridge — mirrors the drag bridge for tooltips drawn in a separate
+	// overlay context (resolved by element id at event time, so it works for
+	// dynamically-inserted slots that data-binding attributes can't reach).
+	godot::ClassDB::bind_method(godot::D_METHOD("get_hovered_element_id"), &RmlContext::get_hovered_element_id);
+	ADD_SIGNAL(godot::MethodInfo("rml_element_hovered",
+		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
+		godot::PropertyInfo(godot::Variant::VECTOR2, "global_position")));
+	ADD_SIGNAL(godot::MethodInfo("rml_element_unhovered",
+		godot::PropertyInfo(godot::Variant::STRING, "element_id")));
+
 	// Input actions & navigation (see input_actions / gamepad_navigation)
 	godot::ClassDB::bind_method(godot::D_METHOD("set_input_actions", "actions"), &RmlContext::set_input_actions);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_input_actions"), &RmlContext::get_input_actions);
@@ -152,6 +168,8 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("reset_base_rcss"), &RmlContext::reset_base_rcss);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_editor_mock_data", "data"), &RmlContext::set_editor_mock_data);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_editor_mock_data"), &RmlContext::get_editor_mock_data);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_editor_scripts_enabled", "enabled"), &RmlContext::set_editor_scripts_enabled);
+	godot::ClassDB::bind_method(godot::D_METHOD("is_editor_scripts_enabled"), &RmlContext::is_editor_scripts_enabled);
 
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::STRING, "rml_context_name"), "set_rml_context_name", "get_rml_context_name");
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::FLOAT, "dp_ratio", godot::PROPERTY_HINT_RANGE, "0.25,4.0,0.25"), "set_dp_ratio", "get_dp_ratio");
@@ -199,6 +217,10 @@ public:
 	void _notification(int p_what);
 	void _gui_input(const godot::Ref<godot::InputEvent>& event) override;
 	void _unhandled_input(const godot::Ref<godot::InputEvent>& event) override;
+	// Per-element mouse picking (#46): with mouse_filter = STOP a Control claims
+	// every event over its whole rect. Override so Godot only "sees" the context
+	// where an RML element actually is — empty/transparent gaps fall through.
+	bool _has_point(const godot::Vector2& point) const override;
 	godot::PackedStringArray _get_configuration_warnings() const override;
 
 	godot::PackedStringArray get_input_actions() const { return _input_actions; }
@@ -246,6 +268,10 @@ public:
 	void set_document_path(const godot::String& path);
 	godot::Dictionary get_editor_mock_data() const { return _editor_mock_data; }
 	void set_editor_mock_data(const godot::Dictionary& data) { _editor_mock_data = data; }
+	// No ADD_PROPERTY: this is a preview-panel toggle, not an authored setting —
+	// kept off the inspector so scenes never persist "run scripts in editor".
+	bool is_editor_scripts_enabled() const { return _editor_scripts_enabled; }
+	void set_editor_scripts_enabled(bool enabled) { _editor_scripts_enabled = enabled; }
 	godot::PackedStringArray get_font_paths() const { return _font_paths; }
 	void set_font_paths(const godot::PackedStringArray& paths);
 
@@ -338,6 +364,10 @@ public:
 	// A4: Drag-and-drop (gd_drag interop)
 	void register_drag_source(const godot::String& element_id, const godot::Callable& payload_builder = godot::Callable(), const godot::Callable& ghost_builder = godot::Callable());
 	void register_drop_target(const godot::String& element_id, const godot::Callable& drop_handler = godot::Callable());
+
+	// Hover bridge: id of the element currently under the cursor (nearest
+	// ancestor carrying an id), or "" when nothing opted-in is hovered.
+	godot::String get_hovered_element_id() const;
 	godot::Variant _get_drag_data(const godot::Vector2& p_at_position) override;
 	bool _can_drop_data(const godot::Vector2& p_at_position, const godot::Variant& p_data) const override;
 	void _drop_data(const godot::Vector2& p_at_position, const godot::Variant& p_data) override;
@@ -355,6 +385,12 @@ private:
 	godot::String _document_path;
 	godot::PackedStringArray _font_paths;
 	godot::Dictionary _editor_mock_data;
+	// Editor-only gate for inline <script>/gdscript: execution. Default false:
+	// in the editor user game-logic must not run (a stray loop/blocking call
+	// freezes the editor — issue #29). Ignored at runtime, where scripts always
+	// run. The preview panel flips this on its throwaway context when the user
+	// opts in via the "Run inline scripts" checkbox.
+	bool _editor_scripts_enabled = false;
 	godot::PackedStringArray _input_actions;
 	bool _gamepad_navigation = false;
 	// Key toggling the RmlUi debugger overlay (godot::Key value, 0 = disabled).
@@ -377,9 +413,63 @@ private:
 		Rml::ElementDocument* document = nullptr;
 	};
 	std::vector<LoadedDocument> _loaded_documents;
-	std::vector<godot::RID> _scissor_items;
-	std::vector<godot::RID> _layer_items;
 	godot::Ref<godot::Material> _active_material;
+
+	// --- Persistent canvas-item slot model (redraw coalescing, issue #14) ---
+	// Each frame _draw() builds a flat, ordered list of canvas-item "slots"
+	// (the root item, layer/clip-mask group items, and batched geometry "runs")
+	// as plain descriptors — no RenderingServer calls. _reconcile_slots() then
+	// diffs that list against the previous frame's slots by position: an
+	// identical slot keeps its RID untouched (zero RS work), a changed slot
+	// reuses the same RID via canvas_item_clear + re-add, and trailing slots no
+	// longer produced are freed. RmlUi already caches compiled geometry per
+	// element (unchanged elements keep a stable, monotonically-allocated
+	// CompiledGeometryHandle), so a localized change — e.g. one cell's :hover —
+	// touches only the handful of slots that actually differ instead of tearing
+	// down and rebuilding the whole tree every frame.
+	struct SlotPrim {
+		enum Kind : uint8_t { MESH, TRI_ARRAY };
+		Kind kind = MESH;
+		// Identity (compared to decide reuse). Geometry handles are never
+		// recycled, so an unchanged element keeps the same handle and a
+		// recompiled one gets a fresh handle — exact change detection.
+		uintptr_t geo_handle = 0;
+		uintptr_t tex_handle = 0;
+		godot::Transform2D xform;
+		godot::Color modulate{1, 1, 1, 1};
+		godot::Rect2 clip_rect;      // TRI_ARRAY: CPU-clip rect (re-clipped on apply)
+		// Resolved resources used to (re)build the draw on apply.
+		godot::RID mesh_rid;
+		godot::RID tex_rid;
+	};
+
+	struct SlotDesc {
+		enum Kind : uint8_t { ROOT, GROUP, RUN };
+		Kind kind = RUN;
+		int parent = -1;             // slot index of parent; -1 => get_canvas_item()
+		godot::RID material;
+		int filter = 0;              // RenderingServer::CanvasItemTextureFilter
+		int draw_index = -1;         // -1 => leave default (root/groups)
+		int group_mode = -1;         // -1 => don't set; else CanvasGroupMode
+		bool modulate_set = false;
+		godot::Color modulate{1, 1, 1, 1};
+		bool set_scissor_param = false;
+		godot::Vector4 scissor_param;
+		std::vector<SlotPrim> prims; // drawn directly into this item
+	};
+
+	struct Slot {
+		SlotDesc desc;
+		godot::RID rid;
+		godot::RID parent_rid;
+	};
+	// Two ping-ponged slot buffers: one holds the previous frame, the other is
+	// (re)built this frame. Reusing the buffers — and each Slot's prims vector
+	// (cleared, not destroyed) — means steady-state frames allocate nothing,
+	// which is what keeps the all-mutated worst case from regressing.
+	std::vector<Slot> _slots_buf[2];
+	uint8_t _slots_cur = 0;    // buffer index holding the previous frame
+	size_t _slots_count = 0;   // valid slot count in the previous buffer
 
 	bool _gpu_scissor = false;
 	bool _render_dirty = true;
@@ -433,17 +523,52 @@ private:
 	};
 	std::vector<DropTargetEntry> _drop_targets;
 
+	// Hover bridge: last id reported via rml_element_hovered ("" = none).
+	// Polled in _process after the context Update so it tracks the live hover
+	// chain (including elements streamed in via set_element_inner_rml).
+	std::string _last_hovered_id;
+	std::string _resolve_hovered_id() const;
+	void _update_hover_tracking();
+
+	// Issue #47: deepest hovered element observed last _process(), used to gate
+	// repaints on passive mouse-moves (a change here == the hover chain changed).
+	// Compared by pointer identity only; never dereferenced.
+	Rml::Element* _last_hover_element = nullptr;
+
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);
-	void _create_drag_ghost(const std::string& source_element_id, const godot::Callable& ghost_builder);
+	void _create_drag_ghost(const std::string& source_element_id,
+		const godot::Callable& ghost_builder, const godot::Vector2& grab_offset);
+
+	// Issue #37: drag ghost on its own CanvasLayer. Godot's native
+	// set_drag_preview renders the ghost at the *source context's* stacking
+	// level, so it slips under sibling widgets depending on draw order. Instead
+	// the source context owns a dedicated CanvasLayer (at RmlManager's
+	// configurable index) holding the ghost: it always draws above arbitrary
+	// game UI. The layer follows the cursor in _process and is freed on
+	// NOTIFICATION_DRAG_END (drop or cancel). _ghost_grab_offset keeps the
+	// cursor at the point on the ghost where the drag was grabbed.
+	godot::CanvasLayer* _ghost_layer = nullptr;
+	godot::Vector2 _ghost_grab_offset;
+	void _update_ghost_position();
+	void _destroy_active_ghost();
 
 	void _create_context();
 	void _destroy_context();
 	void _cleanup();
 
 	void _sync_dimensions();
-	void _free_scissor_items();
-	void _free_layer_items();
+	// Diff the freshly-built slot buffer (the first `used` entries of the
+	// non-current buffer) against the previous frame and emit the minimal set
+	// of RenderingServer calls; then flips _slots_cur.
+	void _reconcile_slots(size_t used);
+	static bool _prim_equal(const SlotPrim& a, const SlotPrim& b);
+	static bool _desc_equal(const SlotDesc& a, const SlotDesc& b);
+	// (Re)apply a slot's full state to its canvas item: parent, material,
+	// filter, draw index, group mode, modulate, scissor uniform, and prims.
+	void _apply_slot(int slot_index, const SlotDesc& desc, const godot::RID& parent_rid,
+		const godot::RID& canvas_item);
+	void _free_all_slots();
 	void _forward_mouse_event(const godot::Ref<godot::InputEvent>& event);
 	void _forward_key_event(const godot::Ref<godot::InputEvent>& event);
 };

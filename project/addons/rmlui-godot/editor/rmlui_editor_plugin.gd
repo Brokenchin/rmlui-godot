@@ -8,6 +8,7 @@ var _preview_panel: RmlPreviewPanel
 var _completion_provider: RcssCompletionProvider
 var _completion_timer: Timer
 var _diagnostics: RmlDiagnostics
+var _link_nav: RmlLinkNavigation
 
 func _enter_tree():
 	_register_textfile_extensions()
@@ -30,6 +31,9 @@ func _enter_tree():
 
 	_diagnostics = RmlDiagnostics.new()
 	add_child(_diagnostics)
+
+	_link_nav = RmlLinkNavigation.new()
+	add_child(_link_nav)
 
 	_inspector_plugin = RmlInspectorPlugin.new()
 	_inspector_plugin.preview_opener = _open_preview_for
@@ -77,6 +81,13 @@ func _ensure_completion_hook() -> void:
 	if _diagnostics:
 		_diagnostics.attach(ce if kind != "" else null, kind)
 
+	# Ctrl-click link navigation (issue #23) follows the tab too. The script
+	# editor exposes no API for the edited text file's path, so read it from the
+	# tab tooltip (full res:// path) to resolve relative src/href/url targets.
+	if _link_nav:
+		_link_nav.attach(ce if kind != "" else null,
+			_edited_file_path(ed) if kind != "" else "")
+
 	# Auto-close: typing '>' after an opening tag inserts the matching
 	# closing tag, caret stays between them (RML is XML — no anonymous </>).
 	if hl is RmlSyntaxHighlighter and not ce.has_meta("rmlui_autoclose"):
@@ -105,11 +116,47 @@ func _on_rml_text_changed(ce: CodeEdit) -> void:
 	var tag := RcssCompletionProvider.autoclose_tag_for(ce.get_line(line), col)
 	if tag.is_empty():
 		return
+	# Issue #35: don't auto-insert the close when this freshly-completed tag is
+	# already matched by an existing </tag> ahead in the buffer — re-typing the
+	# '>' of an already-complete element (delete it, add it back) must not
+	# duplicate the close. The line-local guard in autoclose_tag_for only sees
+	# the chars right after the caret, so scan the rest of the document here.
+	if RcssCompletionProvider.tag_has_matching_close(_text_from_caret(ce, line, col), tag):
+		return
 	_auto_closing = true
 	ce.insert_text("</" + tag + ">", line, col)
 	ce.set_caret_line(line)
 	ce.set_caret_column(col)
 	_auto_closing = false
+
+
+## Buffer text from the caret to (at most) 400 lines ahead — enough to find an
+## element's matching close without scanning huge files on every keystroke.
+func _text_from_caret(ce: CodeEdit, line: int, col: int) -> String:
+	var parts := PackedStringArray()
+	parts.append(ce.get_line(line).substr(col))
+	var limit := mini(ce.get_line_count(), line + 1 + 400)
+	for i in range(line + 1, limit):
+		parts.append(ce.get_line(i))
+	return "\n".join(parts)
+
+## Full res:// path of the file behind a script-editor tab. The editor exposes
+## no API for a text file's path, but the tab tooltip carries it (a TextFile's
+## path is shown there). Returns "" when it can't be read — relative link
+## navigation then falls back to a project search.
+func _edited_file_path(ed: ScriptEditorBase) -> String:
+	var tc := ed.get_parent() as TabContainer
+	if tc == null:
+		return ""
+	var idx := tc.get_tab_idx_from_control(ed)
+	if idx < 0:
+		return ""
+	for tip_line in tc.get_tab_tooltip(idx).split("\n", false):
+		var s := tip_line.strip_edges()
+		if s.begins_with("res://") or s.begins_with("user://"):
+			return s
+	return ""
+
 
 func _on_completion_requested(ce: CodeEdit) -> void:
 	var hl := ce.syntax_highlighter

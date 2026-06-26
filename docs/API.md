@@ -46,6 +46,8 @@ nonexistent document/font files, and no-fonts-anywhere setups.
 |---|---|---|
 | `rml_drag_started` | `element_id: String, payload: Dictionary` | A registered drag source started dragging. |
 | `rml_drop_received` | `element_id: String, data: Dictionary` | A registered drop target received a drop. |
+| `rml_element_hovered` | `element_id: String, global_position: Vector2` | The cursor entered an element carrying an id (nearest id ancestor). |
+| `rml_element_unhovered` | `element_id: String` | The cursor left the previously-hovered element. |
 | `rml_input_action` | `action: String, pressed: bool` | A watched InputMap action (see `input_actions`) was pressed/released. |
 
 ### Documents
@@ -147,6 +149,58 @@ register_drop_target(element_id, drop_handler := Callable())
 optional `ghost_builder` returns custom ghost RML. Bridges Godot's native drag
 system — works across RmlContexts *and* native Controls. Callables from inline
 `<script>` blocks work (`rml_context.register_drag_source(...)`).
+
+The drag ghost renders on its **own dedicated `CanvasLayer`** (following the
+cursor, freed on drop) rather than via Godot's source-relative
+`set_drag_preview`, so it always draws above the rest of the UI regardless of
+which widget the drag started from. The layer index is configurable globally:
+
+```gdscript
+RmlManager.drag_ghost_layer = 128          # or RmlManager.set_drag_ghost_layer(128)
+```
+
+It defaults to `128` (the top `CanvasLayer`) and is seeded from the
+`rmlui/drag/ghost_layer` project setting; values are clamped to the
+`CanvasLayer` range `[-128, 128]`. Lower it to slot the ghost into a custom
+layer scheme (e.g. above panels but below a modal). Native drop detection
+(`register_drop_target`) is unaffected.
+
+### Hover bridge
+
+```gdscript
+get_hovered_element_id() -> String   # nearest id under the cursor, or ""
+# signal rml_element_hovered(element_id: String, global_position: Vector2)
+# signal rml_element_unhovered(element_id: String)
+```
+
+Mirrors the drag bridge for tooltips that must escape the source document's
+clipping. Connect `rml_element_hovered` / `rml_element_unhovered` and render the
+tooltip in a **separate, screen-sized overlay context** so it isn't clipped by
+ancestor `overflow` or this context's viewport. Resolution is by element id at
+event time (the nearest ancestor carrying an `id`), so it works for slots
+streamed in via `set_element_inner_rml` — the case where data-binding attributes
+don't reliably bind. `global_position` is the cursor's position when the hover
+began. The signal fires once on enter and once on leave, not on motion within
+the element; poll `get_hovered_element_id()` on mouse motion if you need a
+following tooltip. Leaving the context entirely (cursor exits the Control) also
+emits `rml_element_unhovered`.
+
+### Mouse input & hit-testing
+
+An `RmlContext` is a `Control` and keeps `mouse_filter = STOP` so RmlUi receives
+clicks, but it does **not** consume mouse events over its whole rect. It overrides
+`_has_point()` to hit-test the live DOM: Godot's mouse picking only "sees" the
+context where an RML element actually sits under the cursor, so empty / transparent
+gaps fall through to controls (and lower `CanvasLayer`s) behind it. This makes a
+fullscreen or sparse context (a centered panel, a HUD with gaps, scattered widgets)
+non-blocking where there's no content.
+
+- A bare document **body** counts as a hit only when it paints something — an
+  opaque `background-color` or a `decorator`. A transparent fullscreen body passes
+  through; give it a background (or wrap content in a sized element) to capture
+  clicks on its empty area.
+- Opt a specific element out of hit-testing with RCSS `pointer-events: none` —
+  it (and its bare areas) then pass through to whatever is below.
 
 ### Styling & rendering
 
