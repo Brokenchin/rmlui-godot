@@ -216,6 +216,10 @@ public:
 	void _notification(int p_what);
 	void _gui_input(const godot::Ref<godot::InputEvent>& event) override;
 	void _unhandled_input(const godot::Ref<godot::InputEvent>& event) override;
+	// Per-element mouse picking (#46): with mouse_filter = STOP a Control claims
+	// every event over its whole rect. Override so Godot only "sees" the context
+	// where an RML element actually is — empty/transparent gaps fall through.
+	bool _has_point(const godot::Vector2& point) const override;
 	godot::PackedStringArray _get_configuration_warnings() const override;
 
 	godot::PackedStringArray get_input_actions() const { return _input_actions; }
@@ -526,6 +530,11 @@ private:
 	std::string _last_hovered_id;
 	std::string _resolve_hovered_id() const;
 	void _update_hover_tracking();
+
+	// Issue #47: deepest hovered element observed last _process(), used to gate
+	// repaints on passive mouse-moves (a change here == the hover chain changed).
+	// Compared by pointer identity only; never dereferenced.
+	Rml::Element* _last_hover_element = nullptr;
 
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);

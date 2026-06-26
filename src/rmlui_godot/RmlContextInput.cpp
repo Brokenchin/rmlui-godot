@@ -34,7 +34,58 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 
 	_forward_mouse_event(event);
 	_forward_key_event(event);
-	_render_dirty = true;
+
+	// Issue #47: don't blanket-dirty on every input. InputEventMouseMotion fires
+	// continuously while the cursor moves over the context, and dirtying here
+	// forced a full document re-render every one of those frames — even hovering
+	// empty space where nothing changes — roughly halving FPS.
+	//
+	// A passive mouse-move's only visual effect is a hover-chain change, which
+	// _process() detects after Update() (the GetHoverElement() check there) and
+	// dirties then, so free hovering now costs ~0 redraws. Everything else still
+	// dirties immediately: button/wheel/key events can change visuals directly,
+	// and a motion with a button held is an active drag/text-selection whose
+	// per-frame visual update RmlUi has no other way to signal to us.
+	auto* motion = godot::Object::cast_to<godot::InputEventMouseMotion>(event.ptr());
+	const bool passive_move = motion != nullptr &&
+		static_cast<int64_t>(motion->get_button_mask()) == 0;
+	if (!passive_move) {
+		_render_dirty = true;
+	}
+}
+
+// Godot calls _has_point for GUI mouse picking. The default Control reports the
+// whole node rect, so with mouse_filter = STOP an RmlContext swallows every
+// event over its bounding box — even where no element sits under the cursor —
+// blocking input to anything behind it (#46). Hit-test the live DOM instead:
+// report a point only where an element actually is, so transparent gaps fall
+// through to controls / lower CanvasLayers below while elements still get input.
+bool RmlContext::_has_point(const godot::Vector2& point) const {
+	if (_rml_context == nullptr) return false;
+
+	// GetElementAtPoint honours `pointer-events` and returns the youngest
+	// element under the point (context-local coords, which match the Control's
+	// local coords). Over empty space it returns the context root element.
+	Rml::Element* el = _rml_context->GetElementAtPoint(
+		Rml::Vector2f(static_cast<float>(point.x), static_cast<float>(point.y)));
+	if (el == nullptr) return false;
+
+	// The context root spans the entire node rect — never a real hit.
+	if (el == _rml_context->GetRootElement()) return false;
+
+	// A document body also covers the whole context when stretched (the common
+	// fullscreen-overlay case). Count its bare area as a hit only when it paints
+	// something — an opaque background or a decorator — so a transparent overlay
+	// passes through instead of swallowing input over all its empty space.
+	// Authored content inside the body (any non-document element) always counts:
+	// its bounding box is the interactive surface, and per-element pass-through
+	// is opted into with `pointer-events: none` (already honoured above).
+	if (rmlui_dynamic_cast<Rml::ElementDocument*>(el) != nullptr) {
+		const auto& cv = el->GetComputedValues();
+		return cv.background_color().alpha > 0 || cv.has_decorator();
+	}
+
+	return true;
 }
 
 void RmlContext::toggle_debugger() {
