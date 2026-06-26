@@ -276,6 +276,8 @@ void RmlContext::_process(double /*delta*/) {
 	// Issue #37: keep the active drag ghost (if any) pinned under the cursor.
 	if (_ghost_layer != nullptr) {
 		_update_ghost_position();
+	}
+
 	// Issue #47: a passive mouse-move (no _render_dirty set by _gui_input) only
 	// matters visually when the hover chain changes. The deepest hovered
 	// element's ancestry IS the hover chain, so a change in that element means
