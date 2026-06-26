@@ -64,6 +64,7 @@ run tests/test_hover_bridge.gd windowed
 run tests/test_perf_stress.gd windowed
 run tests/test_render_dirty.gd windowed
 run tests/test_text_filtering.gd windowed
+run tests/test_gradient_render.gd windowed
 
 echo
 echo "==============================================="

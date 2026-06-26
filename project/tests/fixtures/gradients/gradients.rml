@@ -1,0 +1,44 @@
+<rml>
+<head>
+	<title>Gradient render test</title>
+	<style>
+		/* Solid, unmistakable page background so any blank decorator shows through. */
+		body {
+			background-color: #00ff00; /* pure green */
+			width: 100%;
+			height: 100%;
+		}
+		div {
+			position: absolute;
+			width: 120px;
+			height: 120px;
+		}
+		/* radial: white center -> black edge */
+		#radial {
+			left: 10px; top: 10px;
+			decorator: radial-gradient(circle at 50% 50%, #ffffff, #000000);
+		}
+		/* linear: red -> blue, left to right */
+		#linear {
+			left: 150px; top: 10px;
+			decorator: linear-gradient(90deg, #ff0000, #0000ff);
+		}
+		/* conic: full hue sweep proxy white -> black */
+		#conic {
+			left: 290px; top: 10px;
+			decorator: conic-gradient(from 0deg, #ffffff, #000000, #ffffff);
+		}
+		/* repeating linear: black/white bands every 20px across 120px width */
+		#repeating {
+			left: 430px; top: 10px;
+			decorator: repeating-linear-gradient(90deg, #000000 0px, #ffffff 20px);
+		}
+	</style>
+</head>
+<body>
+	<div id="radial"></div>
+	<div id="linear"></div>
+	<div id="conic"></div>
+	<div id="repeating"></div>
+</body>
+</rml>

@@ -58,3 +58,6 @@ project/addons/rmlui-godot/examples/
 
 # Test scratch (pixel dumps from the parity tests)
 project/tests/_parity_*
+
+# Test scratch (pixel dump from the gradient render test)
+project/tests/_gradient_*
