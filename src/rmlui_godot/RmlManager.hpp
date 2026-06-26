@@ -47,7 +47,12 @@ class RM_GD_CLASS(RmlManager, godot::Object, {
 	godot::ClassDB::bind_method(godot::D_METHOD("is_console_log_muted"), &RmlManager::is_console_log_muted);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_supported_rcss_properties"), &RmlManager::get_supported_rcss_properties);
 
+	// Issue #37: global render layer for drag ghosts (CanvasLayer index).
+	godot::ClassDB::bind_method(godot::D_METHOD("set_drag_ghost_layer", "layer"), &RmlManager::set_drag_ghost_layer);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_drag_ghost_layer"), &RmlManager::get_drag_ghost_layer);
+
 	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::BOOL, "default_rcss_enabled"), "set_default_rcss_enabled", "is_default_rcss_enabled");
+	ADD_PROPERTY(godot::PropertyInfo(godot::Variant::INT, "drag_ghost_layer", godot::PROPERTY_HINT_RANGE, "-128,128,1"), "set_drag_ghost_layer", "get_drag_ghost_layer");
 
 	// NOTE: connect with method Callables owned by Nodes (the node's death
 	// removes the connection). Lambda/closure connections that are never
@@ -86,6 +91,12 @@ public:
 	godot::String get_default_rcss() const;
 	void set_default_rcss_enabled(bool enabled);
 	bool is_default_rcss_enabled() const { return _default_rcss_enabled; }
+
+	// Issue #37: CanvasLayer index that drag ghosts render on. Clamped to the
+	// CanvasLayer range [-128, 128]; defaults to 128 (top) and is seeded from
+	// the "rmlui/drag/ghost_layer" project setting.
+	void set_drag_ghost_layer(int layer);
+	int get_drag_ghost_layer() const { return _drag_ghost_layer; }
 	Rml::SharedPtr<Rml::StyleSheetContainer> get_default_sheet();
 
 	GodotSystemInterface& get_system_interface() { return _system_interface; }
@@ -160,6 +171,7 @@ private:
 	Rml::SharedPtr<Rml::StyleSheetContainer> _default_sheet;
 	bool _default_rcss_enabled = true;
 	bool _default_sheet_dirty = true;
+	int _drag_ghost_layer = 128;
 
 	godot::Array _recent_log;
 	bool _console_log_muted = false;

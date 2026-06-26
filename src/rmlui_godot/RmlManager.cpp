@@ -3,6 +3,7 @@
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/StyleSheetSpecification.h>
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 namespace RmlGodot {
@@ -63,6 +64,25 @@ RmlManager* RmlManager::get_singleton() {
 RmlManager::RmlManager() {
 	_singleton = this;
 	_default_rcss = k_builtin_default_rcss;
+
+	// Issue #37: expose the drag-ghost render layer as a project setting so games
+	// can slot the ghost into their own layer scheme without code, and seed the
+	// runtime default from it. set_drag_ghost_layer() overrides per-run.
+	auto* ps = godot::ProjectSettings::get_singleton();
+	if (ps != nullptr) {
+		const godot::String key = "rmlui/drag/ghost_layer";
+		if (!ps->has_setting(key)) {
+			ps->set_setting(key, _drag_ghost_layer);
+		}
+		ps->set_initial_value(key, _drag_ghost_layer);
+		godot::Dictionary info;
+		info["name"] = key;
+		info["type"] = godot::Variant::INT;
+		info["hint"] = godot::PROPERTY_HINT_RANGE;
+		info["hint_string"] = "-128,128,1";
+		ps->add_property_info(info);
+		set_drag_ghost_layer(static_cast<int>(ps->get_setting(key)));
+	}
 }
 
 RmlManager::~RmlManager() {
@@ -234,6 +254,11 @@ godot::String RmlManager::get_default_rcss() const {
 
 void RmlManager::set_default_rcss_enabled(bool enabled) {
 	_default_rcss_enabled = enabled;
+}
+
+void RmlManager::set_drag_ghost_layer(int layer) {
+	// CanvasLayer's layer range is [-128, 128].
+	_drag_ghost_layer = layer < -128 ? -128 : (layer > 128 ? 128 : layer);
 }
 
 Rml::SharedPtr<Rml::StyleSheetContainer> RmlManager::get_default_sheet() {
