@@ -1,0 +1,44 @@
+<rml>
+<head>
+<style>
+	body { display: block; background-color: #223344; }
+	.box { width: 60px; height: 40px; background-color: #4488cc; }
+	/* Explicit size so input hit-testing works without a loaded font.
+	   tab-index makes it keyboard/gamepad focusable (focus-nav test). */
+	button { display: block; width: 90px; height: 26px; background-color: #2f7d4f; tab-index: auto; }
+</style>
+<script>
+# Embedded widget doc-script — its own GDScript instance, one per mounted embed.
+# `rml_context` is injected with the coordinator RmlContext node, exactly as for
+# a top-level document's <script>.
+signal pinged(message: String)
+var rml_context
+var value := 0
+
+func _on_load(_event):
+	if rml_context != null:
+		rml_context.set_meta("widget_loaded", true)
+
+func ping():
+	pinged.emit("pong")
+
+func bump():
+	value += 1
+	if rml_context != null:
+		rml_context.set_meta("widget_bumped", value)
+
+# Fired by a button INSIDE this embed (onclick below). Proves an in-embed event
+# resolves to THIS document's <script> (owner-doc preserved across mounting), and
+# that a signal emitted here reaches a parent connected via get_embedded_script.
+func _self_click(_event):
+	value += 1
+	pinged.emit("self-click")
+	if rml_context != null:
+		rml_context.set_meta("widget_self_clicked", value)
+</script>
+</head>
+<body id="widget-root" onload="gdscript:_on_load">
+	<div class="box">widget</div>
+	<button id="w-self-btn" onclick="gdscript:_self_click">self</button>
+</body>
+</rml>

@@ -7,6 +7,7 @@
 #include "GodotEventListenerInstancer.hpp"
 #include "GodotElementInstancer.hpp"
 #include "GodotScriptDocument.hpp"
+#include "RmlEmbedElement.hpp"
 
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/texture2d.hpp>
@@ -104,6 +105,7 @@ public:
 	GodotFontInterface& get_font_interface() { return _font_interface; }
 	GodotEventListenerInstancer& get_event_listener_instancer() { return _event_listener_instancer; }
 	GodotElementInstancer& get_element_instancer() { return _element_instancer; }
+	RmlEmbedElementInstancer& get_embed_instancer() { return _embed_instancer; }
 
 	// RmlUi log forwarding — GodotSystemInterface::LogMessage reports here so
 	// editor tooling can subscribe via the "rml_log" signal. Levels are
@@ -155,6 +157,7 @@ private:
 	GodotEventListenerInstancer _event_listener_instancer;
 	GodotElementInstancer _element_instancer;
 	GodotScriptDocumentInstancer _document_instancer;
+	RmlEmbedElementInstancer _embed_instancer;
 
 	std::unordered_map<Rml::Context*, RmlContext*> _context_nodes;
 	std::unordered_map<std::string, godot::Ref<godot::GDScript>> _script_cache;

@@ -44,6 +44,11 @@ run tests/test_property_export.gd headless
 run tests/test_inline_gdscript.gd headless
 run tests/test_struct_array_binding.gd headless
 run tests/test_external_script.gd headless
+run tests/test_embed_documents.gd headless
+run tests/test_embed_hardening.gd headless
+run tests/test_embed_input.gd headless
+run tests/test_embed_focus.gd headless
+run tests/test_embed_drag.gd headless
 run tests/test_editor_script_gate.gd headless
 run tests/test_inline_script_freeze.gd headless
 run tests/test_decorator_shader_warn.gd windowed

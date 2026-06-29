@@ -71,6 +71,140 @@ get_document_scripts(document_path := "") -> Array     # all block instances, do
   loaded document (forcing its lazy instantiation), or `null`. Connect to its
   signals or call its methods from game code.
 
+### Embedded sub-documents
+
+Embed another authored document (its own `.rml` + `<link>` RCSS + `<script>`) as
+a **real subtree** of this context's DOM, so it shares the parent's layout domain
+— flexbox, `@media`, anchoring, `overflow` all reach across into it and sibling
+widgets reflow around it — while keeping its own GDScript `<script>` instance.
+This is the composition primitive: one **coordinator** context mounts N
+separately-authored panels and owns their shared layout (so e.g. an enlarging
+character screen pushes the inventory bag aside via CSS instead of overlapping
+it). It is *not* render-to-texture — the embed is a first-class layout participant.
+
+```gdscript
+mount_embed(parent_element_id: String, src: String, options := {}) -> String   # returns embed_id ("" on failure)
+unmount_embed(embed_id: String) -> bool
+reload_embed(embed_id: String) -> bool
+get_embedded_script(embed_id: String) -> Variant     # first <script> instance of the embed
+get_embedded_scripts(embed_id: String) -> Array      # all block instances, document order
+get_embedded_element(embed_id: String, inner_id: String) -> RmlElementHandle   # scoped to one embed
+get_embedded_data(embed_id: String, model_name := "") -> RmlDataModel           # the embed's (namespaced) model
+get_data_model_handle(model_name: String) -> RmlDataModel                       # any model, same handle type
+get_embedded_ids() -> PackedStringArray
+is_embed_mounted(embed_id: String) -> bool
+```
+
+`options`: `{ "id": String, "model": String }` — `id` names the embed (else one is
+auto-generated and returned); `model` records a data-namespace hint for the embed.
+
+The embedded document is mounted as the child of an `<embed-doc>` host element,
+which becomes the flex item / anchored box in the parent's layout; the document
+fills it. The host carries the embed id, so `get_element_by_id(embed_id)` returns
+its handle.
+
+**Declarative form** — author the host directly in the parent `.rml`; it is
+mounted automatically on document load (and re-mounted on `reload_document`):
+
+```html
+<body>
+  <div id="hud-top"> … </div>
+  <embed-doc id="bag" src="bag.rml" model="bag"/>
+  <embed-doc id="char" src="character.rml" model="char"/>
+</body>
+```
+
+A relative `src` resolves against the parent document's directory; `res://` /
+`user://` / absolute paths are used as-is. Embeds may themselves contain
+`<embed-doc>` (depth- and cycle-guarded).
+
+**Parent → child data feed (recommended: the cached script instance).** The
+embedded `<script>` runs as its own GDScript instance with `var rml_context`
+injected (the coordinator node) — that instance *is* the panel's view-model.
+Fetch it once with `get_embedded_script`, cache it, and drive the panel through
+its own typed methods (no stringly-typed data calls). Give the embed `<script>` a
+`class_name` and you get full type-checking and autocomplete:
+
+```gdscript
+# character_panel.gd  (the embed's <script src> — or an inline block)
+class_name CharacterPanel
+var rml_context
+func set_vitals(hp: int, mp: int) -> void: ...
+func add_xp(amount: int) -> void: ...
+```
+```gdscript
+# coordinator
+var _char: CharacterPanel
+func _on_hud_loaded() -> void:
+    _char = $Hud.get_embedded_script("char") as CharacterPanel   # cache the class
+func _on_damage(dmg: int) -> void:
+    _char.set_vitals(player.hp, player.mp)                        # typed call, no strings
+```
+
+This is the explicit, collision-free path and the preferred one for complex UI.
+For declarative list rendering inside an embed (`data-for` / `{{ }}`), use the
+data-binding API with a model name unique to that embed (see the namespacing note
+below).
+
+To reach a specific element inside an embed (e.g. to set a class or read state),
+use **`get_embedded_element(embed_id, inner_id)`** — it is scoped to that one
+embed, so two embeds of the same `.rml` with identical internal ids stay
+addressable independently:
+
+```gdscript
+$Hud.get_embedded_element("char", "portrait").set_class("enraged", true)
+```
+
+**Declarative data (`data-for` / `{{ }}`) per embed — `RmlDataModel`.** For list
+rendering inside an embed, opt the embed into per-instance data isolation with the
+**`model`** attribute (`<embed-doc model="..."/>` or `options.model`). Its
+`data-model="x"` then binds to a model unique to that embed, so two instances of
+the same `.rml` never collide. Drive it with a cached handle:
+
+```gdscript
+var grid := $Hud.get_embedded_data("inventory")   # RmlDataModel for this embed's model
+grid.set_array("cells", cells)                     # feeds data-for; bind-on-first-use then update
+grid.push("cells", {icon = "...", qty = 2})
+grid.set_value("title", "Backpack")
+grid.bind_event("on_cell", _on_cell)               # data-event-click="on_cell"
+```
+
+The same handle is injected into the embed's `<script>` as **`var data`** (like
+`var rml_context`), so a reusable component can own its rendering and expose typed
+methods — the parent stays decoupled from the component's internal variable names:
+
+```gdscript
+# grid_panel.rml <script>  — drives its own (namespaced) model
+var data
+func add_cell(c): data.push("cells", c)
+```
+
+`RmlDataModel` methods: `set_value(key, v)` / `get_value(key)` / `update(dict)`,
+`set_array(name, arr)` / `push(name, v)` / `remove_at(name, i)` / `set_item(name, i, v)` /
+`array_size(name)` / `clear_array(name)`, `bind_event(name, callable)`, `dirty(key)` /
+`dirty_all()`, `is_valid()`. `get_data_model_handle(name)` returns one for *any*
+model (root document or embed) — the same ergonomic handle everywhere.
+
+Notes / current limits:
+- Inline `gdscript:` handlers and `<script>` blocks inside the embed resolve to
+  the embedded document — a button inside an embed runs the embed's own handler,
+  and a signal it emits is reachable via `get_embedded_script` (RmlUi preserves a
+  document's owner across mounting).
+- The embed's RCSS theme cascades in from the base stylesheet; its own `<link>`
+  styles stay local to its subtree.
+- `get_element_by_id` is context-global (first match wins across embeds) — use
+  `get_embedded_element(embed_id, inner_id)` for unambiguous per-embed access.
+- Imperatively-mounted embeds are **not** restored by `reload_document` (re-mount
+  them from game code); declarative `<embed-doc>` embeds are.
+- Per-embed data-model namespacing is **opt-in** via `model` — without it, an
+  embed binds to context-global models by their authored names (simplest for a
+  single instance). The namespace rewrite happens once at mount, not per frame.
+- **Input** crosses the boundary: mouse hit-testing (`get_element_at_point`),
+  clicks, hover, and keyboard/gamepad focus navigation all reach embedded
+  elements. **RCSS is document-scoped** (an embed's styles don't leak to the
+  parent or vice versa). **`@media`** re-evaluates for both the parent and the
+  embed on context resize.
+
 ### Fonts
 
 ```gdscript
@@ -122,6 +256,8 @@ same scalar-or-dictionary values. All mutators auto-dirty.
 
 ```gdscript
 get_element_by_id(id: String) -> RmlElementHandle    # searches all loaded documents
+get_element_at_point(point: Vector2) -> RmlElementHandle   # youngest element at a point (crosses into embeds)
+get_focused_element() -> RmlElementHandle                  # element with input focus, or invalid
 add_event_listener(element_id, event_type, callable, in_capture_phase := false) -> bool
 remove_event_listeners(element_id, event_type) -> int
 set_element_property(element_id, property, value) -> bool
@@ -327,6 +463,8 @@ get_tag_name() -> String
 get_inner_rml() -> String / set_inner_rml(rml)
 get_outer_rml() -> String
 get_child_count() -> int
+get_position() -> Vector2 / get_size() -> Vector2   # border box, after layout (px)
+click()                                             # programmatic click (fires inline handlers)
 
 get_attribute(name, default_value := "") -> String
 set_attribute(name, value) / remove_attribute(name) / has_attribute(name) -> bool

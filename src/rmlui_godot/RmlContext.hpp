@@ -23,6 +23,7 @@
 
 #include "GodotRenderInterface.hpp"
 #include "RmlElementHandle.hpp"
+#include "RmlDataModel.hpp"
 #include "RmlDynamicData.hpp"
 
 #include <unordered_map>
@@ -40,6 +41,8 @@ class EventListener;
 }
 
 namespace RmlGodot {
+
+class RmlEmbedElement;
 
 class RM_GD_CLASS(RmlContext, godot::Control, {
 
@@ -80,10 +83,27 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	// Phase 5: Custom element instancers
 	godot::ClassDB::bind_method(godot::D_METHOD("register_custom_element", "tag_name", "on_create", "on_attribute_change"), &RmlContext::register_custom_element, DEFVAL(godot::Callable()));
 
+	// Issue #56: embed a sub-document (its own .rml + <link> RCSS + <script>) as
+	// a real subtree of this context's DOM, so it shares the parent's layout
+	// domain (flexbox / @media / anchoring) while keeping its own GDScript
+	// instance and data feed. See RmlContextEmbed.cpp.
+	godot::ClassDB::bind_method(godot::D_METHOD("mount_embed", "parent_element_id", "src", "options"), &RmlContext::mount_embed, DEFVAL(godot::Dictionary()));
+	godot::ClassDB::bind_method(godot::D_METHOD("unmount_embed", "embed_id"), &RmlContext::unmount_embed);
+	godot::ClassDB::bind_method(godot::D_METHOD("reload_embed", "embed_id"), &RmlContext::reload_embed);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_embedded_script", "embed_id"), &RmlContext::get_embedded_script);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_embedded_scripts", "embed_id"), &RmlContext::get_embedded_scripts);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_embedded_element", "embed_id", "inner_id"), &RmlContext::get_embedded_element);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_embedded_data", "embed_id", "model_name"), &RmlContext::get_embedded_data, DEFVAL(godot::String()));
+	godot::ClassDB::bind_method(godot::D_METHOD("get_data_model_handle", "model_name"), &RmlContext::get_data_model_handle);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_embedded_ids"), &RmlContext::get_embedded_ids);
+	godot::ClassDB::bind_method(godot::D_METHOD("is_embed_mounted", "embed_id"), &RmlContext::is_embed_mounted);
+
 	// Phase 1: DOM events & element access
 	godot::ClassDB::bind_method(godot::D_METHOD("add_event_listener", "element_id", "event_type", "callable", "in_capture_phase"), &RmlContext::add_event_listener, DEFVAL(false));
 	godot::ClassDB::bind_method(godot::D_METHOD("remove_event_listeners", "element_id", "event_type"), &RmlContext::remove_event_listeners);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_element_by_id", "id"), &RmlContext::get_element_by_id);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_element_at_point", "point"), &RmlContext::get_element_at_point);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_focused_element"), &RmlContext::get_focused_element);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_element_property", "element_id", "property", "value"), &RmlContext::set_element_property);
 	godot::ClassDB::bind_method(godot::D_METHOD("remove_element_property", "element_id", "property"), &RmlContext::remove_element_property);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_element_class", "element_id", "class_name", "activate"), &RmlContext::set_element_class);
@@ -334,6 +354,11 @@ public:
 	void dirty_all_variables(const godot::String& model_name);
 	bool create_data_model_from_dict(const godot::String& model_name, const godot::Dictionary& variables);
 	void update_data_model(const godot::String& model_name, const godot::Dictionary& variables);
+	bool has_data_model(const godot::String& model_name) const;
+	// Upsert helpers (bind-on-first-use, then set + dirty) backing RmlDataModel.
+	void dm_set_value(const godot::String& model_name, const godot::String& key, const godot::Variant& value);
+	void dm_set_array(const godot::String& model_name, const godot::String& array_name, const godot::Array& array);
+	void dm_push(const godot::String& model_name, const godot::String& array_name, const godot::Variant& value);
 
 	// Phase 3: Array data binding
 	bool bind_data_array(const godot::String& model_name, const godot::String& array_name, const godot::Array& initial_array);
@@ -348,11 +373,47 @@ public:
 	bool register_custom_element(const godot::String& tag_name, const godot::Callable& on_create,
 		const godot::Callable& on_attribute_change = godot::Callable());
 
+	// Issue #56: embedded sub-documents. mount_embed parses `src` as its own
+	// document and mounts it as a child of an <embed-doc> host under
+	// `parent_element_id`, so it participates in this context's layout while
+	// retaining its own GDScript <script> instance(s). Returns the embed id
+	// (options["id"] if given, else auto-generated) or "" on failure.
+	// options: { "id": String, "model": String }.
+	godot::String mount_embed(const godot::String& parent_element_id, const godot::String& src,
+		const godot::Dictionary& options = godot::Dictionary());
+	bool unmount_embed(const godot::String& embed_id);
+	bool reload_embed(const godot::String& embed_id);
+	// Mirror get_document_script(s): the embedded document's <script> instance(s),
+	// so the parent can call into the embed / connect to its signals. This is the
+	// explicit, collision-free parent→child data path (issue #56 req. 4).
+	godot::Variant get_embedded_script(const godot::String& embed_id);
+	godot::Array get_embedded_scripts(const godot::String& embed_id);
+	// Resolve an element by id WITHIN a single embed's subtree. Unlike
+	// get_element_by_id (which is context-global and returns the first match
+	// across all embeds), this is scoped, so two embeds of the same .rml with
+	// identical internal ids stay addressable independently.
+	godot::Ref<RmlElementHandle> get_embedded_element(const godot::String& embed_id,
+		const godot::String& inner_id) const;
+	// Cached handle to an embed's data model (auto-namespaced when the embed
+	// opted in via <embed-doc model="...">). model_name empty → the embed's
+	// primary model. Mirror get_data_model_handle, which works for any model.
+	godot::Ref<RmlDataModel> get_embedded_data(const godot::String& embed_id,
+		const godot::String& model_name = godot::String());
+	godot::Ref<RmlDataModel> get_data_model_handle(const godot::String& model_name);
+	godot::PackedStringArray get_embedded_ids() const;
+	bool is_embed_mounted(const godot::String& embed_id) const;
+
 	// Phase 1: DOM events & element access
 	bool add_event_listener(const godot::String& element_id, const godot::String& event_type,
 		const godot::Callable& callable, bool in_capture_phase = false);
 	void remove_event_listeners(const godot::String& element_id, const godot::String& event_type);
 	godot::Ref<RmlElementHandle> get_element_by_id(const godot::String& id) const;
+	// Youngest element at a context-local point (px). Crosses into embeds, so it
+	// hit-tests embedded UI like any other element. Invalid handle if nothing hit.
+	godot::Ref<RmlElementHandle> get_element_at_point(const godot::Vector2& point) const;
+	// The element with input focus (or an invalid handle if none) — for styling
+	// the focused widget, gamepad UIs, etc. Crosses into embeds.
+	godot::Ref<RmlElementHandle> get_focused_element() const;
 	bool set_element_property(const godot::String& element_id, const godot::String& property, const godot::String& value);
 	void remove_element_property(const godot::String& element_id, const godot::String& property);
 	void set_element_class(const godot::String& element_id, const godot::String& class_name, bool activate);
@@ -512,6 +573,50 @@ private:
 
 	Rml::Element* _find_element(const godot::String& id) const;
 
+	// --- Issue #56: embedded sub-documents ---
+	// Each entry mounts an embedded document under an <embed-doc> host element in
+	// the parent DOM. The host owns the embedded document through the normal child
+	// mechanism; we keep raw pointers for handle resolution and lifecycle.
+	struct EmbedEntry {
+		std::string embed_id;
+		std::string src;                          // resolved (absolute) path
+		std::string model;                        // <embed-doc model="..."> → namespacing on
+		std::string data_model;                   // resolved primary model name ("" = none)
+		RmlEmbedElement* host = nullptr;          // <embed-doc> in the parent doc
+		Rml::ElementDocument* document = nullptr; // embedded doc (host's child)
+		float last_w = -1.0f;                     // last outer size (reflow tracking)
+		float last_h = -1.0f;
+	};
+	std::unordered_map<std::string, EmbedEntry> _embeds;
+	uint64_t _embed_counter = 0;
+	static constexpr int k_max_embed_depth = 16;
+
+	// Mount `src` as a child of `host`; recurses into <embed-doc> authored inside
+	// the embed (depth/cycle-guarded via src_chain). Does NOT call Update().
+	bool _mount_embed_core(RmlEmbedElement* host, const std::string& src_raw,
+		const std::string& model, const std::string& embed_id, int depth,
+		std::vector<std::string>& src_chain);
+	// Create an <embed-doc> host under `parent`, mount into it, run one Update.
+	// Shared by mount_embed (resolves parent by id) and reload_embed.
+	std::string _mount_embed_into(Rml::Element* parent, const std::string& src,
+		const std::string& model, std::string embed_id);
+	// Find and mount unmounted <embed-doc> elements declared inside a subtree.
+	void _mount_declarative_embeds(Rml::Element* subtree_root, int depth,
+		std::vector<std::string>& src_chain);
+	// Resolve `src` relative to `host`'s owning document directory if not absolute.
+	std::string _resolve_embed_src(Rml::Element* host, const std::string& src) const;
+	std::string _next_embed_id();
+	// Drop registry entries / listener records pointing into a subtree about to be
+	// destroyed (unmount, or reload/unload of a top-level document).
+	void _purge_embeds_in_subtree(Rml::Element* root_host);
+	void _purge_listener_records_in_subtree(Rml::Element* root_host);
+	// Per-frame: reflow any embed whose internal layout changed; propagate an
+	// outer-size change to the parent document so siblings reposition.
+	void _update_embed_layout();
+	// On context resize: re-evaluate embeds' own @media queries (Context::
+	// SetDimensions only covers top-level documents).
+	void _redirty_embeds_media();
+
 	struct DataModelEntry {
 		Rml::DataModelConstructor constructor;
 		Rml::DataModelHandle handle;
@@ -523,6 +628,8 @@ private:
 		std::unique_ptr<RmlGodot::DynDataRegistry> dyn_arrays;
 	};
 	std::unordered_map<std::string, DataModelEntry> _data_models;
+
+	bool _create_data_model_impl(const godot::String& model_name, bool allow_missing_variables);
 
 	// Lookup helpers — return nullptr (optionally warning) when not found.
 	DataModelEntry* _get_data_model(const godot::String& model_name, bool warn = true);

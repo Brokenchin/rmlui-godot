@@ -134,6 +134,10 @@ void fill_array_node(RmlGodot::DynNode& root, const godot::Array& arr) {
 namespace RmlGodot {
 
 bool RmlContext::create_data_model(const godot::String& model_name) {
+	return _create_data_model_impl(model_name, false);
+}
+
+bool RmlContext::_create_data_model_impl(const godot::String& model_name, bool allow_missing_variables) {
 	if (_rml_context == nullptr) {
 		godot::UtilityFunctions::push_warning("[RmlUi] Cannot create data model — context not initialized");
 		return false;
@@ -146,7 +150,12 @@ bool RmlContext::create_data_model(const godot::String& model_name) {
 		return false;
 	}
 
-	Rml::DataModelConstructor constructor = _rml_context->CreateDataModel(Rml::String(name));
+	// allow_missing_variables lets bindings be added after the document loads —
+	// required for embeds whose namespaced model is created at mount and fed
+	// afterwards (views referencing not-yet-bound variables render defaults until
+	// the variable is bound and dirtied).
+	Rml::DataModelConstructor constructor =
+		_rml_context->CreateDataModel(Rml::String(name), nullptr, allow_missing_variables);
 	if (!constructor) {
 		godot::UtilityFunctions::push_error(
 			godot::String("[RmlUi] Failed to create data model: ") + model_name);
@@ -158,9 +167,50 @@ bool RmlContext::create_data_model(const godot::String& model_name) {
 	entry.handle = constructor.GetModelHandle();
 	_data_models[name] = std::move(entry);
 
-	godot::UtilityFunctions::print(
-		godot::String("[RmlUi] Data model created: ") + model_name);
+	if (!console_log_muted()) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Data model created: ") + model_name);
+	}
 	return true;
+}
+
+bool RmlContext::has_data_model(const godot::String& model_name) const {
+	return _data_models.count(std::string(model_name.utf8().get_data())) > 0;
+}
+
+// --- Upsert helpers backing RmlDataModel (bind-on-first-use, then set) ---
+
+void RmlContext::dm_set_value(const godot::String& model_name,
+	const godot::String& key, const godot::Variant& value) {
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
+	if (model->variables.count(std::string(key.utf8().get_data())))
+		set_data_variable(model_name, key, value);
+	else
+		bind_data_variable(model_name, key, value);
+}
+
+void RmlContext::dm_set_array(const godot::String& model_name,
+	const godot::String& array_name, const godot::Array& array) {
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
+	const std::string aname(array_name.utf8().get_data());
+	const bool bound = model->dyn_arrays && model->dyn_arrays->roots.count(aname);
+	if (bound)
+		set_data_array(model_name, array_name, array);
+	else
+		bind_data_array(model_name, array_name, array);
+}
+
+void RmlContext::dm_push(const godot::String& model_name,
+	const godot::String& array_name, const godot::Variant& value) {
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
+	const std::string aname(array_name.utf8().get_data());
+	const bool bound = model->dyn_arrays && model->dyn_arrays->roots.count(aname);
+	if (!bound)
+		bind_data_array(model_name, array_name, godot::Array());
+	push_data_array_item(model_name, array_name, value);
 }
 
 RmlContext::DataModelEntry* RmlContext::_get_data_model(const godot::String& model_name, bool warn) {

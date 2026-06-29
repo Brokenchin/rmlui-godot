@@ -1,0 +1,15 @@
+<rml>
+<head>
+<style>
+	body { display: block; }
+	#row { display: flex; flex-direction: row; }
+	embed-doc { margin-right: 40px; }
+</style>
+</head>
+<body>
+	<div id="row">
+		<embed-doc id="src" src="drag_src.rml"/>
+		<embed-doc id="dst" src="drop_dst.rml"/>
+	</div>
+</body>
+</rml>

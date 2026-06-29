@@ -212,4 +212,25 @@ void RmlElementHandle::add_event_listener(const godot::String& event_type,
 	_element->AddEventListener(Rml::String(type_str), listener, in_capture_phase);
 }
 
+void RmlElementHandle::click() {
+	if (_element == nullptr) {
+		godot::UtilityFunctions::push_warning("[RmlUi] RmlElementHandle::click — invalid element");
+		return;
+	}
+	_element->Click();
+	_mark_owner_dirty(_element);
+}
+
+godot::Vector2 RmlElementHandle::get_position() const {
+	if (_element == nullptr) return godot::Vector2();
+	Rml::Vector2f p = _element->GetAbsoluteOffset(Rml::BoxArea::Border);
+	return godot::Vector2(p.x, p.y);
+}
+
+godot::Vector2 RmlElementHandle::get_size() const {
+	if (_element == nullptr) return godot::Vector2();
+	Rml::Vector2f s = _element->GetBox().GetSize(Rml::BoxArea::Border);
+	return godot::Vector2(s.x, s.y);
+}
+
 } // namespace RmlGodot
