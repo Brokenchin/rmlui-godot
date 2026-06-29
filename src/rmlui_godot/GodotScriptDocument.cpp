@@ -190,6 +190,22 @@ godot::Object* GodotScriptDocument::_ensure_instance(ScriptBlock& block) {
 	// (Object::set is a silent no-op for undeclared properties).
 	if (node != nullptr) {
 		obj->set("rml_context", node);
+
+		// Issue #56: inject `var data` — a cached handle to this document's root
+		// data-model (the namespaced name for an embed, the authored name for a
+		// top-level document). Self-resolved here from the document's own
+		// data-model attribute, so it is available during on_load and stays
+		// consistent whether this is a root document or an embed.
+		const Rml::Variant* dm = GetAttribute(Rml::String("data-model"));
+		if (dm != nullptr) {
+			const std::string model_name(dm->Get<Rml::String>().c_str());
+			if (!model_name.empty()) {
+				godot::Ref<RmlDataModel> data_handle;
+				data_handle.instantiate();
+				data_handle->setup(node, model_name);
+				obj->set("data", data_handle);
+			}
+		}
 	}
 	return obj;
 }

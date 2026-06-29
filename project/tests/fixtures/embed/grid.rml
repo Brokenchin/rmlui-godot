@@ -1,0 +1,23 @@
+<rml>
+<head>
+<script>
+# `data` is injected automatically (like rml_context): a handle to THIS embed's
+# (namespaced) data model. Two instances of this file drive independent models.
+var rml_context
+var data
+
+func count():
+	return data.array_size("cells") if data != null else -1
+
+func add(c):
+	if data != null:
+		data.push("cells", c)
+</script>
+</head>
+<body id="grid-root" data-model="g">
+	<div id="cells">
+		<div data-for="c : cells" class="cell">{{ c }}</div>
+	</div>
+	<div id="n">{{ n }}</div>
+</body>
+</rml>

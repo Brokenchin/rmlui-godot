@@ -24,6 +24,9 @@ header, footer, section, nav,
 blockquote, pre, form, fieldset {
 	display: block;
 }
+/* Issue #56: <embed-doc> hosts an embedded sub-document as an ordinary
+   layout box (a flex item / anchored / block child of the parent). */
+embed-doc { display: block; }
 em, i       { font-style: italic; }
 strong, b   { font-weight: bold; }
 h1 { font-size: 2em;    font-weight: bold; margin: 0.67em 0; }
@@ -300,6 +303,11 @@ void RmlManager::_initialize_rmlui() {
 	// GodotScriptDocument (inline GDScript support). Must come after
 	// Rml::Initialise(), which registers the defaults.
 	Rml::Factory::RegisterElementInstancer("body", &_document_instancer);
+
+	// Issue #56: <embed-doc> host element for embedded sub-documents. Process-
+	// global, like "body"; the embedded document is mounted as its child by
+	// RmlContext::mount_embed (see RmlEmbedElement / RmlContextEmbed.cpp).
+	Rml::Factory::RegisterElementInstancer("embed-doc", &_embed_instancer);
 
 	// onclick="gdscript:method_name" event attributes.
 	_event_listener_instancer.register_factory("gdscript:",

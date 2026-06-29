@@ -103,6 +103,11 @@ void RmlContext::load_document(const godot::String& path) {
 	if (doc != nullptr) {
 		_apply_base_stylesheet(doc);
 		doc->Show();
+		// Issue #56: mount any <embed-doc src="..."> authored in this document.
+		{
+			std::vector<std::string> embed_chain;
+			_mount_declarative_embeds(doc, 0, embed_chain);
+		}
 		_sync_dimensions();
 		_rml_context->Update();
 		_render_dirty = true;
@@ -141,6 +146,11 @@ bool RmlContext::load_document_from_string(const godot::String& rml_text, const 
 
 	_apply_base_stylesheet(doc);
 	doc->Show();
+	// Issue #56: mount any <embed-doc src="..."> authored in this document.
+	{
+		std::vector<std::string> embed_chain;
+		_mount_declarative_embeds(doc, 0, embed_chain);
+	}
 	_sync_dimensions();
 	_rml_context->Update();
 	_render_dirty = true;
@@ -170,6 +180,9 @@ bool RmlContext::reload_document(const godot::String& path) {
 	_listener_records.clear();
 
 	if (it->document != nullptr) {
+		// Issue #56: drop embeds living in this document's subtree before it is
+		// torn down (their hosts/documents are about to be destroyed).
+		_purge_embeds_in_subtree(it->document);
 		_rml_context->UnloadDocument(it->document);
 	}
 
@@ -184,6 +197,12 @@ bool RmlContext::reload_document(const godot::String& path) {
 	it->document = new_doc;
 	_apply_base_stylesheet(new_doc);
 	new_doc->Show();
+	// Issue #56: re-mount declarative <embed-doc> children of the reloaded
+	// document (imperatively-mounted embeds must be re-mounted by game code).
+	{
+		std::vector<std::string> embed_chain;
+		_mount_declarative_embeds(new_doc, 0, embed_chain);
+	}
 
 	for (auto& [name, entry] : _data_models) {
 		entry.handle.DirtyAllVariables();
@@ -205,6 +224,9 @@ void RmlContext::reload_all_documents() {
 	}
 
 	_listener_records.clear();
+	// Issue #56: every top-level document is being reloaded, so all embeds (which
+	// live in their subtrees) are destroyed; declarative ones are re-mounted below.
+	_embeds.clear();
 
 	for (auto& ld : _loaded_documents) {
 		if (ld.document != nullptr) {
@@ -218,6 +240,8 @@ void RmlContext::reload_all_documents() {
 		if (doc != nullptr) {
 			_apply_base_stylesheet(doc);
 			doc->Show();
+			std::vector<std::string> embed_chain;
+			_mount_declarative_embeds(doc, 0, embed_chain);
 			ld.document = doc;
 		} else {
 			godot::UtilityFunctions::push_error(
@@ -547,6 +571,10 @@ bool RmlContext::unload_document(const godot::String& path) {
 	}
 
 	if (it->document != nullptr) {
+		// Issue #56: drop embeds (and their listener records) in this document's
+		// subtree before it is torn down.
+		_purge_embeds_in_subtree(it->document);
+		_purge_listener_records_in_subtree(it->document);
 		_rml_context->UnloadDocument(it->document);
 	}
 

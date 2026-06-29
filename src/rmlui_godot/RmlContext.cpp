@@ -4,6 +4,7 @@
 //   RmlContextDocuments.cpp documents, fonts, stylesheets
 //   RmlContextData.cpp      data models, variables, arrays
 //   RmlContextDom.cpp       elements, events, textures, decorators
+//   RmlContextEmbed.cpp     embedded sub-documents (<embed-doc>, issue #56)
 //   RmlContextInput.cpp     input forwarding, navigation, drag & drop
 #include "RmlContext.hpp"
 #include "RmlManager.hpp"
@@ -268,6 +269,12 @@ void RmlContext::_process(double delta) {
 
 	_sync_dimensions();
 	_rml_context->Update();
+
+	// Issue #56: nested embedded documents are not laid out by Context::Update's
+	// root-only layout loop, so reflow any whose internals changed (and reflow the
+	// parent if an embed's outer size changed). Runs after Update so it observes
+	// the settled tree.
+	_update_embed_layout();
 
 	// Hover bridge: detect hover-chain changes after the Update settled them and
 	// push rml_element_hovered / rml_element_unhovered to any external overlay.
@@ -736,6 +743,10 @@ void RmlContext::_cleanup() {
 	_last_hovered_id.clear();
 	_last_hover_element = nullptr;
 
+	// Issue #56: embedded documents are children of the parent documents unloaded
+	// below (and torn down with the context), so just drop our tracking here.
+	_embeds.clear();
+
 	if (rmlui_alive) {
 		for (auto& ld : _loaded_documents) {
 			if (ld.document != nullptr) {
@@ -885,6 +896,9 @@ void RmlContext::_sync_dimensions() {
 	Rml::Vector2i rml_size(static_cast<int>(size.x), static_cast<int>(size.y));
 	if (_rml_context->GetDimensions() != rml_size) {
 		_rml_context->SetDimensions(rml_size);
+		// SetDimensions re-evaluates only top-level documents' media queries —
+		// nested embeds are skipped, so re-dirty their @media here (issue #56).
+		_redirty_embeds_media();
 	}
 }
 

@@ -3,6 +3,7 @@
 #include "RmlGD.hpp"
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/vector2.hpp>
 
 namespace Rml {
 class Element;
@@ -32,6 +33,9 @@ class RM_GD_CLASS(RmlElementHandle, godot::RefCounted, {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_child_count"), &RmlElementHandle::get_child_count);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_outer_rml"), &RmlElementHandle::get_outer_rml);
 	godot::ClassDB::bind_method(godot::D_METHOD("add_event_listener", "event_type", "callable", "in_capture_phase"), &RmlElementHandle::add_event_listener, DEFVAL(false));
+	godot::ClassDB::bind_method(godot::D_METHOD("click"), &RmlElementHandle::click);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_position"), &RmlElementHandle::get_position);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_size"), &RmlElementHandle::get_size);
 
 });
 
@@ -66,6 +70,17 @@ public:
 	godot::String get_outer_rml() const;
 
 	void add_event_listener(const godot::String& event_type, const godot::Callable& callable, bool in_capture_phase = false);
+
+	/// Programmatically fire a click on this element (RmlUi Element::Click) —
+	/// dispatches the full click event, so inline gdscript: handlers run. Useful
+	/// for automation/testing and gamepad-driven activation.
+	void click();
+
+	/// Absolute position (border box, context/Control-local px) and border-box
+	/// size of this element after layout — for anchoring overlays, hit-testing,
+	/// etc. Returns (0,0) if the element is stale.
+	godot::Vector2 get_position() const;
+	godot::Vector2 get_size() const;
 
 private:
 	Rml::Element* _element = nullptr;

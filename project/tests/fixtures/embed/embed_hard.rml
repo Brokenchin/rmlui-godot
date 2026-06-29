@@ -1,0 +1,18 @@
+<rml>
+<head>
+<style>
+	body { font-family: "Noto Sans"; }
+	/* Same class name as the parent, DIFFERENT value — must not leak either way. */
+	.swatch { width: 222px; }
+	#e-respbox { width: 50px; height: 20px; }
+	/* Embed's OWN @media, keyed on context width. */
+	@media (min-width: 600px) {
+		#e-respbox { width: 250px; }
+	}
+</style>
+</head>
+<body>
+	<div id="e-swatch" class="swatch">embed</div>
+	<div id="e-respbox"></div>
+</body>
+</rml>
