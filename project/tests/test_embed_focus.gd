@@ -53,8 +53,9 @@ func _step() -> void:
 			_phase = 3
 			create_timer(0.3).timeout.connect(_step)
 		3:
+			var w1 = _ctx.call("get_embedded_script", "w1")
 			_check("ui_accept activated the focused embed element",
-				int(_ctx.get_meta("widget_self_clicked", 0)) >= 1)
+				w1 != null and int(w1.self_clicked) >= 1)
 			print("ALL PASSED" if _fails == 0 else "%d FAILED" % _fails)
 			quit(_fails)
 

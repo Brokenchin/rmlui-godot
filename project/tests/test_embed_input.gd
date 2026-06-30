@@ -64,9 +64,10 @@ func _step() -> void:
 			_phase = 2
 			create_timer(0.4).timeout.connect(_step)
 		2:
-			# Click reached the embed's own onclick handler.
+			# Click reached the embed's own onclick handler (tracked on its instance).
+			var w1 = _ctx.call("get_embedded_script", "w1")
 			_check("real mouse click reached the embed's handler",
-				int(_ctx.get_meta("widget_self_clicked", 0)) >= 1)
+				w1 != null and int(w1.self_clicked) >= 1)
 			# Hover bridge resolves the embed element under the (now-settled) cursor.
 			var hov := str(_ctx.call("get_hovered_element_id"))
 			print("  [info] hovered id=%s" % hov)

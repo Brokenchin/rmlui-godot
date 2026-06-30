@@ -56,8 +56,14 @@ func _step() -> void:
 				# out in-flow as an ordinary child.
 				_check("embed made in-flow", str(inner.call("get_property", "position")) == "relative")
 
-			# The embedded <script> ran (its on_load set meta on rml_context).
-			_check("embedded script ran with rml_context", bool(_ctx.get_meta("widget_loaded", false)))
+			# The embedded <script> ran with an embed-scoped rml_context: its
+			# on_load set `loaded` AND drove its own root by id through rml_context
+			# (the data-loaded attribute resolved inside this embed's subtree).
+			var w1_inst = _ctx.call("get_embedded_script", "w1")
+			_check("embedded script ran with rml_context", w1_inst != null and bool(w1_inst.loaded))
+			var w1_root = _ctx.call("get_embedded_element", "w1", "widget-root")
+			_check("embed-scoped rml_context drove its own element",
+				w1_root != null and w1_root.is_valid() and str(w1_root.get_attribute("data-loaded")) == "1")
 
 			# In-embed interactivity: a button INSIDE the embed whose onclick handler
 			# lives in the embed's OWN <script>, plus a signal the parent connected to.
@@ -72,7 +78,7 @@ func _step() -> void:
 			_check("in-embed button resolves", sbtn != null and sbtn.call("is_valid"))
 			if sbtn != null and sbtn.call("is_valid"):
 				sbtn.call("click")
-				_check("in-embed onclick ran the embed's own handler", int(_ctx.get_meta("widget_self_clicked", 0)) == 1)
+				_check("in-embed onclick ran the embed's own handler", w1 != null and int(w1.self_clicked) == 1)
 				_check("in-embed click emitted embed signal to parent", self_signal[0])
 				if w1 != null:
 					_check("in-embed handler mutated its own instance", int(w1.value) == 1)
@@ -95,7 +101,14 @@ func _step() -> void:
 				inst.ping()
 				_check("embedded signal received", _ping == "pong")
 				inst.bump()
-				_check("embedded method reached rml_context", int(_ctx.get_meta("widget_bumped", 0)) == 1)
+				# bump() drove w2's own root by id; the attribute must land on w2's
+				# widget-root (scoped), not w1's.
+				var w2_root = _ctx.call("get_embedded_element", "w2", "widget-root")
+				_check("embedded method reached rml_context",
+					w2_root != null and w2_root.is_valid() and str(w2_root.get_attribute("data-bumped")) == "1")
+				var w1_root2 = _ctx.call("get_embedded_element", "w1", "widget-root")
+				_check("sibling embed's element untouched by w2's call",
+					w1_root2 != null and w1_root2.is_valid() and str(w1_root2.get_attribute("data-bumped")) == "")
 
 			# Scoped element lookup: w1 and w2 are the SAME .rml, so both contain an
 			# element id "w-self-btn". get_element_by_id is context-global (first match

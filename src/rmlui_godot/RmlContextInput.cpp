@@ -264,30 +264,43 @@ void RmlContext::_unhandled_input(const godot::Ref<godot::InputEvent>& event) {
 
 void RmlContext::register_drag_source(const godot::String& element_id,
 	const godot::Callable& payload_builder, const godot::Callable& ghost_builder) {
+	register_drag_source_scoped(std::string(), element_id, payload_builder, ghost_builder);
+}
+
+void RmlContext::register_drag_source_scoped(const std::string& embed_id, const godot::String& element_id,
+	const godot::Callable& payload_builder, const godot::Callable& ghost_builder) {
 
 	std::string id(element_id.utf8().get_data());
+	// Dedup is per (embed, id): two embeds of the same widget legitimately
+	// register the same id — they are distinct sources resolved in their own
+	// subtrees (issue #59). Only a true duplicate within one scope is rejected.
 	for (const auto& src : _drag_sources) {
-		if (src.element_id == id) {
+		if (src.element_id == id && src.embed_id == embed_id) {
 			godot::UtilityFunctions::push_warning(
 				godot::String("[RmlUi] Drag source already registered: ") + element_id);
 			return;
 		}
 	}
-	_drag_sources.push_back({id, payload_builder, ghost_builder});
+	_drag_sources.push_back({id, embed_id, payload_builder, ghost_builder});
 }
 
 void RmlContext::register_drop_target(const godot::String& element_id,
 	const godot::Callable& drop_handler) {
+	register_drop_target_scoped(std::string(), element_id, drop_handler);
+}
+
+void RmlContext::register_drop_target_scoped(const std::string& embed_id, const godot::String& element_id,
+	const godot::Callable& drop_handler) {
 
 	std::string id(element_id.utf8().get_data());
 	for (const auto& tgt : _drop_targets) {
-		if (tgt.element_id == id) {
+		if (tgt.element_id == id && tgt.embed_id == embed_id) {
 			godot::UtilityFunctions::push_warning(
 				godot::String("[RmlUi] Drop target already registered: ") + element_id);
 			return;
 		}
 	}
-	_drop_targets.push_back({id, drop_handler});
+	_drop_targets.push_back({id, embed_id, drop_handler});
 }
 
 // --- Hover bridge ---
@@ -341,7 +354,9 @@ godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
 	if (_rml_context == nullptr || _drag_sources.empty()) return {};
 
 	for (const auto& source : _drag_sources) {
-		Rml::Element* el = _find_element(godot::String(source.element_id.c_str()));
+		// #59: resolve within the source's own embed first, so two embeds of the
+		// same widget register the same id but each drags its OWN element.
+		Rml::Element* el = _find_element_scoped(source.embed_id, godot::String(source.element_id.c_str()));
 		if (el == nullptr) continue;
 
 		if (!_point_in_element(el, p_at_position.x, p_at_position.y)) continue;
@@ -366,7 +381,7 @@ godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
 		// ghost can keep the cursor pinned where the drag started (issue #37).
 		Rml::Vector2f el_off = el->GetAbsoluteOffset(Rml::BoxArea::Border);
 		godot::Vector2 grab_offset(p_at_position.x - el_off.x, p_at_position.y - el_off.y);
-		_create_drag_ghost(source.element_id, source.ghost_builder, grab_offset);
+		_create_drag_ghost(el, source.element_id, source.ghost_builder, grab_offset);
 
 		emit_signal("rml_drag_started",
 			godot::String(source.element_id.c_str()), payload);
@@ -383,7 +398,7 @@ bool RmlContext::_can_drop_data(const godot::Vector2& p_at_position,
 	if (_rml_context == nullptr || _drop_targets.empty()) return false;
 
 	for (const auto& target : _drop_targets) {
-		Rml::Element* el = _find_element(godot::String(target.element_id.c_str()));
+		Rml::Element* el = _find_element_scoped(target.embed_id, godot::String(target.element_id.c_str()));
 		if (el == nullptr) continue;
 
 		if (_point_in_element(el, p_at_position.x, p_at_position.y))
@@ -399,7 +414,7 @@ void RmlContext::_drop_data(const godot::Vector2& p_at_position,
 	if (_rml_context == nullptr || _drop_targets.empty()) return;
 
 	for (const auto& target : _drop_targets) {
-		Rml::Element* el = _find_element(godot::String(target.element_id.c_str()));
+		Rml::Element* el = _find_element_scoped(target.embed_id, godot::String(target.element_id.c_str()));
 		if (el == nullptr) continue;
 
 		if (!_point_in_element(el, p_at_position.x, p_at_position.y)) continue;
@@ -484,10 +499,12 @@ Rml::String RmlContext::_build_ghost_rml(Rml::Element* el, int w, int h) {
 		"</body></rml>";
 }
 
-void RmlContext::_create_drag_ghost(const std::string& source_element_id,
+void RmlContext::_create_drag_ghost(Rml::Element* el, const std::string& source_element_id,
 	const godot::Callable& ghost_builder, const godot::Vector2& grab_offset) {
 
-	Rml::Element* el = _find_element(godot::String(source_element_id.c_str()));
+	// `el` is the source element already resolved in its own embed scope by the
+	// caller (_get_drag_data) — never re-resolve by id here, which would be
+	// context-global and pick the wrong embed's element (issue #59).
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning("[RmlUi] Drag ghost: source element not found");
 		return;

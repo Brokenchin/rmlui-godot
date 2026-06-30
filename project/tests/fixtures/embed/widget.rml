@@ -9,32 +9,41 @@
 </style>
 <script>
 # Embedded widget doc-script — its own GDScript instance, one per mounted embed.
-# `rml_context` is injected with the coordinator RmlContext node, exactly as for
-# a top-level document's <script>.
+# `rml_context` is injected with a per-embed scope object (issue #59): id-based
+# calls resolve inside THIS embed's subtree. State is tracked on the instance and
+# read by the parent via get_embedded_script; _mark() additionally drives this
+# widget's OWN element through rml_context, proving the scope resolves it.
 signal pinged(message: String)
 var rml_context
 var value := 0
+var loaded := false
+var self_clicked := 0
 
 func _on_load(_event):
-	if rml_context != null:
-		rml_context.set_meta("widget_loaded", true)
+	loaded = true
+	_mark("loaded", "1")
 
 func ping():
 	pinged.emit("pong")
 
 func bump():
 	value += 1
-	if rml_context != null:
-		rml_context.set_meta("widget_bumped", value)
+	_mark("bumped", str(value))
 
 # Fired by a button INSIDE this embed (onclick below). Proves an in-embed event
 # resolves to THIS document's <script> (owner-doc preserved across mounting), and
 # that a signal emitted here reaches a parent connected via get_embedded_script.
 func _self_click(_event):
 	value += 1
+	self_clicked += 1
 	pinged.emit("self-click")
+	_mark("selfclick", str(self_clicked))
+
+# Sets a data-attribute on this widget's OWN root by id. Embedded, "widget-root"
+# must resolve to THIS document's body — never a sibling embed's same id.
+func _mark(key, val):
 	if rml_context != null:
-		rml_context.set_meta("widget_self_clicked", value)
+		rml_context.set_element_attribute("widget-root", "data-" + key, val)
 </script>
 </head>
 <body id="widget-root" onload="gdscript:_on_load">

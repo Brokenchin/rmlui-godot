@@ -1,0 +1,34 @@
+<rml>
+<head>
+<style>
+	body { display: block; }
+	#grid { display: block; }
+	.slot { display: block; width: 50px; height: 50px; background-color: #4488cc; }
+</style>
+<script>
+# Issue #59 — a doc-script widget that addresses its OWN elements by id. It is
+# written EXACTLY as it would be standalone: it renders a grid by id and wires
+# drag/drop by id, with no knowledge that it is embedded. Mounted twice in one
+# context (the same file), each instance must drive its OWN subtree — that only
+# works if `rml_context` resolves "grid"/"slot" inside this embed.
+var rml_context
+var dropped := []
+
+func _on_load(_event):
+	# No text in the rendered slot: it keeps its explicit 50x50 size and needs no
+	# font, so the test stays font-free (RmlUi warns per-frame on unsized text).
+	rml_context.set_element_inner_rml("grid", "<div id='slot' class='slot'></div>")
+	rml_context.register_drag_source("slot", _payload)
+	rml_context.register_drop_target("grid", _on_drop)
+
+func _payload(_id, _pos):
+	return {"from": "slot"}
+
+func _on_drop(_id, data):
+	dropped.append(data)
+</script>
+</head>
+<body id="root" onload="gdscript:_on_load">
+	<div id="grid"></div>
+</body>
+</rml>

@@ -422,6 +422,34 @@ public:
 	godot::String get_element_attribute(const godot::String& element_id, const godot::String& attribute, const godot::String& default_value = "") const;
 	void set_element_attribute(const godot::String& element_id, const godot::String& attribute, const godot::String& value);
 
+	// --- Issue #59: embed-scoped doc-script API ---
+	// Entry points called by RmlContextScope — the per-embed `rml_context`
+	// injected into an embedded document's <script> blocks. Each resolves an
+	// element id within `embed_id`'s subtree first, then falls back to the
+	// context-global lookup. The public bound methods above are exactly the
+	// embed_id == "" (root / today's) case and delegate to these. Also used for
+	// <script> injection (embed_id_for_document / is_embed_namespaced).
+	void set_element_inner_rml_scoped(const std::string& embed_id, const godot::String& element_id, const godot::String& rml);
+	godot::Ref<RmlElementHandle> get_element_by_id_scoped(const std::string& embed_id, const godot::String& id) const;
+	godot::String get_element_outer_rml_scoped(const std::string& embed_id, const godot::String& element_id) const;
+	bool set_element_property_scoped(const std::string& embed_id, const godot::String& element_id, const godot::String& property, const godot::String& value);
+	void remove_element_property_scoped(const std::string& embed_id, const godot::String& element_id, const godot::String& property);
+	void set_element_class_scoped(const std::string& embed_id, const godot::String& element_id, const godot::String& class_name, bool activate);
+	void set_element_attribute_scoped(const std::string& embed_id, const godot::String& element_id, const godot::String& attribute, const godot::String& value);
+	godot::String get_element_attribute_scoped(const std::string& embed_id, const godot::String& element_id, const godot::String& attribute, const godot::String& default_value) const;
+	bool add_event_listener_scoped(const std::string& embed_id, const godot::String& element_id, const godot::String& event_type, const godot::Callable& callable, bool in_capture_phase);
+	void remove_event_listeners_scoped(const std::string& embed_id, const godot::String& element_id, const godot::String& event_type);
+	void register_drag_source_scoped(const std::string& embed_id, const godot::String& element_id, const godot::Callable& payload_builder, const godot::Callable& ghost_builder);
+	void register_drop_target_scoped(const std::string& embed_id, const godot::String& element_id, const godot::Callable& drop_handler);
+	godot::String mount_embed_scoped(const std::string& embed_id, const godot::String& parent_element_id, const godot::String& src, const godot::Dictionary& options);
+	// Embed introspection for the <script> injection hook (GodotScriptDocument):
+	// the embed id whose mounted document is `doc` ("" if `doc` is not an embed),
+	// and whether that embed opted into data-model namespacing (<embed-doc model>).
+	// Non-const: while an embed is mid-mount (see _mounting_* below) this also
+	// records the loading document, so the embed's on_load resolves to itself.
+	std::string embed_id_for_document(Rml::ElementDocument* doc);
+	bool is_embed_namespaced(const std::string& embed_id) const;
+
 	// Texture registration
 	bool register_texture(const godot::String& name, const godot::Ref<godot::Texture2D>& texture);
 	bool unregister_texture(const godot::String& name);
@@ -572,6 +600,9 @@ private:
 	std::vector<ListenerRecord> _listener_records;
 
 	Rml::Element* _find_element(const godot::String& id) const;
+	// Issue #59: resolve `id` within `embed_id`'s mounted subtree first, then fall
+	// back to _find_element (context-global). embed_id "" == _find_element exactly.
+	Rml::Element* _find_element_scoped(const std::string& embed_id, const godot::String& id) const;
 
 	// --- Issue #56: embedded sub-documents ---
 	// Each entry mounts an embedded document under an <embed-doc> host element in
@@ -590,6 +621,17 @@ private:
 	std::unordered_map<std::string, EmbedEntry> _embeds;
 	uint64_t _embed_counter = 0;
 	static constexpr int k_max_embed_depth = 16;
+
+	// #59: an embed's `load` event fires synchronously INSIDE Context::LoadDocument
+	// (Context.cpp), before LoadDocument returns the document pointer — so we can't
+	// register the embed before its own <script> on_load runs. These transient
+	// fields announce the embed currently being mounted: embed_id_for_document()
+	// resolves the loading doc's script to this embed, and _find_element_scoped()
+	// resolves ids against _mounting_doc until the registry entry is in place.
+	// Saved/restored around each LoadDocument for nested mounts.
+	std::string _mounting_embed_id;
+	Rml::ElementDocument* _mounting_doc = nullptr;
+	bool _mounting_namespaced = false;
 
 	// Mount `src` as a child of `host`; recurses into <embed-doc> authored inside
 	// the embed (depth/cycle-guarded via src_chain). Does NOT call Update().
@@ -639,6 +681,7 @@ private:
 
 	struct DragSourceEntry {
 		std::string element_id;
+		std::string embed_id; // #59: scope for resolution ("" = context-global)
 		godot::Callable payload_builder;
 		godot::Callable ghost_builder;
 	};
@@ -646,6 +689,7 @@ private:
 
 	struct DropTargetEntry {
 		std::string element_id;
+		std::string embed_id; // #59: scope for resolution ("" = context-global)
 		godot::Callable drop_handler;
 	};
 	std::vector<DropTargetEntry> _drop_targets;
@@ -672,7 +716,10 @@ private:
 
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);
-	void _create_drag_ghost(const std::string& source_element_id,
+	// `el` is the drag source already resolved in its embed scope (#59) — passed
+	// in so the ghost is built from the correct embed's element, not a global
+	// id re-lookup. source_element_id is forwarded to the ghost_builder callback.
+	void _create_drag_ghost(Rml::Element* el, const std::string& source_element_id,
 		const godot::Callable& ghost_builder, const godot::Vector2& grab_offset);
 
 	// Issue #37: drag ghost on its own CanvasLayer. Godot's native

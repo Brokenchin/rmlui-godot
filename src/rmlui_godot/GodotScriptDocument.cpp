@@ -2,6 +2,7 @@
 #include "GodotEventListener.hpp"
 #include "RmlManager.hpp"
 #include "RmlContext.hpp"
+#include "RmlContextScope.hpp"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Event.h>
@@ -189,7 +190,22 @@ godot::Object* GodotScriptDocument::_ensure_instance(ScriptBlock& block) {
 	// Inject the owning RmlContext into `var rml_context` if declared
 	// (Object::set is a silent no-op for undeclared properties).
 	if (node != nullptr) {
-		obj->set("rml_context", node);
+		// Issue #59: an EMBEDDED document's <script> receives a per-embed scope
+		// object instead of the raw node, so its id-based calls
+		// (set_element_inner_rml, register_drag_source, …) resolve within its OWN
+		// subtree — two embeds of the same widget stay independent with zero
+		// source changes. A root document keeps the raw node (today's global
+		// behavior unchanged). The scope object forwards everything else to the
+		// node; get_context_node() is the escape hatch for node-level access.
+		const std::string embed_id = node->embed_id_for_document(this);
+		if (!embed_id.empty()) {
+			godot::Ref<RmlContextScope> scope;
+			scope.instantiate();
+			scope->setup(node, embed_id, node->is_embed_namespaced(embed_id));
+			obj->set("rml_context", scope);
+		} else {
+			obj->set("rml_context", node);
+		}
 
 		// Issue #56: inject `var data` — a cached handle to this document's root
 		// data-model (the namespaced name for an embed, the authored name for a
