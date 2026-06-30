@@ -174,6 +174,61 @@ std::string RmlContext::_resolve_embed_src(Rml::Element* host, const std::string
 	return src;
 }
 
+Rml::Element* RmlContext::_find_element_scoped(const std::string& embed_id,
+		const godot::String& id) const {
+	if (embed_id.empty()) return _find_element(id);
+
+	// Pick the subtree this scope addresses: the registered embed's document, or —
+	// while it is still mounting (its load event fires inside LoadDocument, before
+	// the registry entry exists) — the loading document.
+	Rml::ElementDocument* subtree = nullptr;
+	auto it = _embeds.find(embed_id);
+	if (it != _embeds.end()) {
+		subtree = it->second.document;
+	} else if (embed_id == _mounting_embed_id) {
+		subtree = _mounting_doc;
+	} else {
+		// Dead scope: the embed was unmounted but its script outlived it. Do NOT
+		// fall back to the global lookup — that could resolve a same-id element in
+		// a sibling embed.
+		return nullptr;
+	}
+
+	// GetElementById on the embedded document searches from its own root, so the
+	// lookup is scoped to this embed's subtree (sibling embeds / parent excluded).
+	if (subtree != nullptr) {
+		if (Rml::Element* el = subtree->GetElementById(Rml::String(id.utf8().get_data())))
+			return el;
+	}
+
+	// Not in this embed's subtree (or it isn't laid out yet) — fall back to the
+	// context-global lookup so a widget can still address a shared/parent id by
+	// name (resolve "within its own subtree FIRST", per the issue).
+	return _find_element(id);
+}
+
+std::string RmlContext::embed_id_for_document(Rml::ElementDocument* doc) {
+	if (doc == nullptr) return {};
+	for (const auto& [id, e] : _embeds) {
+		if (e.document == doc) return id;
+	}
+	// Mid-mount: Context::LoadDocument is still inside its synchronous load-event
+	// dispatch, so the embed isn't registered yet — but `doc` IS the one being
+	// mounted. Record it so this embed's on_load resolves ids inside itself.
+	if (!_mounting_embed_id.empty()) {
+		_mounting_doc = doc;
+		return _mounting_embed_id;
+	}
+	return {};
+}
+
+bool RmlContext::is_embed_namespaced(const std::string& embed_id) const {
+	auto it = _embeds.find(embed_id);
+	if (it != _embeds.end()) return !it->second.model.empty();
+	if (embed_id == _mounting_embed_id) return _mounting_namespaced;
+	return false;
+}
+
 bool RmlContext::_mount_embed_core(RmlEmbedElement* host, const std::string& src_raw,
 		const std::string& model, const std::string& embed_id, int depth,
 		std::vector<std::string>& src_chain) {
@@ -212,6 +267,19 @@ bool RmlContext::_mount_embed_core(RmlEmbedElement* host, const std::string& src
 	std::string primary_model;
 	Rml::ElementDocument* doc = nullptr;
 
+	// #59: announce the embed being mounted. LoadDocument(FromMemory) dispatches
+	// the document's `load` event synchronously before it returns (Context.cpp),
+	// and that on_load is the first to inject `rml_context` into the embed's
+	// <script> — so embed_id_for_document() / _find_element_scoped() must be able
+	// to resolve this embed during the load call, before its registry entry exists.
+	// Save/restore makes nested mounts (an on_load that mounts a further embed) work.
+	const std::string prev_mounting_id = _mounting_embed_id;
+	Rml::ElementDocument* const prev_mounting_doc = _mounting_doc;
+	const bool prev_mounting_namespaced = _mounting_namespaced;
+	_mounting_embed_id = embed_id;
+	_mounting_doc = nullptr; // set lazily by embed_id_for_document during the load event
+	_mounting_namespaced = namespaced;
+
 	if (namespaced) {
 		godot::Ref<godot::FileAccess> f = godot::FileAccess::open(
 			godot::String(resolved.c_str()), godot::FileAccess::READ);
@@ -248,6 +316,12 @@ bool RmlContext::_mount_embed_core(RmlEmbedElement* host, const std::string& src
 	} else {
 		doc = _rml_context->LoadDocument(Rml::String(resolved.c_str()));
 	}
+
+	// Load (and its synchronous on_load) finished; close the mounting window. The
+	// embed is registered in _embeds below, so later calls resolve via the entry.
+	_mounting_embed_id = prev_mounting_id;
+	_mounting_doc = prev_mounting_doc;
+	_mounting_namespaced = prev_mounting_namespaced;
 
 	if (doc == nullptr) {
 		if (!console_log_muted()) {
@@ -286,10 +360,13 @@ bool RmlContext::_mount_embed_core(RmlEmbedElement* host, const std::string& src
 	// <embed-doc> is the layout box; the document fills it.
 	doc->SetProperty("position", "relative");
 
-	// Make the embedded document visible without stealing focus from the parent.
-	doc->Show(Rml::ModalFlag::None, Rml::FocusFlag::None, Rml::ScrollFlag::None);
-
-	// Tag + register the host.
+	// Tag + register the host BEFORE Show(). Show() dispatches the document's
+	// onload SYNCHRONOUSLY, and that handler is the first to instantiate the
+	// embed's <script> — at which point GodotScriptDocument resolves the embed via
+	// embed_id_for_document() to inject the per-embed `rml_context` scope (#59). If
+	// the registry entry isn't in place yet, injection falls back to the node and
+	// the widget's id-based calls resolve context-global (wrong embed). So the
+	// entry must exist before the first script call.
 	host->SetId(Rml::String(embed_id.c_str()));
 	host->set_embed_id(embed_id);
 	host->set_mounted(true);
@@ -306,6 +383,9 @@ bool RmlContext::_mount_embed_core(RmlEmbedElement* host, const std::string& src
 	// (The embed's <script> blocks self-resolve `var data` from the document's
 	// data-model attribute at instantiation — see GodotScriptDocument; no
 	// injection needed here. entry.data_model drives get_embedded_data.)
+
+	// Make the embedded document visible without stealing focus from the parent.
+	doc->Show(Rml::ModalFlag::None, Rml::FocusFlag::None, Rml::ScrollFlag::None);
 
 	// Recurse into any <embed-doc> authored inside this embed.
 	src_chain.push_back(resolved);
@@ -398,6 +478,14 @@ void RmlContext::_mount_declarative_embeds(Rml::Element* subtree_root, int depth
 
 godot::String RmlContext::mount_embed(const godot::String& parent_element_id,
 		const godot::String& src, const godot::Dictionary& options) {
+	// Context-global parent resolution (root / game code). An embedded script
+	// nesting a further embed reaches mount_embed_scoped with its own embed id.
+	return mount_embed_scoped(std::string(), parent_element_id, src, options);
+}
+
+godot::String RmlContext::mount_embed_scoped(const std::string& embed_id,
+		const godot::String& parent_element_id, const godot::String& src,
+		const godot::Dictionary& options) {
 	_warn_if_off_main_thread();
 	if (_rml_context == nullptr) {
 		godot::UtilityFunctions::push_error("[RmlUi] mount_embed — context not initialized");
@@ -408,17 +496,20 @@ godot::String RmlContext::mount_embed(const godot::String& parent_element_id,
 		return {};
 	}
 
-	Rml::Element* parent = _find_element(parent_element_id);
+	// #59: a nesting embed's parent id resolves within its own subtree first.
+	Rml::Element* parent = _find_element_scoped(embed_id, parent_element_id);
 	if (parent == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] mount_embed — parent element not found: ") + parent_element_id);
 		return {};
 	}
 
-	std::string embed_id;
+	// The NEW embed's id (from options); distinct from `embed_id`, the calling
+	// embed whose subtree the parent was resolved in.
+	std::string new_embed_id;
 	if (options.has("id")) {
 		const godot::String id_opt = options["id"];
-		embed_id = std::string(id_opt.utf8().get_data());
+		new_embed_id = std::string(id_opt.utf8().get_data());
 	}
 	std::string model;
 	if (options.has("model")) {
@@ -426,7 +517,7 @@ godot::String RmlContext::mount_embed(const godot::String& parent_element_id,
 		model = std::string(model_opt.utf8().get_data());
 	}
 
-	std::string id = _mount_embed_into(parent, std::string(src.utf8().get_data()), model, embed_id);
+	std::string id = _mount_embed_into(parent, std::string(src.utf8().get_data()), model, new_embed_id);
 	return godot::String(id.c_str());
 }
 
@@ -611,17 +702,32 @@ bool RmlContext::is_embed_mounted(const godot::String& embed_id) const {
 }
 
 void RmlContext::_purge_embeds_in_subtree(Rml::Element* root_host) {
+	std::vector<std::string> purged_ids;
 	for (auto it = _embeds.begin(); it != _embeds.end(); ) {
 		bool inside = false;
 		for (Rml::Element* e = it->second.host; e != nullptr; e = e->GetParentNode()) {
 			if (e == root_host) { inside = true; break; }
 		}
 		if (inside) {
+			purged_ids.push_back(it->first);
 			it = _embeds.erase(it);
 		} else {
 			++it;
 		}
 	}
+
+	// #59: drop drag/drop registrations made by the purged embeds' scripts. Their
+	// element_ids would otherwise outlive the embed and, once the embed is gone,
+	// resolve nowhere (or be ambiguous) — so remove them with the subtree.
+	if (purged_ids.empty()) return;
+	auto in_purged = [&](const std::string& eid) {
+		return !eid.empty() &&
+			std::find(purged_ids.begin(), purged_ids.end(), eid) != purged_ids.end();
+	};
+	_drag_sources.erase(std::remove_if(_drag_sources.begin(), _drag_sources.end(),
+		[&](const DragSourceEntry& s) { return in_purged(s.embed_id); }), _drag_sources.end());
+	_drop_targets.erase(std::remove_if(_drop_targets.begin(), _drop_targets.end(),
+		[&](const DropTargetEntry& t) { return in_purged(t.embed_id); }), _drop_targets.end());
 }
 
 void RmlContext::_purge_listener_records_in_subtree(Rml::Element* root_host) {

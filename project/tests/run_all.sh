@@ -49,6 +49,7 @@ run tests/test_embed_hardening.gd headless
 run tests/test_embed_input.gd headless
 run tests/test_embed_focus.gd headless
 run tests/test_embed_drag.gd headless
+run tests/test_embed_scoped.gd headless
 run tests/test_editor_script_gate.gd headless
 run tests/test_inline_script_freeze.gd headless
 run tests/test_decorator_shader_warn.gd windowed
