@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <utility>
 #include <RmlUi/Core.h>
+#include <RmlUi/Core/ElementUtilities.h>
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/StyleSheetContainer.h>
 #include <RmlUi/Debugger.h>
@@ -342,8 +343,40 @@ void RmlContext::_update_hover_tracking() {
 bool RmlContext::_point_in_element(Rml::Element* el, float x, float y) const {
 	Rml::Vector2f offset = el->GetAbsoluteOffset(Rml::BoxArea::Border);
 	Rml::Vector2f size = el->GetBox().GetSize(Rml::BoxArea::Border);
-	return x >= offset.x && x <= offset.x + size.x
-		&& y >= offset.y && y <= offset.y + size.y;
+	if (x < offset.x || x > offset.x + size.x || y < offset.y || y > offset.y + size.y)
+		return false;
+
+	// Respect ancestor overflow clipping (issue #61). An element scrolled or laid
+	// out past an `overflow: auto|scroll|hidden` ancestor's viewport still has its
+	// own border box at that position, but it is clipped from view — so it must not
+	// be a drag/drop hit either, or an embedded (or merely scrolled) widget leaks
+	// interaction outside its clip region. This mirrors RmlUi's own hit-testing
+	// (Context::GetElementAtPoint), keeping the addon drag/drop bridge consistent
+	// with get_element_at_point and the hover chain.
+	Rml::Rectanglei clip_region;
+	if (Rml::ElementUtilities::GetClippingRegion(el, clip_region))
+		return clip_region.Contains(Rml::Vector2i((int)x, (int)y));
+
+	return true;
+}
+
+// Topmost registered drop target whose box contains `p` and that is not clipped
+// out by an overflow ancestor (issue #61), or nullptr. Shared by the Godot
+// drag/drop virtuals and the get_drop_target_at_point() query so all three agree.
+const RmlContext::DropTargetEntry* RmlContext::_drop_target_at(const godot::Vector2& p) const {
+	if (_rml_context == nullptr) return nullptr;
+	for (const auto& target : _drop_targets) {
+		// #59: resolve within the target's own embed first.
+		Rml::Element* el = _find_element_scoped(target.embed_id, godot::String(target.element_id.c_str()));
+		if (el != nullptr && _point_in_element(el, p.x, p.y))
+			return &target;
+	}
+	return nullptr;
+}
+
+godot::String RmlContext::get_drop_target_at_point(const godot::Vector2& point) const {
+	const DropTargetEntry* target = _drop_target_at(point);
+	return target != nullptr ? godot::String(target->element_id.c_str()) : godot::String();
 }
 
 godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
@@ -394,44 +427,26 @@ godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
 
 bool RmlContext::_can_drop_data(const godot::Vector2& p_at_position,
 	const godot::Variant& /*p_data*/) const {
-
-	if (_rml_context == nullptr || _drop_targets.empty()) return false;
-
-	for (const auto& target : _drop_targets) {
-		Rml::Element* el = _find_element_scoped(target.embed_id, godot::String(target.element_id.c_str()));
-		if (el == nullptr) continue;
-
-		if (_point_in_element(el, p_at_position.x, p_at_position.y))
-			return true;
-	}
-
-	return false;
+	return _drop_target_at(p_at_position) != nullptr;
 }
 
 void RmlContext::_drop_data(const godot::Vector2& p_at_position,
 	const godot::Variant& p_data) {
 
-	if (_rml_context == nullptr || _drop_targets.empty()) return;
+	const DropTargetEntry* target = _drop_target_at(p_at_position);
+	if (target == nullptr) return;
 
-	for (const auto& target : _drop_targets) {
-		Rml::Element* el = _find_element_scoped(target.embed_id, godot::String(target.element_id.c_str()));
-		if (el == nullptr) continue;
+	godot::String element_id(target->element_id.c_str());
 
-		if (!_point_in_element(el, p_at_position.x, p_at_position.y)) continue;
-
-		godot::String element_id(target.element_id.c_str());
-
-		if (target.drop_handler.is_valid()) {
-			target.drop_handler.call(element_id, p_data);
-		}
-
-		godot::Dictionary signal_data;
-		if (p_data.get_type() == godot::Variant::DICTIONARY) {
-			signal_data = p_data;
-		}
-		emit_signal("rml_drop_received", element_id, signal_data);
-		return;
+	if (target->drop_handler.is_valid()) {
+		target->drop_handler.call(element_id, p_data);
 	}
+
+	godot::Dictionary signal_data;
+	if (p_data.get_type() == godot::Variant::DICTIONARY) {
+		signal_data = p_data;
+	}
+	emit_signal("rml_drop_received", element_id, signal_data);
 }
 
 Rml::String RmlContext::_build_ghost_rml(Rml::Element* el, int w, int h) {

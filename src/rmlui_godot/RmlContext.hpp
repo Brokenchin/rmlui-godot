@@ -124,6 +124,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	// A4: Drag-and-drop (gd_drag interop)
 	godot::ClassDB::bind_method(godot::D_METHOD("register_drag_source", "element_id", "payload_builder", "ghost_builder"), &RmlContext::register_drag_source, DEFVAL(godot::Callable()), DEFVAL(godot::Callable()));
 	godot::ClassDB::bind_method(godot::D_METHOD("register_drop_target", "element_id", "drop_handler"), &RmlContext::register_drop_target, DEFVAL(godot::Callable()));
+	godot::ClassDB::bind_method(godot::D_METHOD("get_drop_target_at_point", "point"), &RmlContext::get_drop_target_at_point);
 
 	ADD_SIGNAL(godot::MethodInfo("rml_drag_started",
 		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
@@ -462,6 +463,10 @@ public:
 	// A4: Drag-and-drop (gd_drag interop)
 	void register_drag_source(const godot::String& element_id, const godot::Callable& payload_builder = godot::Callable(), const godot::Callable& ghost_builder = godot::Callable());
 	void register_drop_target(const godot::String& element_id, const godot::Callable& drop_handler = godot::Callable());
+	// Id of the registered drop target under `point`, or "" if none. Respects
+	// overflow clipping (issue #61), so it agrees with the actual drag/drop bridge
+	// (_can_drop_data/_drop_data) and with get_element_at_point / the hover chain.
+	godot::String get_drop_target_at_point(const godot::Vector2& point) const;
 
 	// Hover bridge: id of the element currently under the cursor (nearest
 	// ancestor carrying an id), or "" when nothing opted-in is hovered.
@@ -715,6 +720,7 @@ private:
 	Rml::Element* _last_hover_element = nullptr;
 
 	bool _point_in_element(Rml::Element* el, float x, float y) const;
+	const DropTargetEntry* _drop_target_at(const godot::Vector2& point) const;
 	Rml::String _build_ghost_rml(Rml::Element* el, int w, int h);
 	// `el` is the drag source already resolved in its embed scope (#59) — passed
 	// in so the ghost is built from the correct embed's element, not a global
