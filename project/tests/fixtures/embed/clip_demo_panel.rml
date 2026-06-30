@@ -1,0 +1,77 @@
+<rml>
+<head>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		/* Issue #61 visual repro — a fixed-size flex-column "bag" whose middle child
+		   is the scroll viewport (overflow-y: auto; flex-grow: 1) over a 4-wide grid
+		   that overflows it. Bright slots + a thick border on #bag-root make the clip
+		   boundary obvious: anything painted past the border is a CLIP LEAK. */
+		body { font-family: "Noto Sans"; }
+		#bag-root {
+			display: flex; flex-direction: column;
+			width: 232px; height: 212px;
+			background-color: #161a22;
+			border: 3px #8fc6ff;
+		}
+		.bag-header { height: 26px; flex-shrink: 0; background-color: #243b66; color: #cfe2ff;
+			font-size: 15px; text-align: center; }
+		.bag-scroll { flex-grow: 1; overflow-y: auto; width: 100%; }
+		#grid { display: flex; flex-direction: row; flex-wrap: wrap; padding: 4px; }
+		.slot {
+			display: block; width: 44px; height: 44px; margin: 3px;
+			background-color: #e0b020; border: 1px #1a1a1a;
+			color: #1a1a1a; font-size: 14px; text-align: center;
+		}
+		.slot.alt { background-color: #d0504a; color: #ffffff; }
+		.bag-toolbar { height: 24px; flex-shrink: 0; background-color: #243b66; }
+	</style>
+</head>
+<body id="bag-root">
+	<div class="bag-header">Bag (scroll)</div>
+	<div class="bag-scroll" id="bag-scroll">
+		<div id="grid">
+			<div class="slot" id="slot_0">0</div>
+			<div class="slot alt" id="slot_1">1</div>
+			<div class="slot" id="slot_2">2</div>
+			<div class="slot alt" id="slot_3">3</div>
+			<div class="slot alt" id="slot_4">4</div>
+			<div class="slot" id="slot_5">5</div>
+			<div class="slot alt" id="slot_6">6</div>
+			<div class="slot" id="slot_7">7</div>
+			<div class="slot" id="slot_8">8</div>
+			<div class="slot alt" id="slot_9">9</div>
+			<div class="slot" id="slot_10">10</div>
+			<div class="slot alt" id="slot_11">11</div>
+			<div class="slot alt" id="slot_12">12</div>
+			<div class="slot" id="slot_13">13</div>
+			<div class="slot alt" id="slot_14">14</div>
+			<div class="slot" id="slot_15">15</div>
+			<div class="slot" id="slot_16">16</div>
+			<div class="slot alt" id="slot_17">17</div>
+			<div class="slot" id="slot_18">18</div>
+			<div class="slot alt" id="slot_19">19</div>
+			<div class="slot" id="slot_20">20</div>
+			<div class="slot alt" id="slot_21">21</div>
+			<div class="slot" id="slot_22">22</div>
+			<div class="slot alt" id="slot_23">23</div>
+			<div class="slot alt" id="slot_24">24</div>
+			<div class="slot" id="slot_25">25</div>
+			<div class="slot alt" id="slot_26">26</div>
+			<div class="slot" id="slot_27">27</div>
+			<div class="slot" id="slot_28">28</div>
+			<div class="slot alt" id="slot_29">29</div>
+			<div class="slot" id="slot_30">30</div>
+			<div class="slot alt" id="slot_31">31</div>
+			<div class="slot alt" id="slot_32">32</div>
+			<div class="slot" id="slot_33">33</div>
+			<div class="slot alt" id="slot_34">34</div>
+			<div class="slot" id="slot_35">35</div>
+			<div class="slot" id="slot_36">36</div>
+			<div class="slot alt" id="slot_37">37</div>
+			<div class="slot" id="slot_38">38</div>
+			<div class="slot alt" id="slot_39">39</div>
+		</div>
+	</div>
+	<div class="bag-toolbar"></div>
+</body>
+</rml>
