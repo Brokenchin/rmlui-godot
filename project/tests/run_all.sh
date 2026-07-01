@@ -65,6 +65,7 @@ run tests/test_gdscript_highlight.gd headless
 run tests/test_script_line_mapping.gd headless
 
 # Pixel-readback tests need a window
+run tests/test_embed_render_clip.gd windowed
 run tests/test_live_preview_parity.gd windowed
 run tests/test_subviewport_recreate.gd windowed
 run tests/test_preview_click.gd windowed

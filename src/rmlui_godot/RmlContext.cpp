@@ -516,17 +516,56 @@ void RmlContext::_draw() {
 				xform.set_origin(cmd.translation);
 			}
 
+			// The clip-mask quad must obey the active scissor exactly like ordinary
+			// geometry (issue #61 render half). A border-radius element clips its
+			// content with a clip mask instead of the scissor; when it scrolls or lays
+			// out past an `overflow` ancestor its content is scissor-culled, but the
+			// rounded mask quad (drawn with the white texture) used to be emitted
+			// unconditionally and leaked outside the embed as a white square. Cull the
+			// mask when fully outside the scissor, and clip it to the edge when it
+			// straddles — keeping it paired with the content it masks.
+			const godot::AABB mask_aabb = mask_mesh->get_aabb();
+			const godot::Vector2 mask_origin = xform.get_origin();
+			const float mask_l = mask_origin.x + static_cast<float>(mask_aabb.position.x);
+			const float mask_t = mask_origin.y + static_cast<float>(mask_aabb.position.y);
+			const float mask_r = mask_l + static_cast<float>(mask_aabb.size.x);
+			const float mask_b = mask_t + static_cast<float>(mask_aabb.size.y);
+			godot::Rect2 mask_clip(0, 0, ctrl_size.x, ctrl_size.y);
+			if (cmd.scissor_enabled) {
+				mask_clip = mask_clip.intersection(godot::Rect2(cmd.scissor_rect));
+			}
+			if (mask_clip.size.x <= 0 || mask_clip.size.y <= 0) break;
+			if (mask_r <= mask_clip.position.x || mask_l >= mask_clip.position.x + mask_clip.size.x ||
+				mask_b <= mask_clip.position.y || mask_t >= mask_clip.position.y + mask_clip.size.y) {
+				break; // fully outside the scissor — cull (its content is culled too)
+			}
+
+			const bool mask_fully_inside =
+				(mask_l >= mask_clip.position.x && mask_t >= mask_clip.position.y &&
+					mask_r <= mask_clip.position.x + mask_clip.size.x &&
+					mask_b <= mask_clip.position.y + mask_clip.size.y);
+
 			godot::Ref<godot::Texture2D> tex = _render_interface.get_texture_or_white(0);
 			godot::RID tex_rid = tex.is_valid() ? tex->get_rid() : godot::RID();
-			// Clip-mask geometry draws directly into the group item (it must
-			// paint before the group's children); recorded as a prim of that slot.
+
+			// Clip-mask geometry draws directly into the group item (it must paint
+			// before the group's children); recorded as a prim of that slot.
 			SlotPrim p;
-			p.kind = SlotPrim::MESH;
 			p.geo_handle = static_cast<uintptr_t>(cmd.geometry);
 			p.tex_handle = 0;
 			p.xform = xform;
-			p.mesh_rid = mask_mesh->get_rid();
 			p.tex_rid = tex_rid;
+			if (cmd.scissor_enabled && !mask_fully_inside) {
+				// Straddles the scissor edge: clip the mask to it (CPU) so the part
+				// outside the overflow region doesn't paint as a white sliver.
+				const auto* raw = _render_interface.get_raw_geometry(cmd.geometry);
+				if (!(raw && _clip_mesh_to_rect(*raw, xform, mask_clip, clip_buf))) break;
+				p.kind = SlotPrim::TRI_ARRAY;
+				p.clip_rect = mask_clip;
+			} else {
+				p.kind = SlotPrim::MESH;
+				p.mesh_rid = mask_mesh->get_rid();
+			}
 			nb[draw_target_index].desc.prims.push_back(std::move(p));
 			break;
 		}
