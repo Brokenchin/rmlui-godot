@@ -7,6 +7,7 @@
 #include "GodotScriptDocument.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/ElementUtilities.h>
@@ -54,8 +55,15 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 		if (consumed) return;
 	}
 
+	// Timed for get_frame_stats: ProcessMouseMove re-resolves the hover chain (a full
+	// hit-test through the DOM) per event, so a fast mouse over a deep tree can cost
+	// real per-frame time — this makes it visible instead of guessed at.
+	const auto t_fwd0 = std::chrono::steady_clock::now();
 	_forward_mouse_event(event);
 	_forward_key_event(event);
+	_input_us_accum += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+		std::chrono::steady_clock::now() - t_fwd0).count());
+	_input_events_accum++;
 
 	// Issue #47: don't blanket-dirty on every input. InputEventMouseMotion fires
 	// continuously while the cursor moves over the context, and dirtying here

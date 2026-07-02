@@ -14,6 +14,7 @@
 #include "GodotScriptDocument.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
@@ -267,18 +268,39 @@ void RmlContext::_apply_editor_mock_data() {
 void RmlContext::_process(double delta) {
 	if (_rml_context == nullptr) return;
 
+	// Snapshot the input-forwarding cost accumulated since the previous _process
+	// (events arrive in _gui_input, possibly several per frame).
+	_last_input_us = _input_us_accum;
+	_last_input_events = _input_events_accum;
+	_input_us_accum = 0;
+	_input_events_accum = 0;
+
+	const auto t_sync0 = std::chrono::steady_clock::now();
 	_sync_dimensions();
+	const auto t_upd0 = std::chrono::steady_clock::now();
+	_last_sync_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(t_upd0 - t_sync0).count());
 	_rml_context->Update();
+	const auto t_upd1 = std::chrono::steady_clock::now();
+	_last_update_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(t_upd1 - t_upd0).count());
 
 	// Issue #56: nested embedded documents are not laid out by Context::Update's
 	// root-only layout loop, so reflow any whose internals changed (and reflow the
 	// parent if an embed's outer size changed). Runs after Update so it observes
 	// the settled tree.
 	_update_embed_layout();
+	_last_embed_update_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t_upd1).count());
 
 	// Hover bridge: detect hover-chain changes after the Update settled them and
 	// push rml_element_hovered / rml_element_unhovered to any external overlay.
+	const auto t_hov0 = std::chrono::steady_clock::now();
 	_update_hover_tracking();
+	_last_hover_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t_hov0).count());
 
 	// Game-first per-frame tick (issue #41): lets time-based gestures — long-
 	// press, double-tap timeout, hold-to-charge — run from a document <script>
@@ -327,6 +349,9 @@ void RmlContext::_draw() {
 	auto* rs = godot::RenderingServer::get_singleton();
 	if (rs == nullptr) return;
 
+	_frame_stats = FrameStats{};
+	const auto t_render0 = std::chrono::steady_clock::now();
+
 	// Release meshes retired two frames ago. Their canvas-item references were
 	// dropped when the owning slot last changed (canvas_item_clear), so freeing
 	// the RIDs now is safe. Canvas items are NOT torn down here — they persist
@@ -336,7 +361,12 @@ void RmlContext::_draw() {
 	_render_interface.clear_draw_commands();
 	_rml_context->Render();
 
+	const auto t_build0 = std::chrono::steady_clock::now();
+	_frame_stats.render_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(t_build0 - t_render0).count());
+
 	const auto& commands = _render_interface.get_draw_commands();
+	_frame_stats.draw_commands = static_cast<uint32_t>(commands.size());
 
 	// Build this frame's slots into the non-current ping-pong buffer, reusing
 	// its Slot storage (and each Slot's prims vector) so the steady state
@@ -654,6 +684,7 @@ void RmlContext::_draw() {
 				// CPU clip: validate it produces output now (so an empty clip
 				// skips the draw exactly as before); the clipped triangle array
 				// is recomputed in _apply_slot only when the slot actually changes.
+				_frame_stats.tri_clips++;
 				const auto* raw = _render_interface.get_raw_geometry(cmd.geometry);
 				if (raw && _clip_mesh_to_rect(*raw, xform, clip_rect, clip_buf)) {
 					int target = target_for(draw_target_index, geo_material, false, clip_rect, cmd_filter);
@@ -683,7 +714,16 @@ void RmlContext::_draw() {
 		} // switch
 	}
 
+	const auto t_rec0 = std::chrono::steady_clock::now();
+	_frame_stats.build_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(t_rec0 - t_build0).count());
+	_frame_stats.slots_used = static_cast<uint32_t>(used);
+
 	_reconcile_slots(used);
+
+	_frame_stats.reconcile_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t_rec0).count());
 }
 
 void RmlContext::_notification(int p_what) {
@@ -990,10 +1030,12 @@ void RmlContext::_apply_slot(int slot_index, const SlotDesc& desc,
 		rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", desc.scissor_param);
 
 	ClipResult clip_buf;
+	_frame_stats.prims_applied += static_cast<uint32_t>(desc.prims.size());
 	for (const auto& p : desc.prims) {
 		if (p.kind == SlotPrim::MESH) {
 			rs->canvas_item_add_mesh(item, p.mesh_rid, p.xform, p.modulate, p.tex_rid);
 		} else {
+			_frame_stats.tri_clips++;
 			const auto* raw = _render_interface.get_raw_geometry(
 				static_cast<Rml::CompiledGeometryHandle>(p.geo_handle));
 			if (raw && _clip_mesh_to_rect(*raw, p.xform, p.clip_rect, clip_buf)) {
@@ -1031,12 +1073,16 @@ void RmlContext::_reconcile_slots(size_t used) {
 			const bool same = prev[i].parent_rid == parent_rid &&
 				_desc_equal(prev[i].desc, s.desc);
 			if (!same) {
+				_frame_stats.slots_reapplied++;
 				rs->canvas_item_clear(s.rid);
 				_apply_slot(static_cast<int>(i), s.desc, parent_rid, s.rid);
+			} else {
+				_frame_stats.slots_reused++;
 			}
 			// else: fully reuse — the canvas item already holds the right state.
 		} else {
-			if (have_prev) rs->free_rid(prev[i].rid); // kind changed at this slot
+			if (have_prev) { rs->free_rid(prev[i].rid); _frame_stats.slots_freed++; } // kind changed at this slot
+			_frame_stats.slots_created++;
 			s.rid = rs->canvas_item_create();
 			_apply_slot(static_cast<int>(i), s.desc, parent_rid, s.rid);
 		}
@@ -1044,7 +1090,7 @@ void RmlContext::_reconcile_slots(size_t used) {
 
 	// Free previous-frame slots that this frame no longer produces.
 	for (size_t i = used; i < _slots_count; ++i) {
-		if (prev[i].rid.is_valid()) rs->free_rid(prev[i].rid);
+		if (prev[i].rid.is_valid()) { rs->free_rid(prev[i].rid); _frame_stats.slots_freed++; }
 	}
 
 	_slots_count = used;
@@ -1093,6 +1139,29 @@ godot::Dictionary RmlContext::get_context_info() const {
 	info["num_draw_commands"] = static_cast<int>(_render_interface.get_draw_command_count());
 
 	return info;
+}
+
+godot::Dictionary RmlContext::get_frame_stats() const {
+	godot::Dictionary d;
+	d["draw_commands"] = static_cast<int>(_frame_stats.draw_commands);
+	d["slots_used"] = static_cast<int>(_frame_stats.slots_used);
+	d["slots_reused"] = static_cast<int>(_frame_stats.slots_reused);
+	d["slots_reapplied"] = static_cast<int>(_frame_stats.slots_reapplied);
+	d["slots_created"] = static_cast<int>(_frame_stats.slots_created);
+	d["slots_freed"] = static_cast<int>(_frame_stats.slots_freed);
+	d["prims_applied"] = static_cast<int>(_frame_stats.prims_applied);
+	d["tri_clips"] = static_cast<int>(_frame_stats.tri_clips);
+	d["render_us"] = static_cast<int64_t>(_frame_stats.render_us);
+	d["build_us"] = static_cast<int64_t>(_frame_stats.build_us);
+	d["reconcile_us"] = static_cast<int64_t>(_frame_stats.reconcile_us);
+	d["update_us"] = static_cast<int64_t>(_last_update_us);
+	d["embed_update_us"] = static_cast<int64_t>(_last_embed_update_us);
+	d["embed_us_by_id"] = _last_embed_us_by_id;
+	d["sync_us"] = static_cast<int64_t>(_last_sync_us);
+	d["hover_us"] = static_cast<int64_t>(_last_hover_us);
+	d["input_us"] = static_cast<int64_t>(_last_input_us);
+	d["input_events"] = static_cast<int>(_last_input_events);
+	return d;
 }
 
 // --- Private: Input forwarding ---

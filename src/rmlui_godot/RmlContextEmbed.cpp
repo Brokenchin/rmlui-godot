@@ -25,6 +25,8 @@
 #include "RmlContextInternal.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -518,6 +520,18 @@ godot::String RmlContext::mount_embed_scoped(const std::string& embed_id,
 	}
 
 	std::string id = _mount_embed_into(parent, std::string(src.utf8().get_data()), model, new_embed_id);
+
+	// Optional layout isolation (see RmlEmbedElement::is_layout_boundary): the parent
+	// document lays the host out as a fixed replaced box and never formats the embed's
+	// subtree. Root reflows stay O(shell) no matter how heavy the embeds get. Opt-in:
+	// documents relying on the host's flow-resolved auto width should stay non-boundary
+	// (a boundary host's auto size comes from the document, not the parent's flow).
+	if (!id.empty() && options.has("layout_boundary") && bool(options["layout_boundary"])) {
+		auto mounted = _embeds.find(id);
+		if (mounted != _embeds.end() && mounted->second.host != nullptr) {
+			mounted->second.host->SetAttribute("layout-boundary", true);
+		}
+	}
 	return godot::String(id.c_str());
 }
 
@@ -750,6 +764,7 @@ void RmlContext::_purge_listener_records_in_subtree(Rml::Element* root_host) {
 void RmlContext::_update_embed_layout() {
 	if (_embeds.empty() || _rml_context == nullptr) return;
 
+	_last_embed_us_by_id.clear();
 	bool parent_dirtied = false;
 	for (auto& [id, e] : _embeds) {
 		if (e.document == nullptr || e.host == nullptr) continue;
@@ -759,12 +774,31 @@ void RmlContext::_update_embed_layout() {
 		// nothing changed — its internal UpdateLayout self-gates on the document's
 		// layout-dirty flag (which we can't read directly: it is protected) and
 		// UpdatePosition no-ops for a non-root document.
+		const auto t_doc0 = std::chrono::steady_clock::now();
 		e.document->UpdateDocument();
 
+		// Layout-boundary host: the parent document treats it as a replaced box and never
+		// formats its children, so the document's offset inside the host is pinned here
+		// (content-area origin) instead of by the parent's block formatting.
+		if (e.host->is_layout_boundary()) {
+			e.document->SetOffset(e.host->GetBox().GetPosition(Rml::BoxArea::Content), e.host);
+		}
+
+		const int64_t doc_us = std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t_doc0).count();
+		// Per-embed layout attribution (surfaced by get_frame_stats): only documents
+		// that actually did work are listed, so a layout spike names its payer.
+		if (doc_us > 100) {
+			_last_embed_us_by_id[godot::String(id.c_str())] = doc_us;
+		}
+
 		// If the embed's outer size changed, the parent must reflow to reposition
-		// the sibling widgets around it.
+		// the sibling widgets around it. Compared with a half-pixel epsilon: a parent
+		// reflow re-formats the WHOLE root document (all embed subtrees included —
+		// visibility:hidden skips paint, not layout), ~20ms+ for a populated panel, so
+		// sub-pixel wobble from text metrics must never trigger it.
 		const Rml::Vector2f size = e.document->GetBox().GetSize();
-		if (size.x != e.last_w || size.y != e.last_h) {
+		if (std::fabs(size.x - e.last_w) > 0.5f || std::fabs(size.y - e.last_h) > 0.5f) {
 			e.last_w = size.x;
 			e.last_h = size.y;
 			e.host->dirty_parent_layout();
@@ -774,7 +808,17 @@ void RmlContext::_update_embed_layout() {
 	}
 
 	if (parent_dirtied) {
+		// An embed's OUTER size changed, so the parent (root) document must reflow to
+		// reposition siblings — a whole-root layout, often the dominant cost of this
+		// function. Attributed as "<root-reflow>" so it isn't silently lumped into the
+		// per-embed numbers (it was: spikes showed embed=27ms with only 6ms named).
+		const auto t_root0 = std::chrono::steady_clock::now();
 		_rml_context->Update();
+		const int64_t root_us = std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t_root0).count();
+		if (root_us > 100) {
+			_last_embed_us_by_id[godot::String("<root-reflow>")] = root_us;
+		}
 	}
 }
 

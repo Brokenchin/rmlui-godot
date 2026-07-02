@@ -165,6 +165,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("inject_stylesheet", "rcss_string"), &RmlContext::inject_stylesheet);
 	godot::ClassDB::bind_method(godot::D_METHOD("unload_document", "path"), &RmlContext::unload_document);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_context_info"), &RmlContext::get_context_info);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_frame_stats"), &RmlContext::get_frame_stats);
 
 	godot::ClassDB::bind_method(godot::D_METHOD("set_generic_family", "generic_name", "family_name"), &RmlContext::set_generic_family);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_generic_family", "generic_name"), &RmlContext::get_generic_family);
@@ -490,6 +491,11 @@ public:
 	bool inject_stylesheet(const godot::String& rcss_string);
 	bool unload_document(const godot::String& path);
 	godot::Dictionary get_context_info() const;
+	// Last _draw's render-pipeline breakdown (counters + phase timings). Cheap to
+	// keep hot (a few ints), so it is always on; poll from GDScript to see WHERE
+	// a heavy UI frame went: RmlUi's Render walk, the slot build, or the
+	// RenderingServer reconcile (slots re-applied / prims re-added / CPU clips).
+	godot::Dictionary get_frame_stats() const;
 
 private:
 	RmlGodot::GodotRenderInterface _render_interface;
@@ -584,6 +590,44 @@ private:
 	std::vector<Slot> _slots_buf[2];
 	uint8_t _slots_cur = 0;    // buffer index holding the previous frame
 	size_t _slots_count = 0;   // valid slot count in the previous buffer
+
+	// Per-_draw pipeline stats (see get_frame_stats). Reset at the top of _draw;
+	// incremented through the build + reconcile passes. slots_reapplied×prims is
+	// the RS-call amplification to watch: a positional shift in the slot stream
+	// re-applies every later slot even when its content did not change.
+	struct FrameStats {
+		uint32_t draw_commands = 0;
+		uint32_t slots_used = 0;
+		uint32_t slots_reused = 0;     // identical -> zero RS calls
+		uint32_t slots_reapplied = 0;  // changed -> canvas_item_clear + re-add prims
+		uint32_t slots_created = 0;
+		uint32_t slots_freed = 0;
+		uint32_t prims_applied = 0;    // prims (re)added via _apply_slot
+		uint32_t tri_clips = 0;        // CPU polygon clips (build validation + apply)
+		uint64_t render_us = 0;        // Rml::Context::Render (command generation)
+		uint64_t build_us = 0;         // command stream -> slot descriptors
+		uint64_t reconcile_us = 0;     // slot diff + RenderingServer calls
+	};
+	FrameStats _frame_stats;
+	// _process-side timings (layout lives in Context::Update, not in _draw), reported
+	// alongside FrameStats by get_frame_stats. A UI hitch with large update_us and small
+	// render/build/reconcile is a LAYOUT spike (RmlUi re-lays-out the whole document on
+	// any layout-affecting change) — the usual culprit, and invisible to _draw timings.
+	uint64_t _last_update_us = 0;        // Rml::Context::Update (style + layout)
+	uint64_t _last_embed_update_us = 0;  // _update_embed_layout (embed subtree reflow)
+	// Per-embed layout attribution for the last _update_embed_layout pass: embed id ->
+	// µs, only listing documents that did real work (>100µs). Names WHICH document a
+	// layout spike belongs to (e.g. every dock view re-laying-out on each pickup).
+	godot::Dictionary _last_embed_us_by_id;
+	// Remaining per-frame pipeline phases (get_frame_stats): dimension sync, the
+	// hover-chain diff, and input forwarding into RmlUi (ProcessMouse*/ProcessKey*,
+	// accumulated across the frame's _gui_input calls, snapshotted each _process).
+	uint64_t _last_sync_us = 0;
+	uint64_t _last_hover_us = 0;
+	uint64_t _last_input_us = 0;
+	uint32_t _last_input_events = 0;
+	uint64_t _input_us_accum = 0;
+	uint32_t _input_events_accum = 0;
 
 	bool _gpu_scissor = false;
 	bool _render_dirty = true;
