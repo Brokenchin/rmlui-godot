@@ -166,6 +166,7 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 	godot::ClassDB::bind_method(godot::D_METHOD("unload_document", "path"), &RmlContext::unload_document);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_context_info"), &RmlContext::get_context_info);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_frame_stats"), &RmlContext::get_frame_stats);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_last_draw_commands"), &RmlContext::get_last_draw_commands);
 
 	godot::ClassDB::bind_method(godot::D_METHOD("set_generic_family", "generic_name", "family_name"), &RmlContext::set_generic_family);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_generic_family", "generic_name"), &RmlContext::get_generic_family);
@@ -496,6 +497,9 @@ public:
 	// a heavy UI frame went: RmlUi's Render walk, the slot build, or the
 	// RenderingServer reconcile (slots re-applied / prims re-added / CPU clips).
 	godot::Dictionary get_frame_stats() const;
+	// Debug: last _draw's command stream (translation/texture/transform/scissor per
+	// command) — locate an element's paint and the state it was recorded with.
+	godot::Array get_last_draw_commands() const;
 
 private:
 	RmlGodot::GodotRenderInterface _render_interface;

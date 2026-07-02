@@ -1141,6 +1141,24 @@ godot::Dictionary RmlContext::get_context_info() const {
 	return info;
 }
 
+godot::Array RmlContext::get_last_draw_commands() const {
+	// Debug: the residual draw-command stream from the last _draw, as dictionaries.
+	// Lets tooling locate a specific element's paint (by translation) and check the
+	// transform/scissor state it was recorded with — for hunting misplaced paint.
+	godot::Array out;
+	for (const auto& cmd : _render_interface.get_draw_commands()) {
+		godot::Dictionary d;
+		d["type"] = static_cast<int>(cmd.type);
+		d["translation"] = cmd.translation;
+		d["texture"] = static_cast<int64_t>(cmd.texture);
+		d["has_transform"] = cmd.has_transform;
+		d["transform_origin"] = cmd.transform.get_origin();
+		d["scissor"] = cmd.scissor_enabled ? godot::Variant(godot::Rect2(cmd.scissor_rect)) : godot::Variant();
+		out.push_back(d);
+	}
+	return out;
+}
+
 godot::Dictionary RmlContext::get_frame_stats() const {
 	godot::Dictionary d;
 	d["draw_commands"] = static_cast<int>(_frame_stats.draw_commands);
