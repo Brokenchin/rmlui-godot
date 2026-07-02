@@ -422,20 +422,36 @@ void RmlContext::_draw() {
 	nb[0].desc.material = mat_rid;
 
 	// Layer/draw-target tracking by slot index (was canvas-item RIDs). Each layer
-	// frame also tracks its active clip group: RmlUi's EnableClipMask is a
+	// frame also tracks the active clip-mask state: RmlUi's EnableClipMask is a
 	// stencil-state concept ORTHOGONAL to layers — plain clipping (a transformed
 	// or border-radius ancestor) never pushes a layer, so masking must work at any
 	// depth. The old "flip the current layer's group mode" only worked under a
 	// pushed layer and silently no-opped at the root: an embedded document under a
 	// transformed host emitted its clip masks but rendered UNCLIPPED (the
-	// synthesis pan-window overflow bug). The mask is now a synthesized GROUP slot
-	// in CLIP_ONLY mode — its self-drawn mask quads define the visible area
-	// (never painted themselves, exactly like a stencil) and its child runs are
-	// clipped to them. Multiple RenderToClipMask calls into one group union their
-	// quads (RmlUi's Intersect operation is approximated as union).
-	struct LayerFrame { int slot; int clip_group; };
+	// synthesis pan-window overflow bug).
+	//
+	// Two mask realizations, picked per mask quad:
+	//  - AXIS-ALIGNED (identity/translate-only transform — every border-radius
+	//    slot box, and menus whose embed host only translates): the quad's AABB
+	//    intersects into the frame's mask_rect, which every draw then intersects
+	//    with its scissor. No extra canvas items, so a grid of rounded slots costs
+	//    nothing (rounded corners clip square — same approximation as before).
+	//  - ROTATED/SCALED: a synthesized GROUP slot in CLIP_ONLY mode — its
+	//    self-drawn mask quads define the visible area (never painted, exactly
+	//    like a stencil) and its child runs are clipped to them. The group keeps
+	//    the NULL material: a custom material on a canvas-group item REPLACES
+	//    Godot's internal backbuffer-composite shader, which paints the raw mask
+	//    geometry instead of the clipped children (the everything-is-white bug).
+	// Multiple mask quads intersect via mask_rect; rotated ones union within the
+	// group (RmlUi's Intersect across rotated masks is approximated).
+	struct LayerFrame {
+		int slot;
+		int clip_group = -1;
+		bool mask_rect_active = false;
+		godot::Rect2 mask_rect;
+	};
 	std::vector<LayerFrame> layer_stack;
-	layer_stack.push_back({0, -1});
+	layer_stack.push_back({0});
 	auto cur_target = [&]() -> int {
 		const LayerFrame& top = layer_stack.back();
 		return top.clip_group >= 0 ? top.clip_group : top.slot;
@@ -503,9 +519,17 @@ void RmlContext::_draw() {
 			int gi = new_slot(SlotDesc::GROUP);
 			SlotDesc& d = nb[gi].desc;
 			d.parent = parent_idx;
-			d.material = mat_rid;
+			// NULL material: a custom material on a canvas-group item replaces
+			// Godot's internal composite shader and breaks the group blit.
+			d.material = godot::RID();
 			d.group_mode = godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT;
-			layer_stack.push_back({gi, -1});
+			// The clip-mask state persists across a layer push in RmlUi, so the new
+			// frame inherits the rect (draws inside the layer keep intersecting it);
+			// a live clip GROUP is inherited via parentage instead.
+			LayerFrame lf{gi};
+			lf.mask_rect_active = layer_stack.back().mask_rect_active;
+			lf.mask_rect = layer_stack.back().mask_rect;
+			layer_stack.push_back(lf);
 			draw_target_index = gi;
 			break;
 		}
@@ -542,23 +566,14 @@ void RmlContext::_draw() {
 
 		case CmdType::ENABLE_CLIP_MASK: {
 			invalidate_run();
+			// Fresh state per enable: RmlUi re-emits EnableClipMask(true) + the
+			// full mask list whenever the clip state changes, so stale rects or
+			// group quads never accumulate. The realization (rect vs group) is
+			// picked lazily per mask quad in RENDER_TO_CLIP_MASK.
 			LayerFrame& top = layer_stack.back();
-			if (cmd.clip_mask_enabled) {
-				// Fresh group per enable: RmlUi re-emits EnableClipMask(true) +
-				// the full mask list whenever the clip state changes, so each
-				// state gets its own group and stale quads never accumulate.
-				int gi = new_slot(SlotDesc::GROUP);
-				SlotDesc& d = nb[gi].desc;
-				d.parent = top.slot;
-				d.material = mat_rid;
-				d.group_mode = godot::RenderingServer::CANVAS_GROUP_MODE_CLIP_ONLY;
-				// Pinned into the same draw-index sequence as sibling runs so the
-				// masked content keeps its paint order among them.
-				d.draw_index = run_draw_index++;
-				top.clip_group = gi;
-			} else {
-				top.clip_group = -1;
-			}
+			top.clip_group = -1;
+			top.mask_rect_active = false;
+			top.mask_rect = godot::Rect2();
 			draw_target_index = cur_target();
 			break;
 		}
@@ -591,6 +606,45 @@ void RmlContext::_draw() {
 			const float mask_t = mask_origin.y + static_cast<float>(mask_aabb.position.y);
 			const float mask_r = mask_l + static_cast<float>(mask_aabb.size.x);
 			const float mask_b = mask_t + static_cast<float>(mask_aabb.size.y);
+
+			// Identity-basis masks (untransformed or translate-only — every
+			// border-radius slot box, and menus under a translate-centered embed
+			// host) clip as a RECT: intersect into the frame's mask_rect, which
+			// every subsequent draw intersects with its scissor. Zero extra canvas
+			// items, so a grid of rounded slots costs nothing (rounded corners
+			// clip square — the quad-AABB approximation).
+			const bool axis_aligned =
+				std::abs(xform[0].x - 1.0f) < 0.0001f && std::abs(xform[0].y) < 0.0001f &&
+				std::abs(xform[1].x) < 0.0001f && std::abs(xform[1].y - 1.0f) < 0.0001f;
+			if (axis_aligned) {
+				const godot::Rect2 r(mask_l, mask_t, mask_r - mask_l, mask_b - mask_t);
+				LayerFrame& top = layer_stack.back();
+				top.mask_rect = top.mask_rect_active ? top.mask_rect.intersection(r) : r;
+				top.mask_rect_active = true;
+				break;
+			}
+
+			// Rotated/scaled mask: needs a real clip group, created lazily per
+			// enable. NULL material — a custom material on a canvas-group item
+			// REPLACES Godot's internal backbuffer-composite shader, which paints
+			// the raw mask geometry instead of the clipped children (the
+			// everything-renders-white bug).
+			{
+				LayerFrame& top = layer_stack.back();
+				if (top.clip_group < 0) {
+					int gi = new_slot(SlotDesc::GROUP);
+					SlotDesc& d = nb[gi].desc;
+					d.parent = top.slot;
+					d.material = godot::RID();
+					d.group_mode = godot::RenderingServer::CANVAS_GROUP_MODE_CLIP_ONLY;
+					// Pinned into the run draw-index sequence so the masked content
+					// keeps its paint order among sibling runs.
+					d.draw_index = run_draw_index++;
+					top.clip_group = gi;
+					draw_target_index = cur_target();
+				}
+			}
+
 			godot::Rect2 mask_clip(0, 0, ctrl_size.x, ctrl_size.y);
 			if (cmd.scissor_enabled) {
 				mask_clip = mask_clip.intersection(godot::Rect2(cmd.scissor_rect));
@@ -672,6 +726,11 @@ void RmlContext::_draw() {
 			if (cmd.scissor_enabled) {
 				clip_rect = clip_rect.intersection(godot::Rect2(cmd.scissor_rect));
 			}
+			// Active rect-realized clip mask narrows every draw like a scissor.
+			const bool mask_rect_clip = layer_stack.back().mask_rect_active;
+			if (mask_rect_clip) {
+				clip_rect = clip_rect.intersection(layer_stack.back().mask_rect);
+			}
 			if (clip_rect.size.x <= 0 || clip_rect.size.y <= 0) continue;
 
 			if (mesh_right  <= clip_rect.position.x ||
@@ -697,7 +756,7 @@ void RmlContext::_draw() {
 				mesh_right <= clip_rect.position.x + clip_rect.size.x &&
 				mesh_bottom <= clip_rect.position.y + clip_rect.size.y);
 
-			bool needs_scissor = cmd.scissor_enabled && !fully_inside;
+			bool needs_scissor = (cmd.scissor_enabled || mask_rect_clip) && !fully_inside;
 
 			// GPU scissor only applies to ordinary geometry: a decorator shader
 			// has its own material with no scissor uniform, so it always CPU-clips.
