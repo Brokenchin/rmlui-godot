@@ -421,9 +421,25 @@ void RmlContext::_draw() {
 	new_slot(SlotDesc::ROOT);
 	nb[0].desc.material = mat_rid;
 
-	// Layer/draw-target tracking by slot index (was canvas-item RIDs).
-	std::vector<int> layer_stack;
-	layer_stack.push_back(0);
+	// Layer/draw-target tracking by slot index (was canvas-item RIDs). Each layer
+	// frame also tracks its active clip group: RmlUi's EnableClipMask is a
+	// stencil-state concept ORTHOGONAL to layers — plain clipping (a transformed
+	// or border-radius ancestor) never pushes a layer, so masking must work at any
+	// depth. The old "flip the current layer's group mode" only worked under a
+	// pushed layer and silently no-opped at the root: an embedded document under a
+	// transformed host emitted its clip masks but rendered UNCLIPPED (the
+	// synthesis pan-window overflow bug). The mask is now a synthesized GROUP slot
+	// in CLIP_ONLY mode — its self-drawn mask quads define the visible area
+	// (never painted themselves, exactly like a stencil) and its child runs are
+	// clipped to them. Multiple RenderToClipMask calls into one group union their
+	// quads (RmlUi's Intersect operation is approximated as union).
+	struct LayerFrame { int slot; int clip_group; };
+	std::vector<LayerFrame> layer_stack;
+	layer_stack.push_back({0, -1});
+	auto cur_target = [&]() -> int {
+		const LayerFrame& top = layer_stack.back();
+		return top.clip_group >= 0 ? top.clip_group : top.slot;
+	};
 	int draw_target_index = 0;
 
 	// Unified ordered sub-item pipeline.
@@ -481,13 +497,15 @@ void RmlContext::_draw() {
 
 		case CmdType::PUSH_LAYER: {
 			invalidate_run();
-			int parent_idx = layer_stack.back();
+			// Parent to the ACTIVE target (the clip group when one is live) so a
+			// layer pushed inside a masked region stays clipped by it.
+			int parent_idx = cur_target();
 			int gi = new_slot(SlotDesc::GROUP);
 			SlotDesc& d = nb[gi].desc;
 			d.parent = parent_idx;
 			d.material = mat_rid;
 			d.group_mode = godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT;
-			layer_stack.push_back(gi);
+			layer_stack.push_back({gi, -1});
 			draw_target_index = gi;
 			break;
 		}
@@ -495,7 +513,7 @@ void RmlContext::_draw() {
 		case CmdType::COMPOSITE_LAYERS: {
 			invalidate_run();
 			if (layer_stack.size() < 2) break;
-			int cur = layer_stack.back();
+			int cur = layer_stack.back().slot;
 
 			float opacity = 1.0f;
 			for (auto filter_handle : cmd.filters) {
@@ -517,18 +535,31 @@ void RmlContext::_draw() {
 			invalidate_run();
 			if (layer_stack.size() > 1) {
 				layer_stack.pop_back();
-				draw_target_index = layer_stack.back();
+				draw_target_index = cur_target();
 			}
 			break;
 		}
 
 		case CmdType::ENABLE_CLIP_MASK: {
 			invalidate_run();
-			if (layer_stack.size() < 2) break;
-			int cur = layer_stack.back();
-			nb[cur].desc.group_mode = cmd.clip_mask_enabled
-				? godot::RenderingServer::CANVAS_GROUP_MODE_CLIP_AND_DRAW
-				: godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT;
+			LayerFrame& top = layer_stack.back();
+			if (cmd.clip_mask_enabled) {
+				// Fresh group per enable: RmlUi re-emits EnableClipMask(true) +
+				// the full mask list whenever the clip state changes, so each
+				// state gets its own group and stale quads never accumulate.
+				int gi = new_slot(SlotDesc::GROUP);
+				SlotDesc& d = nb[gi].desc;
+				d.parent = top.slot;
+				d.material = mat_rid;
+				d.group_mode = godot::RenderingServer::CANVAS_GROUP_MODE_CLIP_ONLY;
+				// Pinned into the same draw-index sequence as sibling runs so the
+				// masked content keeps its paint order among them.
+				d.draw_index = run_draw_index++;
+				top.clip_group = gi;
+			} else {
+				top.clip_group = -1;
+			}
+			draw_target_index = cur_target();
 			break;
 		}
 
@@ -596,7 +627,9 @@ void RmlContext::_draw() {
 				p.kind = SlotPrim::MESH;
 				p.mesh_rid = mask_mesh->get_rid();
 			}
-			nb[draw_target_index].desc.prims.push_back(std::move(p));
+			// Mask quads are the clip group's SELF-draw (they must paint into the
+			// group item so CLIP_ONLY uses them as the mask for its child runs).
+			nb[cur_target()].desc.prims.push_back(std::move(p));
 			break;
 		}
 
@@ -648,7 +681,7 @@ void RmlContext::_draw() {
 				continue;
 			}
 
-			draw_target_index = layer_stack.back();
+			draw_target_index = cur_target();
 
 			godot::Ref<godot::Texture2D> draw_tex = _render_interface.get_texture_or_white(cmd.texture);
 			godot::RID tex_rid = draw_tex.is_valid() ? draw_tex->get_rid() : godot::RID();
