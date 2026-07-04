@@ -7,6 +7,7 @@
 #include "GodotScriptDocument.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/ElementUtilities.h>
@@ -54,8 +55,15 @@ void RmlContext::_gui_input(const godot::Ref<godot::InputEvent>& event) {
 		if (consumed) return;
 	}
 
+	// Timed for get_frame_stats: ProcessMouseMove re-resolves the hover chain (a full
+	// hit-test through the DOM) per event, so a fast mouse over a deep tree can cost
+	// real per-frame time — this makes it visible instead of guessed at.
+	const auto t_fwd0 = std::chrono::steady_clock::now();
 	_forward_mouse_event(event);
 	_forward_key_event(event);
+	_input_us_accum += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+		std::chrono::steady_clock::now() - t_fwd0).count());
+	_input_events_accum++;
 
 	// Issue #47: don't blanket-dirty on every input. InputEventMouseMotion fires
 	// continuously while the cursor moves over the context, and dirtying here
@@ -341,35 +349,42 @@ void RmlContext::_update_hover_tracking() {
 }
 
 bool RmlContext::_point_in_element(Rml::Element* el, float x, float y) const {
-	Rml::Vector2f offset = el->GetAbsoluteOffset(Rml::BoxArea::Border);
-	Rml::Vector2f size = el->GetBox().GetSize(Rml::BoxArea::Border);
-	if (x < offset.x || x > offset.x + size.x || y < offset.y || y > offset.y + size.y)
-		return false;
-
-	// Respect ancestor overflow clipping (issue #61). An element scrolled or laid
-	// out past an `overflow: auto|scroll|hidden` ancestor's viewport still has its
-	// own border box at that position, but it is clipped from view — so it must not
-	// be a drag/drop hit either, or an embedded (or merely scrolled) widget leaks
-	// interaction outside its clip region. This mirrors RmlUi's own hit-testing
-	// (Context::GetElementAtPoint), keeping the addon drag/drop bridge consistent
-	// with get_element_at_point and the hover chain.
-	Rml::Rectanglei clip_region;
-	if (Rml::ElementUtilities::GetClippingRegion(el, clip_region))
-		return clip_region.Contains(Rml::Vector2i((int)x, (int)y));
-
-	return true;
+	if (_rml_context == nullptr || el == nullptr) return false;
+	// Hit-test through RmlUi's own chain (Context::GetElementAtPoint) so drag and
+	// drop agree with hover exactly: it projects the point through ancestor
+	// TRANSFORMS, respects overflow clipping (issue #61), visibility, and
+	// pointer-events. The previous manual GetAbsoluteOffset box test compared the
+	// screen point against LAYOUT coordinates, so drag/drop on widgets inside a
+	// transformed embed host (the transform-centered menu panels) reacted at the
+	// untransformed position. The point resolves to the topmost leaf under it;
+	// `el` is hit when it IS that leaf or one of its ancestors (a slot is hit
+	// through its inner icon/count content).
+	Rml::Element* hit = _rml_context->GetElementAtPoint(Rml::Vector2f(x, y));
+	for (Rml::Element* e = hit; e != nullptr; e = e->GetParentNode()) {
+		if (e == el) return true;
+	}
+	return false;
 }
 
-// Topmost registered drop target whose box contains `p` and that is not clipped
-// out by an overflow ancestor (issue #61), or nullptr. Shared by the Godot
+// Topmost registered drop target under `p`, or nullptr. Shared by the Godot
 // drag/drop virtuals and the get_drop_target_at_point() query so all three agree.
+// One RmlUi hit-test resolves the (transform/clip/visibility-aware) element under
+// the point; its ancestor chain is then matched against the registered targets —
+// innermost first, so overlapping targets resolve to the topmost. Cheaper than
+// hit-testing per target: _can_drop_data runs on every mouse motion of a drag.
 const RmlContext::DropTargetEntry* RmlContext::_drop_target_at(const godot::Vector2& p) const {
 	if (_rml_context == nullptr) return nullptr;
-	for (const auto& target : _drop_targets) {
-		// #59: resolve within the target's own embed first.
-		Rml::Element* el = _find_element_scoped(target.embed_id, godot::String(target.element_id.c_str()));
-		if (el != nullptr && _point_in_element(el, p.x, p.y))
-			return &target;
+	Rml::Element* hit = _rml_context->GetElementAtPoint(Rml::Vector2f(p.x, p.y));
+	for (Rml::Element* e = hit; e != nullptr; e = e->GetParentNode()) {
+		const Rml::String& id = e->GetId();
+		if (id.empty()) continue;
+		for (const auto& target : _drop_targets) {
+			if (target.element_id != id.c_str()) continue;
+			// #59: same id can exist in several embeds — confirm THIS element is
+			// the one the target's own embed resolves to.
+			if (_find_element_scoped(target.embed_id, godot::String(target.element_id.c_str())) == e)
+				return &target;
+		}
 	}
 	return nullptr;
 }
@@ -412,8 +427,12 @@ godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
 
 		// Offset from the source element's top-left to the grab point, so the
 		// ghost can keep the cursor pinned where the drag started (issue #37).
+		// Project the point into the element's (untransformed) layout space first
+		// — under a transformed embed host the raw screen point is elsewhere.
+		Rml::Vector2f grab_pt(p_at_position.x, p_at_position.y);
+		el->Project(grab_pt); // no-op when no ancestor transform applies
 		Rml::Vector2f el_off = el->GetAbsoluteOffset(Rml::BoxArea::Border);
-		godot::Vector2 grab_offset(p_at_position.x - el_off.x, p_at_position.y - el_off.y);
+		godot::Vector2 grab_offset(grab_pt.x - el_off.x, grab_pt.y - el_off.y);
 		_create_drag_ghost(el, source.element_id, source.ghost_builder, grab_offset);
 
 		emit_signal("rml_drag_started",

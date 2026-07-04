@@ -14,6 +14,7 @@
 #include "GodotScriptDocument.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
@@ -267,18 +268,39 @@ void RmlContext::_apply_editor_mock_data() {
 void RmlContext::_process(double delta) {
 	if (_rml_context == nullptr) return;
 
+	// Snapshot the input-forwarding cost accumulated since the previous _process
+	// (events arrive in _gui_input, possibly several per frame).
+	_last_input_us = _input_us_accum;
+	_last_input_events = _input_events_accum;
+	_input_us_accum = 0;
+	_input_events_accum = 0;
+
+	const auto t_sync0 = std::chrono::steady_clock::now();
 	_sync_dimensions();
+	const auto t_upd0 = std::chrono::steady_clock::now();
+	_last_sync_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(t_upd0 - t_sync0).count());
 	_rml_context->Update();
+	const auto t_upd1 = std::chrono::steady_clock::now();
+	_last_update_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(t_upd1 - t_upd0).count());
 
 	// Issue #56: nested embedded documents are not laid out by Context::Update's
 	// root-only layout loop, so reflow any whose internals changed (and reflow the
 	// parent if an embed's outer size changed). Runs after Update so it observes
 	// the settled tree.
 	_update_embed_layout();
+	_last_embed_update_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t_upd1).count());
 
 	// Hover bridge: detect hover-chain changes after the Update settled them and
 	// push rml_element_hovered / rml_element_unhovered to any external overlay.
+	const auto t_hov0 = std::chrono::steady_clock::now();
 	_update_hover_tracking();
+	_last_hover_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t_hov0).count());
 
 	// Game-first per-frame tick (issue #41): lets time-based gestures — long-
 	// press, double-tap timeout, hold-to-charge — run from a document <script>
@@ -327,6 +349,9 @@ void RmlContext::_draw() {
 	auto* rs = godot::RenderingServer::get_singleton();
 	if (rs == nullptr) return;
 
+	_frame_stats = FrameStats{};
+	const auto t_render0 = std::chrono::steady_clock::now();
+
 	// Release meshes retired two frames ago. Their canvas-item references were
 	// dropped when the owning slot last changed (canvas_item_clear), so freeing
 	// the RIDs now is safe. Canvas items are NOT torn down here — they persist
@@ -336,7 +361,12 @@ void RmlContext::_draw() {
 	_render_interface.clear_draw_commands();
 	_rml_context->Render();
 
+	const auto t_build0 = std::chrono::steady_clock::now();
+	_frame_stats.render_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(t_build0 - t_render0).count());
+
 	const auto& commands = _render_interface.get_draw_commands();
+	_frame_stats.draw_commands = static_cast<uint32_t>(commands.size());
 
 	// Build this frame's slots into the non-current ping-pong buffer, reusing
 	// its Slot storage (and each Slot's prims vector) so the steady state
@@ -391,9 +421,41 @@ void RmlContext::_draw() {
 	new_slot(SlotDesc::ROOT);
 	nb[0].desc.material = mat_rid;
 
-	// Layer/draw-target tracking by slot index (was canvas-item RIDs).
-	std::vector<int> layer_stack;
-	layer_stack.push_back(0);
+	// Layer/draw-target tracking by slot index (was canvas-item RIDs). Each layer
+	// frame also tracks the active clip-mask state: RmlUi's EnableClipMask is a
+	// stencil-state concept ORTHOGONAL to layers — plain clipping (a transformed
+	// or border-radius ancestor) never pushes a layer, so masking must work at any
+	// depth. The old "flip the current layer's group mode" only worked under a
+	// pushed layer and silently no-opped at the root: an embedded document under a
+	// transformed host emitted its clip masks but rendered UNCLIPPED (the
+	// synthesis pan-window overflow bug).
+	//
+	// Two mask realizations, picked per mask quad:
+	//  - AXIS-ALIGNED (identity/translate-only transform — every border-radius
+	//    slot box, and menus whose embed host only translates): the quad's AABB
+	//    intersects into the frame's mask_rect, which every draw then intersects
+	//    with its scissor. No extra canvas items, so a grid of rounded slots costs
+	//    nothing (rounded corners clip square — same approximation as before).
+	//  - ROTATED/SCALED: a synthesized GROUP slot in CLIP_ONLY mode — its
+	//    self-drawn mask quads define the visible area (never painted, exactly
+	//    like a stencil) and its child runs are clipped to them. The group keeps
+	//    the NULL material: a custom material on a canvas-group item REPLACES
+	//    Godot's internal backbuffer-composite shader, which paints the raw mask
+	//    geometry instead of the clipped children (the everything-is-white bug).
+	// Multiple mask quads intersect via mask_rect; rotated ones union within the
+	// group (RmlUi's Intersect across rotated masks is approximated).
+	struct LayerFrame {
+		int slot;
+		int clip_group = -1;
+		bool mask_rect_active = false;
+		godot::Rect2 mask_rect;
+	};
+	std::vector<LayerFrame> layer_stack;
+	layer_stack.push_back({0});
+	auto cur_target = [&]() -> int {
+		const LayerFrame& top = layer_stack.back();
+		return top.clip_group >= 0 ? top.clip_group : top.slot;
+	};
 	int draw_target_index = 0;
 
 	// Unified ordered sub-item pipeline.
@@ -451,13 +513,23 @@ void RmlContext::_draw() {
 
 		case CmdType::PUSH_LAYER: {
 			invalidate_run();
-			int parent_idx = layer_stack.back();
+			// Parent to the ACTIVE target (the clip group when one is live) so a
+			// layer pushed inside a masked region stays clipped by it.
+			int parent_idx = cur_target();
 			int gi = new_slot(SlotDesc::GROUP);
 			SlotDesc& d = nb[gi].desc;
 			d.parent = parent_idx;
-			d.material = mat_rid;
+			// NULL material: a custom material on a canvas-group item replaces
+			// Godot's internal composite shader and breaks the group blit.
+			d.material = godot::RID();
 			d.group_mode = godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT;
-			layer_stack.push_back(gi);
+			// The clip-mask state persists across a layer push in RmlUi, so the new
+			// frame inherits the rect (draws inside the layer keep intersecting it);
+			// a live clip GROUP is inherited via parentage instead.
+			LayerFrame lf{gi};
+			lf.mask_rect_active = layer_stack.back().mask_rect_active;
+			lf.mask_rect = layer_stack.back().mask_rect;
+			layer_stack.push_back(lf);
 			draw_target_index = gi;
 			break;
 		}
@@ -465,7 +537,7 @@ void RmlContext::_draw() {
 		case CmdType::COMPOSITE_LAYERS: {
 			invalidate_run();
 			if (layer_stack.size() < 2) break;
-			int cur = layer_stack.back();
+			int cur = layer_stack.back().slot;
 
 			float opacity = 1.0f;
 			for (auto filter_handle : cmd.filters) {
@@ -487,18 +559,22 @@ void RmlContext::_draw() {
 			invalidate_run();
 			if (layer_stack.size() > 1) {
 				layer_stack.pop_back();
-				draw_target_index = layer_stack.back();
+				draw_target_index = cur_target();
 			}
 			break;
 		}
 
 		case CmdType::ENABLE_CLIP_MASK: {
 			invalidate_run();
-			if (layer_stack.size() < 2) break;
-			int cur = layer_stack.back();
-			nb[cur].desc.group_mode = cmd.clip_mask_enabled
-				? godot::RenderingServer::CANVAS_GROUP_MODE_CLIP_AND_DRAW
-				: godot::RenderingServer::CANVAS_GROUP_MODE_TRANSPARENT;
+			// Fresh state per enable: RmlUi re-emits EnableClipMask(true) + the
+			// full mask list whenever the clip state changes, so stale rects or
+			// group quads never accumulate. The realization (rect vs group) is
+			// picked lazily per mask quad in RENDER_TO_CLIP_MASK.
+			LayerFrame& top = layer_stack.back();
+			top.clip_group = -1;
+			top.mask_rect_active = false;
+			top.mask_rect = godot::Rect2();
+			draw_target_index = cur_target();
 			break;
 		}
 
@@ -530,6 +606,45 @@ void RmlContext::_draw() {
 			const float mask_t = mask_origin.y + static_cast<float>(mask_aabb.position.y);
 			const float mask_r = mask_l + static_cast<float>(mask_aabb.size.x);
 			const float mask_b = mask_t + static_cast<float>(mask_aabb.size.y);
+
+			// Identity-basis masks (untransformed or translate-only — every
+			// border-radius slot box, and menus under a translate-centered embed
+			// host) clip as a RECT: intersect into the frame's mask_rect, which
+			// every subsequent draw intersects with its scissor. Zero extra canvas
+			// items, so a grid of rounded slots costs nothing (rounded corners
+			// clip square — the quad-AABB approximation).
+			const bool axis_aligned =
+				std::abs(xform[0].x - 1.0f) < 0.0001f && std::abs(xform[0].y) < 0.0001f &&
+				std::abs(xform[1].x) < 0.0001f && std::abs(xform[1].y - 1.0f) < 0.0001f;
+			if (axis_aligned) {
+				const godot::Rect2 r(mask_l, mask_t, mask_r - mask_l, mask_b - mask_t);
+				LayerFrame& top = layer_stack.back();
+				top.mask_rect = top.mask_rect_active ? top.mask_rect.intersection(r) : r;
+				top.mask_rect_active = true;
+				break;
+			}
+
+			// Rotated/scaled mask: needs a real clip group, created lazily per
+			// enable. NULL material — a custom material on a canvas-group item
+			// REPLACES Godot's internal backbuffer-composite shader, which paints
+			// the raw mask geometry instead of the clipped children (the
+			// everything-renders-white bug).
+			{
+				LayerFrame& top = layer_stack.back();
+				if (top.clip_group < 0) {
+					int gi = new_slot(SlotDesc::GROUP);
+					SlotDesc& d = nb[gi].desc;
+					d.parent = top.slot;
+					d.material = godot::RID();
+					d.group_mode = godot::RenderingServer::CANVAS_GROUP_MODE_CLIP_ONLY;
+					// Pinned into the run draw-index sequence so the masked content
+					// keeps its paint order among sibling runs.
+					d.draw_index = run_draw_index++;
+					top.clip_group = gi;
+					draw_target_index = cur_target();
+				}
+			}
+
 			godot::Rect2 mask_clip(0, 0, ctrl_size.x, ctrl_size.y);
 			if (cmd.scissor_enabled) {
 				mask_clip = mask_clip.intersection(godot::Rect2(cmd.scissor_rect));
@@ -566,7 +681,9 @@ void RmlContext::_draw() {
 				p.kind = SlotPrim::MESH;
 				p.mesh_rid = mask_mesh->get_rid();
 			}
-			nb[draw_target_index].desc.prims.push_back(std::move(p));
+			// Mask quads are the clip group's SELF-draw (they must paint into the
+			// group item so CLIP_ONLY uses them as the mask for its child runs).
+			nb[cur_target()].desc.prims.push_back(std::move(p));
 			break;
 		}
 
@@ -609,6 +726,11 @@ void RmlContext::_draw() {
 			if (cmd.scissor_enabled) {
 				clip_rect = clip_rect.intersection(godot::Rect2(cmd.scissor_rect));
 			}
+			// Active rect-realized clip mask narrows every draw like a scissor.
+			const bool mask_rect_clip = layer_stack.back().mask_rect_active;
+			if (mask_rect_clip) {
+				clip_rect = clip_rect.intersection(layer_stack.back().mask_rect);
+			}
 			if (clip_rect.size.x <= 0 || clip_rect.size.y <= 0) continue;
 
 			if (mesh_right  <= clip_rect.position.x ||
@@ -618,7 +740,7 @@ void RmlContext::_draw() {
 				continue;
 			}
 
-			draw_target_index = layer_stack.back();
+			draw_target_index = cur_target();
 
 			godot::Ref<godot::Texture2D> draw_tex = _render_interface.get_texture_or_white(cmd.texture);
 			godot::RID tex_rid = draw_tex.is_valid() ? draw_tex->get_rid() : godot::RID();
@@ -634,7 +756,7 @@ void RmlContext::_draw() {
 				mesh_right <= clip_rect.position.x + clip_rect.size.x &&
 				mesh_bottom <= clip_rect.position.y + clip_rect.size.y);
 
-			bool needs_scissor = cmd.scissor_enabled && !fully_inside;
+			bool needs_scissor = (cmd.scissor_enabled || mask_rect_clip) && !fully_inside;
 
 			// GPU scissor only applies to ordinary geometry: a decorator shader
 			// has its own material with no scissor uniform, so it always CPU-clips.
@@ -654,6 +776,7 @@ void RmlContext::_draw() {
 				// CPU clip: validate it produces output now (so an empty clip
 				// skips the draw exactly as before); the clipped triangle array
 				// is recomputed in _apply_slot only when the slot actually changes.
+				_frame_stats.tri_clips++;
 				const auto* raw = _render_interface.get_raw_geometry(cmd.geometry);
 				if (raw && _clip_mesh_to_rect(*raw, xform, clip_rect, clip_buf)) {
 					int target = target_for(draw_target_index, geo_material, false, clip_rect, cmd_filter);
@@ -683,7 +806,16 @@ void RmlContext::_draw() {
 		} // switch
 	}
 
+	const auto t_rec0 = std::chrono::steady_clock::now();
+	_frame_stats.build_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(t_rec0 - t_build0).count());
+	_frame_stats.slots_used = static_cast<uint32_t>(used);
+
 	_reconcile_slots(used);
+
+	_frame_stats.reconcile_us = static_cast<uint64_t>(
+		std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t_rec0).count());
 }
 
 void RmlContext::_notification(int p_what) {
@@ -990,10 +1122,12 @@ void RmlContext::_apply_slot(int slot_index, const SlotDesc& desc,
 		rs->canvas_item_set_instance_shader_parameter(item, "scissor_rect", desc.scissor_param);
 
 	ClipResult clip_buf;
+	_frame_stats.prims_applied += static_cast<uint32_t>(desc.prims.size());
 	for (const auto& p : desc.prims) {
 		if (p.kind == SlotPrim::MESH) {
 			rs->canvas_item_add_mesh(item, p.mesh_rid, p.xform, p.modulate, p.tex_rid);
 		} else {
+			_frame_stats.tri_clips++;
 			const auto* raw = _render_interface.get_raw_geometry(
 				static_cast<Rml::CompiledGeometryHandle>(p.geo_handle));
 			if (raw && _clip_mesh_to_rect(*raw, p.xform, p.clip_rect, clip_buf)) {
@@ -1031,12 +1165,16 @@ void RmlContext::_reconcile_slots(size_t used) {
 			const bool same = prev[i].parent_rid == parent_rid &&
 				_desc_equal(prev[i].desc, s.desc);
 			if (!same) {
+				_frame_stats.slots_reapplied++;
 				rs->canvas_item_clear(s.rid);
 				_apply_slot(static_cast<int>(i), s.desc, parent_rid, s.rid);
+			} else {
+				_frame_stats.slots_reused++;
 			}
 			// else: fully reuse — the canvas item already holds the right state.
 		} else {
-			if (have_prev) rs->free_rid(prev[i].rid); // kind changed at this slot
+			if (have_prev) { rs->free_rid(prev[i].rid); _frame_stats.slots_freed++; } // kind changed at this slot
+			_frame_stats.slots_created++;
 			s.rid = rs->canvas_item_create();
 			_apply_slot(static_cast<int>(i), s.desc, parent_rid, s.rid);
 		}
@@ -1044,7 +1182,7 @@ void RmlContext::_reconcile_slots(size_t used) {
 
 	// Free previous-frame slots that this frame no longer produces.
 	for (size_t i = used; i < _slots_count; ++i) {
-		if (prev[i].rid.is_valid()) rs->free_rid(prev[i].rid);
+		if (prev[i].rid.is_valid()) { rs->free_rid(prev[i].rid); _frame_stats.slots_freed++; }
 	}
 
 	_slots_count = used;
@@ -1093,6 +1231,47 @@ godot::Dictionary RmlContext::get_context_info() const {
 	info["num_draw_commands"] = static_cast<int>(_render_interface.get_draw_command_count());
 
 	return info;
+}
+
+godot::Array RmlContext::get_last_draw_commands() const {
+	// Debug: the residual draw-command stream from the last _draw, as dictionaries.
+	// Lets tooling locate a specific element's paint (by translation) and check the
+	// transform/scissor state it was recorded with — for hunting misplaced paint.
+	godot::Array out;
+	for (const auto& cmd : _render_interface.get_draw_commands()) {
+		godot::Dictionary d;
+		d["type"] = static_cast<int>(cmd.type);
+		d["translation"] = cmd.translation;
+		d["texture"] = static_cast<int64_t>(cmd.texture);
+		d["has_transform"] = cmd.has_transform;
+		d["transform_origin"] = cmd.transform.get_origin();
+		d["scissor"] = cmd.scissor_enabled ? godot::Variant(godot::Rect2(cmd.scissor_rect)) : godot::Variant();
+		out.push_back(d);
+	}
+	return out;
+}
+
+godot::Dictionary RmlContext::get_frame_stats() const {
+	godot::Dictionary d;
+	d["draw_commands"] = static_cast<int>(_frame_stats.draw_commands);
+	d["slots_used"] = static_cast<int>(_frame_stats.slots_used);
+	d["slots_reused"] = static_cast<int>(_frame_stats.slots_reused);
+	d["slots_reapplied"] = static_cast<int>(_frame_stats.slots_reapplied);
+	d["slots_created"] = static_cast<int>(_frame_stats.slots_created);
+	d["slots_freed"] = static_cast<int>(_frame_stats.slots_freed);
+	d["prims_applied"] = static_cast<int>(_frame_stats.prims_applied);
+	d["tri_clips"] = static_cast<int>(_frame_stats.tri_clips);
+	d["render_us"] = static_cast<int64_t>(_frame_stats.render_us);
+	d["build_us"] = static_cast<int64_t>(_frame_stats.build_us);
+	d["reconcile_us"] = static_cast<int64_t>(_frame_stats.reconcile_us);
+	d["update_us"] = static_cast<int64_t>(_last_update_us);
+	d["embed_update_us"] = static_cast<int64_t>(_last_embed_update_us);
+	d["embed_us_by_id"] = _last_embed_us_by_id;
+	d["sync_us"] = static_cast<int64_t>(_last_sync_us);
+	d["hover_us"] = static_cast<int64_t>(_last_hover_us);
+	d["input_us"] = static_cast<int64_t>(_last_input_us);
+	d["input_events"] = static_cast<int>(_last_input_events);
+	return d;
 }
 
 // --- Private: Input forwarding ---

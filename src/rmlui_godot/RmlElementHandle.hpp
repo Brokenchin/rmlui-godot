@@ -2,6 +2,7 @@
 
 #include "RmlGD.hpp"
 #include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/rect2.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 
@@ -36,6 +37,7 @@ class RM_GD_CLASS(RmlElementHandle, godot::RefCounted, {
 	godot::ClassDB::bind_method(godot::D_METHOD("click"), &RmlElementHandle::click);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_position"), &RmlElementHandle::get_position);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_size"), &RmlElementHandle::get_size);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_screen_rect"), &RmlElementHandle::get_screen_rect);
 
 });
 
@@ -78,9 +80,14 @@ public:
 
 	/// Absolute position (border box, context/Control-local px) and border-box
 	/// size of this element after layout — for anchoring overlays, hit-testing,
-	/// etc. Returns (0,0) if the element is stale.
+	/// etc. Returns (0,0) if the element is stale. NOTE: get_position is the
+	/// UNTRANSFORMED layout offset — for the visual rect use get_screen_rect.
 	godot::Vector2 get_position() const;
 	godot::Vector2 get_size() const;
+
+	/// Transform-aware projected bounding box (context px) — where the element
+	/// actually paints. Exact for translate-only transforms, an AABB otherwise.
+	godot::Rect2 get_screen_rect() const;
 
 private:
 	Rml::Element* _element = nullptr;
