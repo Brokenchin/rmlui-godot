@@ -337,10 +337,17 @@ void RmlContext::_process(double delta) {
 		}
 	}
 
-	if (_render_dirty || _rml_context->GetNextUpdateDelay() == 0) {
+	// Issue #55: on the frame an animation/transition completes, Update() applies
+	// the final values AND GetNextUpdateDelay() flips away from 0 in the same
+	// tick — gating on the delay alone would leave the settled frame unpainted
+	// (stuck one step short until an unrelated dirty). Redraw once more on the
+	// animating→idle edge so the final state is always painted.
+	const bool animating_now = (_rml_context->GetNextUpdateDelay() == 0);
+	if (_render_dirty || animating_now || _was_animating) {
 		_render_dirty = false;
 		queue_redraw();
 	}
+	_was_animating = animating_now;
 }
 
 void RmlContext::_draw() {
@@ -913,6 +920,7 @@ void RmlContext::_cleanup() {
 	_listener_records.clear();
 	_last_hovered_id.clear();
 	_last_hover_element = nullptr;
+	_was_animating = false;
 
 	// Issue #56: embedded documents are children of the parent documents unloaded
 	// below (and torn down with the context), so just drop our tracking here.
