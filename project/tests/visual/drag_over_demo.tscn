@@ -1,0 +1,19 @@
+[gd_scene load_steps=2 format=3 uid="uid://b39dragoverdemo"]
+
+[ext_resource type="Script" path="res://tests/visual/drag_over_demo.gd" id="1"]
+
+[node name="DragOverDemo" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
+
+[node name="Rml" type="RmlContext" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+dp_ratio = 1.0
+document_path = "res://tests/visual/drag_over_demo.rml"
+font_paths = PackedStringArray("res://addons/rmlui-godot/examples/fonts/NotoSans-Regular.ttf", "res://addons/rmlui-godot/examples/fonts/NotoSans-Bold.ttf")

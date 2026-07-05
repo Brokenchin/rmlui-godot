@@ -1,0 +1,68 @@
+<rml>
+<head>
+<style>
+body { font-family: "Noto Sans"; font-size: 15px; width: 100%; height: 100%;
+       background-color: #14161c; color: #cfd3dc; display: block; }
+#hdr { display: block; margin: 12px 20px; color: #8891a5; font-size: 13px; }
+.panel { display: block; position: absolute; border: 2px #2a2f3a;
+         background-color: #1b1e27; padding: 12px; }
+#inventory { left: 20px;  top: 50px; width: 230px; height: 290px; }
+#equipment { left: 300px; top: 50px; width: 240px; height: 290px; }
+#logpanel  { left: 590px; top: 50px; width: 380px; height: 560px; }
+.title { display: block; color: #8891a5; font-size: 12px; margin-bottom: 10px; }
+.item { display: block; width: 190px; height: 56px; background-color: #262c3b;
+        border: 2px #3a4254; padding: 8px; margin-bottom: 12px; }
+.slot { display: block; width: 200px; height: 56px; background-color: #20242f;
+        border: 2px #343a49; padding: 8px; margin-bottom: 14px; }
+.slot.drag-target { border: 2px #7ddb6a; background-color: #24391f; }
+.slot.drag-bad    { border: 2px #d05656; background-color: #3a2020; }
+.name { display: block; color: #e8e2c8; }
+.meta { display: block; font-size: 12px; color: #8891a5; }
+#compare { position: absolute; left: 300px; top: 370px; width: 240px;
+           height: 150px; display: none; background-color: #202a3a;
+           border: 2px #4a6ea8; padding: 10px; }
+#compare.show { display: block; }
+.cmp-up { color: #7ddb6a; }
+#overs { display: block; font-size: 12px; color: #5f6b85; margin-bottom: 8px; }
+#log { display: block; font-size: 12px; }
+.ln { display: block; margin-bottom: 2px; }
+.ev-start { color: #c58bdd; }
+.ev-enter { color: #7ddb6a; }
+.ev-left  { color: #e0b34d; }
+.ev-drop  { color: #6ab8ff; }
+</style>
+</head>
+<body>
+	<div id="hdr">Issue #39 demo — drag an inventory item onto the Equipment slots.
+	The matching slot lights green (with a compare card for the weapon), a wrong
+	slot lights red — all driven by rml_drag_entered / rml_drag_over / rml_drag_left.</div>
+	<div id="inventory" class="panel">
+		<div class="title">INVENTORY (drag sources)</div>
+		<div id="inv-sword" class="item">
+			<div class="name">Iron Sword</div>
+			<div class="meta">ATK 12 · weapon</div>
+		</div>
+		<div id="inv-potion" class="item">
+			<div class="name">Healing Potion</div>
+			<div class="meta">restores 50 · potion</div>
+		</div>
+	</div>
+	<div id="equipment" class="panel">
+		<div class="title">EQUIPMENT (drop targets)</div>
+		<div id="weapon-slot" class="slot">
+			<div class="name" id="weapon-name">Rusty Sword</div>
+			<div class="meta" id="weapon-meta">ATK 8 · weapon slot</div>
+		</div>
+		<div id="shield-slot" class="slot">
+			<div class="name">Wooden Shield</div>
+			<div class="meta">DEF 5 · shield slot</div>
+		</div>
+	</div>
+	<div id="compare" class="panel"></div>
+	<div id="logpanel" class="panel">
+		<div class="title">EVENT LOG (rml_drag_* signals, live)</div>
+		<div id="overs">rml_drag_over events: 0</div>
+		<div id="log"></div>
+	</div>
+</body>
+</rml>
