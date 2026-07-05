@@ -70,6 +70,7 @@ run tests/test_live_preview_parity.gd windowed
 run tests/test_subviewport_recreate.gd windowed
 run tests/test_preview_click.gd windowed
 run tests/test_hover_bridge.gd windowed
+run tests/test_drag_over_events.gd windowed
 run tests/test_input_prehandler.gd windowed
 run tests/test_perf_stress.gd windowed
 run tests/test_perf_hover.gd windowed
