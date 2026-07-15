@@ -3,7 +3,10 @@
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/StyleSheetSpecification.h>
+#include <godot_cpp/godot.hpp>
+#include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
+#include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 namespace RmlGodot {
@@ -155,6 +158,54 @@ void RmlManager::on_context_created() {
 
 void RmlManager::on_context_destroyed() {
 	_context_count--;
+}
+
+// --- Addon path resolution (issue #11) ---
+
+const godot::String& RmlManager::get_addon_root() {
+	if (!_addon_root.is_empty())
+		return _addon_root;
+
+	// A shipped file every install has under the addon root — used to confirm a
+	// candidate folder actually is our addon (not just any addons/* directory).
+	const godot::String marker = "/shaders/rmlui_canvas_item.gdshader";
+	auto* loader = godot::ResourceLoader::get_singleton();
+
+	// 1. Derive the root from the loaded GDExtension library path. The library
+	//    always installs to <root>/bin/<lib>, so two get_base_dir() calls strip
+	//    "bin/<lib>" back to the addon root. This works under any custom
+	//    RMLUI_GODOT_ADDON_NAME and returns a res:// path in exported builds.
+	if (godot::internal::gdextension_interface_get_library_path != nullptr &&
+		godot::internal::library != nullptr) {
+		godot::String lib_path;
+		godot::internal::gdextension_interface_get_library_path(
+			godot::internal::library, &lib_path);
+		if (!lib_path.is_empty()) {
+			godot::String root = lib_path.get_base_dir().get_base_dir();
+			if (loader != nullptr && loader->exists(root + marker)) {
+				_addon_root = root;
+				return _addon_root;
+			}
+		}
+	}
+
+	// 2. Fall back to scanning res://addons/* for the folder holding our marker.
+	godot::PackedStringArray dirs = godot::DirAccess::get_directories_at("res://addons");
+	for (int i = 0; i < dirs.size(); i++) {
+		godot::String root = godot::String("res://addons/") + dirs[i];
+		if (loader != nullptr && loader->exists(root + marker)) {
+			_addon_root = root;
+			return _addon_root;
+		}
+	}
+
+	// 3. Last resort: the default install location.
+	_addon_root = "res://addons/rmlui-godot";
+	godot::UtilityFunctions::push_warning(
+		godot::String("[RmlManager] Could not resolve the rmlui-godot addon folder; "
+			"falling back to ") + _addon_root +
+		". Bundled shaders may fail to load if installed elsewhere.");
+	return _addon_root;
 }
 
 // --- Global font management ---

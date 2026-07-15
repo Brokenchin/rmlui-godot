@@ -1059,8 +1059,9 @@ void RmlContext::_ensure_scissor_material() {
 	if (_scissor_material.is_valid()) return;
 
 	auto* loader = godot::ResourceLoader::get_singleton();
-	godot::Ref<godot::Shader> shader = loader->load(
-		"res://addons/rmlui-godot/shaders/rmlui_canvas_item.gdshader");
+	godot::String shader_path = RmlGodot::RmlManager::get_singleton()->get_addon_root() +
+		godot::String("/shaders/rmlui_canvas_item.gdshader");
+	godot::Ref<godot::Shader> shader = loader->load(shader_path);
 	if (!shader.is_valid()) {
 		godot::UtilityFunctions::push_error(
 			"[RmlUi] GPU scissor enabled but scissor shader could not be loaded; "

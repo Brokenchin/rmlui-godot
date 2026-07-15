@@ -28,8 +28,8 @@ namespace RmlGodot {
 // dropped, matching the reference renderer.
 static constexpr int kMaxGradientStops = 16;
 
-static const char* kGradientShaderPath =
-	"res://addons/rmlui-godot/shaders/rmlui_gradient.gdshader";
+// Bundled gradient shader, relative to the resolved addon root (issue #11).
+static constexpr const char* kGradientShaderRel = "/shaders/rmlui_gradient.gdshader";
 
 // --- Geometry ---
 
@@ -454,14 +454,16 @@ Rml::CompiledShaderHandle GodotRenderInterface::_compile_gradient_shader(
 	// Load the shared gradient shader once. Registered from disk (the addon ships
 	// it), so this works at runtime and in the editor's live preview alike.
 	if (!_gradient_shader.is_valid()) {
+		godot::String gradient_shader_path =
+			RmlManager::get_singleton()->get_addon_root() + godot::String(kGradientShaderRel);
 		auto* loader = godot::ResourceLoader::get_singleton();
 		if (loader != nullptr) {
-			_gradient_shader = loader->load(kGradientShaderPath);
+			_gradient_shader = loader->load(gradient_shader_path);
 		}
 		if (!_gradient_shader.is_valid()) {
 			_notify_shader_issue("builtin:gradient-shader",
 				godot::String("[RmlUi] Built-in gradient shader could not be loaded: ") +
-					godot::String(kGradientShaderPath));
+					gradient_shader_path);
 			return 0;
 		}
 	}

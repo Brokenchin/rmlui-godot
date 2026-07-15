@@ -88,6 +88,13 @@ public:
 	int get_context_count() const { return _context_count; }
 	godot::Dictionary get_info() const;
 
+	// res:// path to the installed addon folder (no trailing slash), e.g.
+	// "res://addons/rmlui-godot". Resolved from the loaded GDExtension library
+	// path so it honours a custom RMLUI_GODOT_ADDON_NAME and survives export;
+	// falls back to scanning res://addons/* and then the default location.
+	// Cached after the first call. Used to locate bundled shaders (issue #11).
+	const godot::String& get_addon_root();
+
 	void set_default_rcss(const godot::String& rcss);
 	godot::String get_default_rcss() const;
 	void set_default_rcss_enabled(bool enabled);
@@ -178,6 +185,9 @@ private:
 
 	godot::Array _recent_log;
 	bool _console_log_muted = false;
+
+	// Cached result of get_addon_root() (empty until first resolved).
+	godot::String _addon_root;
 
 	void _initialize_rmlui();
 	void _shutdown_rmlui();
