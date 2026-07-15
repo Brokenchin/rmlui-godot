@@ -315,6 +315,11 @@ void RmlContext::_process(double delta) {
 		_update_ghost_position();
 	}
 
+	// Issue #39: drag-time counterpart of the hover bridge — emit
+	// rml_drag_entered / rml_drag_over / rml_drag_left as the registered drop
+	// target under a live drag changes.
+	_update_drag_over_tracking();
+
 	// Issue #47: a passive mouse-move (no _render_dirty set by _gui_input) only
 	// matters visually when the hover chain changes. The deepest hovered
 	// element's ancestry IS the hover chain, so a change in that element means
@@ -844,6 +849,9 @@ void RmlContext::_notification(int p_what) {
 		// Issue #37: the drag finished (dropped or canceled — this fires for both,
 		// propagated to every node) — tear down the ghost's CanvasLayer.
 		_destroy_active_ghost();
+		// Issue #39: fire the pending rml_drag_left so target highlights clear on
+		// drop AND cancel (after _drop_data's rml_drop_received on a drop).
+		_end_drag_over_tracking();
 	} else if (p_what == godot::Node::NOTIFICATION_ENTER_TREE) {
 		// Re-entering the tree (editor scene-tab switch, reparenting): the
 		// visuals were freed on exit — repaint from the still-alive context.

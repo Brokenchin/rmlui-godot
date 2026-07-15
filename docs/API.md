@@ -45,6 +45,9 @@ nonexistent document/font files, and no-fonts-anywhere setups.
 | Signal | Args | When |
 |---|---|---|
 | `rml_drag_started` | `element_id: String, payload: Dictionary` | A registered drag source started dragging. |
+| `rml_drag_entered` | `element_id: String, data: Dictionary` | Mid-drag, the cursor entered a registered drop target. `data` = the drag payload. |
+| `rml_drag_over` | `element_id: String, data: Dictionary` | Mid-drag, the cursor moved while over a registered drop target. |
+| `rml_drag_left` | `element_id: String` | Mid-drag, the cursor left a registered drop target (also fires when the drag ends — after `rml_drop_received` on a drop). |
 | `rml_drop_received` | `element_id: String, data: Dictionary` | A registered drop target received a drop. |
 | `rml_element_hovered` | `element_id: String, global_position: Vector2` | The cursor entered an element carrying an id (nearest id ancestor). |
 | `rml_element_unhovered` | `element_id: String` | The cursor left the previously-hovered element. |
@@ -300,6 +303,36 @@ It defaults to `128` (the top `CanvasLayer`) and is seeded from the
 `CanvasLayer` range `[-128, 128]`. Lower it to slot the ghost into a custom
 layer scheme (e.g. above panels but below a modal). Native drop detection
 (`register_drop_target`) is unaffected.
+
+#### Drag-target events (issue #39)
+
+```gdscript
+get_drag_over_target() -> String   # target the active drag is over, or ""
+# signal rml_drag_entered(element_id: String, data: Dictionary)
+# signal rml_drag_over(element_id: String, data: Dictionary)
+# signal rml_drag_left(element_id: String)
+```
+
+The drag-time counterpart of the hover bridge: while a drag is in progress,
+entering/leaving a **registered drop target** fires `rml_drag_entered` /
+`rml_drag_left`, and `rml_drag_over` fires on cursor movement while over the
+target (never when the cursor is still). `data` is the same payload the drop
+handler receives (`gui_get_drag_data()`), so the game can highlight only the
+slots that accept the dragged item, or pop a live comparison card:
+
+```gdscript
+ctx.rml_drag_entered.connect(func(id, data):
+	if data.get("slot_type") == slot_types[id]:
+		ctx.set_element_class(id, "drag-target", true))
+ctx.rml_drag_left.connect(func(id):
+	ctx.set_element_class(id, "drag-target", false))
+```
+
+Events fire for any native drag over this context — including drags started
+from other Controls or contexts. On a drop the order is: drop handler +
+`rml_drop_received`, then the final `rml_drag_left` (highlight cleanup); on a
+canceled drag only `rml_drag_left` fires. The existing drop handler and the
+ghost are unaffected.
 
 ### Hover bridge
 

@@ -394,6 +394,90 @@ godot::String RmlContext::get_drop_target_at_point(const godot::Vector2& point) 
 	return target != nullptr ? godot::String(target->element_id.c_str()) : godot::String();
 }
 
+// --- Issue #39: drag-target events (enter / over / leave with payload) ---
+
+// The payload as delivered to drag-target signals: the live drag data when it
+// is a Dictionary (always true for drags started by this bridge), else empty —
+// the same coercion rml_drop_received applies.
+static godot::Dictionary _drag_payload_dict(godot::Viewport* vp) {
+	godot::Variant data = vp->gui_get_drag_data();
+	if (data.get_type() == godot::Variant::DICTIONARY) return data;
+	return {};
+}
+
+// Per-frame (from _process): while a native drag is live anywhere in the
+// viewport — deliberately viewport-wide (gui_is_dragging), so drags from other
+// controls / contexts light up targets here too — feed the polled cursor into
+// the diff when the OS cursor moved since the last poll. The primary feed is
+// _can_drop_data (event-time, exact position); this poll only covers the spans
+// where the viewport no longer calls it: cursor over empty space _has_point
+// rejects, or off the control entirely. Gating on actual movement keeps the
+// poll from overriding event positions (the OS cursor never follows synthetic
+// input, and get_mouse_position reads the OS cursor whenever the platform can
+// report it).
+void RmlContext::_update_drag_over_tracking() {
+	godot::Viewport* vp = get_viewport();
+	if (vp == nullptr || !vp->gui_is_dragging()) {
+		// NOTIFICATION_DRAG_END normally clears; this catches a drag that ended
+		// while this node was outside the tree.
+		_end_drag_over_tracking();
+		return;
+	}
+
+	const godot::Vector2 polled = get_local_mouse_position();
+	if (polled != _drag_poll_pos_prev) {
+		_drag_poll_pos_prev = polled;
+		_update_drag_over_at(polled);
+	}
+}
+
+// Diff the registered drop target under `pos` (context-local) against the last
+// reported one: emit rml_drag_entered / rml_drag_left on change, rml_drag_over
+// when the position moved while staying on the same target.
+void RmlContext::_update_drag_over_at(const godot::Vector2& pos) {
+	godot::Viewport* vp = get_viewport();
+	if (vp == nullptr || !vp->gui_is_dragging()) return;
+
+	const DropTargetEntry* target = _drop_target_at(pos);
+
+	// Registered ids are never empty, so an empty tracked id means "none".
+	const bool same = target != nullptr
+		? (target->element_id == _drag_over_element_id && target->embed_id == _drag_over_embed_id)
+		: _drag_over_element_id.empty();
+
+	if (same) {
+		if (target != nullptr && pos != _drag_over_last_pos) {
+			_drag_over_last_pos = pos;
+			emit_signal("rml_drag_over",
+				godot::String(_drag_over_element_id.c_str()), _drag_payload_dict(vp));
+		}
+		return;
+	}
+
+	if (!_drag_over_element_id.empty()) {
+		emit_signal("rml_drag_left", godot::String(_drag_over_element_id.c_str()));
+		_drag_over_element_id.clear();
+		_drag_over_embed_id.clear();
+	}
+	if (target != nullptr) {
+		_drag_over_element_id = target->element_id;
+		_drag_over_embed_id = target->embed_id;
+		_drag_over_last_pos = pos;
+		emit_signal("rml_drag_entered",
+			godot::String(_drag_over_element_id.c_str()), _drag_payload_dict(vp));
+	}
+}
+
+// Drag finished (drop or cancel) or tracking must be abandoned: fire the
+// pending leave so highlights always clear. On a drop this runs from
+// NOTIFICATION_DRAG_END, i.e. AFTER _drop_data emitted rml_drop_received.
+void RmlContext::_end_drag_over_tracking() {
+	if (_drag_over_element_id.empty()) return;
+	emit_signal("rml_drag_left", godot::String(_drag_over_element_id.c_str()));
+	_drag_over_element_id.clear();
+	_drag_over_embed_id.clear();
+}
+
 godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
 	// The pre-handler consumed the press that would have started this drag
 	// (issue #41) — e.g. it began a long-press timer on the same slot. Honour
@@ -446,6 +530,12 @@ godot::Variant RmlContext::_get_drag_data(const godot::Vector2& p_at_position) {
 
 bool RmlContext::_can_drop_data(const godot::Vector2& p_at_position,
 	const godot::Variant& /*p_data*/) const {
+	// Issue #39: the viewport calls this with the exact local position on every
+	// drag motion over the control — the event-time feed for the drag-target
+	// enter/over/leave diff. Logically non-mutating from Godot's perspective
+	// (the const contract is about the drop decision); the tracking update is
+	// bookkeeping this class owns.
+	const_cast<RmlContext*>(this)->_update_drag_over_at(p_at_position);
 	return _drop_target_at(p_at_position) != nullptr;
 }
 

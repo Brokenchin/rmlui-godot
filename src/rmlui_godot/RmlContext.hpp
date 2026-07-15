@@ -133,6 +133,21 @@ class RM_GD_CLASS(RmlContext, godot::Control, {
 		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
 		godot::PropertyInfo(godot::Variant::DICTIONARY, "data")));
 
+	// Issue #39: drag-target events — the drag-time counterpart of the hover
+	// bridge. While a native drag is in progress, entering/leaving a REGISTERED
+	// drop target fires these with the drag payload, so the game can highlight
+	// valid targets / show a compare card without per-frame polling. rml_drag_over
+	// fires only on actual cursor movement while over the target.
+	godot::ClassDB::bind_method(godot::D_METHOD("get_drag_over_target"), &RmlContext::get_drag_over_target);
+	ADD_SIGNAL(godot::MethodInfo("rml_drag_entered",
+		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
+		godot::PropertyInfo(godot::Variant::DICTIONARY, "data")));
+	ADD_SIGNAL(godot::MethodInfo("rml_drag_over",
+		godot::PropertyInfo(godot::Variant::STRING, "element_id"),
+		godot::PropertyInfo(godot::Variant::DICTIONARY, "data")));
+	ADD_SIGNAL(godot::MethodInfo("rml_drag_left",
+		godot::PropertyInfo(godot::Variant::STRING, "element_id")));
+
 	// Hover bridge — mirrors the drag bridge for tooltips drawn in a separate
 	// overlay context (resolved by element id at event time, so it works for
 	// dynamically-inserted slots that data-binding attributes can't reach).
@@ -469,6 +484,12 @@ public:
 	// overflow clipping (issue #61), so it agrees with the actual drag/drop bridge
 	// (_can_drop_data/_drop_data) and with get_element_at_point / the hover chain.
 	godot::String get_drop_target_at_point(const godot::Vector2& point) const;
+	// Issue #39: id of the registered drop target the current drag is over
+	// ("" when no drag is active or none is under the cursor) — the value last
+	// reported via rml_drag_entered / rml_drag_left.
+	godot::String get_drag_over_target() const {
+		return godot::String(_drag_over_element_id.c_str());
+	}
 
 	// Hover bridge: id of the element currently under the cursor (nearest
 	// ancestor carrying an id), or "" when nothing opted-in is hovered.
@@ -756,6 +777,26 @@ private:
 	std::string _last_hovered_id;
 	std::string _resolve_hovered_id() const;
 	void _update_hover_tracking();
+
+	// Issue #39: registered drop target the active drag is currently over
+	// (element_id "" = none; embed_id disambiguates same-id targets across
+	// embeds, #59). Two position sources feed one diff (_update_drag_over_at):
+	// _can_drop_data — which the viewport calls with the exact local position on
+	// every drag motion over the control — is primary; _process additionally
+	// injects the polled OS-cursor position, but only when that cursor actually
+	// moved, because the viewport stops calling _can_drop_data once the cursor
+	// leaves the control or crosses empty space _has_point rejects — exactly
+	// when the leave event must fire. The moved-only gate keeps the poll (an
+	// OS-cursor read that never sees synthetic input) from fighting the
+	// event-driven updates. _drag_over_last_pos throttles rml_drag_over to
+	// actual cursor movement.
+	std::string _drag_over_element_id;
+	std::string _drag_over_embed_id;
+	godot::Vector2 _drag_over_last_pos;
+	godot::Vector2 _drag_poll_pos_prev;
+	void _update_drag_over_tracking();
+	void _update_drag_over_at(const godot::Vector2& pos);
+	void _end_drag_over_tracking();
 
 	// Issue #41: game-first input routing.
 	godot::Callable _input_prehandler;   // handler(event) -> bool (true = consume)

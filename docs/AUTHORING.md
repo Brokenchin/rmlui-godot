@@ -235,6 +235,25 @@ Bridges Godot's native drag — drags cross between RmlContexts and native
 Controls freely. See `examples/advanced/inline_drag` for a fully inline
 implementation with a signal bridged back to a Godot Label.
 
+While a drag is in progress, registered drop targets fire enter/over/leave
+events carrying the drag payload — highlight the slots that accept the item,
+or show a live comparison against what's already equipped:
+
+```gdscript
+ctx.rml_drag_entered.connect(func(id, data):
+    if data.get("slot_type") == slot_types[id]:
+        ctx.set_element_class(id, "drag-target", true))
+ctx.rml_drag_left.connect(func(id):
+    ctx.set_element_class(id, "drag-target", false))
+```
+
+```css
+.slot.drag-target { border: 2dp #88cc66; }   /* lit while a valid item hovers */
+```
+
+`rml_drag_left` also fires when the drag ends (after `rml_drop_received` on a
+drop), so highlights always clear.
+
 ## Hover bridge (unclipped tooltips)
 
 A tooltip authored inside the document (`.slot:hover .card`) is clipped by
