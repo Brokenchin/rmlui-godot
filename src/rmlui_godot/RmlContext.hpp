@@ -635,6 +635,9 @@ private:
 
 	bool _gpu_scissor = false;
 	bool _render_dirty = true;
+	// Issue #55: whether the context had pending animation work last _process;
+	// lets the animating→idle edge queue one final settled-frame redraw.
+	bool _was_animating = false;
 	int _last_font_version = -1;
 	bool _use_default_rcss = true;
 	std::string _local_base_rcss;
