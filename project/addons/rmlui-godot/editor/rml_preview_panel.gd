@@ -31,6 +31,11 @@ var _connected_editor: TextEdit
 var _live_rml_text := ""
 var _live_rcss_text := ""
 var _live_rcss_name := ""  # file name of the buffer behind _live_rcss_text
+# Off by default: inline <script>/gdscript: blocks are real game logic, and
+# running them in the editor can freeze it (issue #29). The user opts in per
+# session via the toolbar checkbox; the flag is pushed to the preview context.
+var _run_scripts := false
+var _scripts_check: CheckBox
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(0, 200)
@@ -79,6 +84,21 @@ func _build_toolbar() -> void:
 	bg_opt.select(Background.DARK)
 	bg_opt.item_selected.connect(_on_bg_changed)
 	toolbar.add_child(bg_opt)
+
+	toolbar.add_child(VSeparator.new())
+
+	_scripts_check = CheckBox.new()
+	_scripts_check.text = "Run inline scripts"
+	_scripts_check.button_pressed = _run_scripts
+	_scripts_check.tooltip_text = (
+		"Execute inline <script>/gdscript: blocks in the preview.\n"
+		+ "Off by default — these run real game logic, and a stray loop or\n"
+		+ "blocking call will freeze the editor. While on, a mid-edit GDScript\n"
+		+ "syntax error can also break into the debugger. Enable only for\n"
+		+ "trusted documents you're not actively editing."
+	)
+	_scripts_check.toggled.connect(_on_run_scripts_toggled)
+	toolbar.add_child(_scripts_check)
 
 	add_child(toolbar)
 
@@ -295,7 +315,19 @@ func _ensure_preview_context() -> bool:
 	# so the document lays out for a canvas that doesn't match the panel.
 	# Verified by tests/test_live_preview_parity.gd (0.00% pixel diff).
 	_preview_context.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Gate inline-script execution before any document loads — the onload event
+	# (and lazily-instanced blocks) are checked against this flag in C++.
+	if _preview_context.has_method("set_editor_scripts_enabled"):
+		_preview_context.call("set_editor_scripts_enabled", _run_scripts)
 	return true
+
+func _on_run_scripts_toggled(pressed: bool) -> void:
+	if _run_scripts == pressed:
+		return
+	_run_scripts = pressed
+	# Rebuild the preview so newly-enabled scripts run from a clean state (and so
+	# disabling them tears down any instances/tweens they spawned).
+	_reload_preview()
 
 func _on_reload_pressed() -> void:
 	_live_rml_text = ""

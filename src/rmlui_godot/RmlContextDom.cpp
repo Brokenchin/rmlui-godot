@@ -85,10 +85,22 @@ Rml::Element* RmlContext::_find_element(const godot::String& id) const {
 	return nullptr;
 }
 
+// The bound DOM methods below are the embed_id == "" (context-global) case of
+// the scoped variants — root documents and external game code reach them. An
+// embedded document's <script> reaches the *_scoped forms through RmlContextScope
+// (issue #59), which passes its own embed id so resolution stays inside the
+// embed's subtree. Keeping one implementation per method (the scoped one) means
+// the global path is byte-identical to before.
+
 bool RmlContext::add_event_listener(const godot::String& element_id,
 	const godot::String& event_type, const godot::Callable& callable, bool in_capture_phase) {
+	return add_event_listener_scoped(std::string(), element_id, event_type, callable, in_capture_phase);
+}
 
-	Rml::Element* el = _find_element(element_id);
+bool RmlContext::add_event_listener_scoped(const std::string& embed_id, const godot::String& element_id,
+	const godot::String& event_type, const godot::Callable& callable, bool in_capture_phase) {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] add_event_listener — element not found: ") + element_id);
@@ -111,8 +123,13 @@ bool RmlContext::add_event_listener(const godot::String& element_id,
 
 void RmlContext::remove_event_listeners(const godot::String& element_id,
 	const godot::String& event_type) {
+	remove_event_listeners_scoped(std::string(), element_id, event_type);
+}
 
-	Rml::Element* el = _find_element(element_id);
+void RmlContext::remove_event_listeners_scoped(const std::string& embed_id,
+	const godot::String& element_id, const godot::String& event_type) {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] remove_event_listeners — element not found: ") + element_id);
@@ -132,12 +149,17 @@ void RmlContext::remove_event_listeners(const godot::String& element_id,
 	}
 }
 
-godot::Ref<RmlElementHandle> RmlContext::get_element_by_id(const godot::String& id) const
-{
+godot::Ref<RmlElementHandle> RmlContext::get_element_by_id(const godot::String& id) const {
+	return get_element_by_id_scoped(std::string(), id);
+}
+
+godot::Ref<RmlElementHandle> RmlContext::get_element_by_id_scoped(const std::string& embed_id,
+	const godot::String& id) const {
+
 	godot::Ref<RmlElementHandle> handle;
 	handle.instantiate();
 
-	if (Rml::Element* el = _find_element(id); el != nullptr) {
+	if (Rml::Element* el = _find_element_scoped(embed_id, id); el != nullptr) {
 		handle->set_element(el);
 	} else {
 		godot::UtilityFunctions::push_warning(
@@ -149,8 +171,13 @@ godot::Ref<RmlElementHandle> RmlContext::get_element_by_id(const godot::String& 
 
 bool RmlContext::set_element_property(const godot::String& element_id,
 	const godot::String& property, const godot::String& value) {
+	return set_element_property_scoped(std::string(), element_id, property, value);
+}
 
-	Rml::Element* el = _find_element(element_id);
+bool RmlContext::set_element_property_scoped(const std::string& embed_id, const godot::String& element_id,
+	const godot::String& property, const godot::String& value) {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] set_element_property — element not found: ") + element_id);
@@ -166,8 +193,13 @@ bool RmlContext::set_element_property(const godot::String& element_id,
 
 void RmlContext::remove_element_property(const godot::String& element_id,
 	const godot::String& property) {
+	remove_element_property_scoped(std::string(), element_id, property);
+}
 
-	Rml::Element* el = _find_element(element_id);
+void RmlContext::remove_element_property_scoped(const std::string& embed_id,
+	const godot::String& element_id, const godot::String& property) {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] remove_element_property — element not found: ") + element_id);
@@ -180,8 +212,13 @@ void RmlContext::remove_element_property(const godot::String& element_id,
 
 void RmlContext::set_element_class(const godot::String& element_id,
 	const godot::String& class_name, bool activate) {
+	set_element_class_scoped(std::string(), element_id, class_name, activate);
+}
 
-	Rml::Element* el = _find_element(element_id);
+void RmlContext::set_element_class_scoped(const std::string& embed_id,
+	const godot::String& element_id, const godot::String& class_name, bool activate) {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] set_element_class — element not found: ") + element_id);
@@ -193,7 +230,13 @@ void RmlContext::set_element_class(const godot::String& element_id,
 }
 
 void RmlContext::set_element_inner_rml(const godot::String& element_id, const godot::String& rml) {
-	Rml::Element* el = _find_element(element_id);
+	set_element_inner_rml_scoped(std::string(), element_id, rml);
+}
+
+void RmlContext::set_element_inner_rml_scoped(const std::string& embed_id,
+	const godot::String& element_id, const godot::String& rml) {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] set_element_inner_rml — element not found: ") + element_id);
@@ -205,7 +248,13 @@ void RmlContext::set_element_inner_rml(const godot::String& element_id, const go
 }
 
 godot::String RmlContext::get_element_outer_rml(const godot::String& element_id) const {
-	Rml::Element* el = _find_element(element_id);
+	return get_element_outer_rml_scoped(std::string(), element_id);
+}
+
+godot::String RmlContext::get_element_outer_rml_scoped(const std::string& embed_id,
+	const godot::String& element_id) const {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] get_element_outer_rml — element not found: ") + element_id);
@@ -220,8 +269,13 @@ godot::String RmlContext::get_element_outer_rml(const godot::String& element_id)
 
 godot::String RmlContext::get_element_attribute(const godot::String& element_id,
 	const godot::String& attribute, const godot::String& default_value) const {
+	return get_element_attribute_scoped(std::string(), element_id, attribute, default_value);
+}
 
-	Rml::Element* el = _find_element(element_id);
+godot::String RmlContext::get_element_attribute_scoped(const std::string& embed_id,
+	const godot::String& element_id, const godot::String& attribute, const godot::String& default_value) const {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) return default_value;
 
 	const Rml::Variant* attr = el->GetAttribute(Rml::String(attribute.utf8().get_data()));
@@ -231,8 +285,13 @@ godot::String RmlContext::get_element_attribute(const godot::String& element_id,
 
 void RmlContext::set_element_attribute(const godot::String& element_id,
 	const godot::String& attribute, const godot::String& value) {
+	set_element_attribute_scoped(std::string(), element_id, attribute, value);
+}
 
-	Rml::Element* el = _find_element(element_id);
+void RmlContext::set_element_attribute_scoped(const std::string& embed_id,
+	const godot::String& element_id, const godot::String& attribute, const godot::String& value) {
+
+	Rml::Element* el = _find_element_scoped(embed_id, element_id);
 	if (el == nullptr) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] set_element_attribute — element not found: ") + element_id);

@@ -81,9 +81,40 @@ func damage(amount: int):
 `{{ hp > 50 ? 'fine' : 'hurt' }}`. This is RmlUi's own expression language
 evaluating against the data model (not GDScript).
 
+### Struct / object arrays
+
+`bind_data_array` accepts arrays of **dictionaries**, not just scalars. Each row
+exposes its keys as members, so a `data-for` row can reference `slot.icon`,
+`slot.count`, etc. — no GDScript string-templating needed:
+
+```gdscript
+ctx.bind_data_array("bag", "slots", [
+    {"icon": "texture://sword", "rarity": "legendary", "count": 5, "locked": false},
+    {"icon": "", "rarity": "", "count": 0, "locked": true},
+])
+# later: ctx.set_data_array(...), push_data_array_item("bag", "slots", {...}),
+#        set_data_array_item("bag", "slots", 0, {...}), remove_data_array_item(...)
+```
+
+```xml
+<div data-for="slot : slots" class="slot">
+    <div class="slot-box" data-class-locked="slot.locked">
+        <img class="slot-icon" data-attr-src="slot.icon" data-if="slot.icon != ''" />
+        <span class="slot-count" data-if="slot.count > 1">x{{ slot.count }}</span>
+    </div>
+</div>
+```
+
+Field types are preserved (a dictionary `count: 5` stays an int, so `slot.count > 1`
+compares numerically). Dictionaries and arrays nest arbitrarily. Plain scalar
+arrays (`["a", "b"]`) still work — each element is just a value.
+
 **Editor preview:** set `editor_mock_data` on the node
 (`{"hud": {"hp": 80, "log_lines": ["a", "b"]}}`) and bindings render without
-running the game — both in the preview panel and the 2D viewport.
+running the game — both in the preview panel and the 2D viewport. Mock arrays of
+dictionaries drive struct-array `data-for` rows too, so an inventory grid can be
+previewed with static demo rows (the data model is otherwise empty in the editor,
+since no GDScript runs there).
 
 ## Inline GDScript
 
@@ -158,6 +189,12 @@ Rules of the model:
   persistent state in data models or game-side.
 - No `_process`/`_ready` (not a Node) and no debugger breakpoints — put
   complex logic in a `<script src="...">` file instead.
+- **Editor behaviour:** inline blocks do **not** run in the editor by default —
+  they are real game logic, and a stray loop or blocking call would freeze the
+  editor. The document still renders (layout, RCSS, mock-data bindings); only
+  script execution is withheld. To exercise scripts in the live preview panel,
+  tick **Run inline scripts** in its toolbar (per-session, off by default).
+  Compilation still happens, so parse-error diagnostics work regardless.
 
 ## Gamepad & keyboard navigation
 
@@ -198,6 +235,52 @@ Bridges Godot's native drag — drags cross between RmlContexts and native
 Controls freely. See `examples/advanced/inline_drag` for a fully inline
 implementation with a signal bridged back to a Godot Label.
 
+While a drag is in progress, registered drop targets fire enter/over/leave
+events carrying the drag payload — highlight the slots that accept the item,
+or show a live comparison against what's already equipped:
+
+```gdscript
+ctx.rml_drag_entered.connect(func(id, data):
+    if data.get("slot_type") == slot_types[id]:
+        ctx.set_element_class(id, "drag-target", true))
+ctx.rml_drag_left.connect(func(id):
+    ctx.set_element_class(id, "drag-target", false))
+```
+
+```css
+.slot.drag-target { border: 2dp #88cc66; }   /* lit while a valid item hovers */
+```
+
+`rml_drag_left` also fires when the drag ends (after `rml_drop_received` on a
+drop), so highlights always clear.
+
+## Hover bridge (unclipped tooltips)
+
+A tooltip authored inside the document (`.slot:hover .card`) is clipped by
+ancestor `overflow` *and* this context's viewport, so it gets cut off at the
+panel edge. To draw it unclipped, render the tooltip in a **separate,
+screen-sized overlay context** and drive it from the hover signals:
+
+```gdscript
+inventory_ctx.rml_element_hovered.connect(_on_slot_hovered)
+inventory_ctx.rml_element_unhovered.connect(_on_slot_unhovered)
+
+func _on_slot_hovered(element_id: String, global_position: Vector2) -> void:
+    var item := items[element_id]
+    overlay_ctx.set_element_inner_rml("tooltip", _card_rml(item))
+    overlay_ctx.set_element_property("tooltip", "left", str(global_position.x) + "px")
+    overlay_ctx.set_element_property("tooltip", "top", str(global_position.y) + "px")
+
+func _on_slot_unhovered(_element_id: String) -> void:
+    overlay_ctx.set_element_property("tooltip", "display", "none")
+```
+
+The id reported is the nearest ancestor with an `id`, resolved at event time —
+so it works for slots streamed in via `set_element_inner_rml`, where
+data-binding attributes don't reliably bind. Signals fire once on enter and
+once on leave; poll `ctx.get_hovered_element_id()` on mouse motion instead if
+you want a tooltip that follows the cursor.
+
 ## Godot textures & shader decorators
 
 ```gdscript
@@ -227,9 +310,34 @@ Everything ships in the addon (`plugin.cfg` → enable "RmlUI"):
 - **Live preview** (bottom panel): select an RmlContext to render its
   document; edits to open `.rml`/`.rcss` buffers apply live without saving;
   mouse hover/click/scroll work inside the panel; parse errors appear in the
-  status line. `editor_mock_data` feeds bindings.
+  status line. `editor_mock_data` feeds bindings. Inline `<script>` blocks stay
+  inert here unless you tick **Run inline scripts** (off by default — they are
+  real game logic and can freeze the editor).
 - **Inspector**: Edit/Create buttons for the document and its linked `.rcss`,
   a live status line, and a Preview shortcut.
+
+## Exporting your project
+
+`.rml` and `.rcss` are plain text files with no Godot importer, so the exporter
+drops them from the PCK by default — RmlUi would then fail to open them at
+runtime with the editor gone. The addon handles this for you:
+
+- **Documents (`.rml`/`.rcss`)** are bundled automatically at export time by the
+  addon's export plugin (they land in the PCK at their original `res://` path,
+  so nothing in your code changes). Toggle this with the **`rmlui/export/
+  auto_include_documents`** project setting (on by default). If you turn it off,
+  add `*.rml, *.rcss` to your export preset's *Resources ▸ Filters to export
+  non-resource files/folders* instead.
+- **Fonts** are loaded through Godot's resource pipeline: `.ttf`/`.otf`/`.woff`
+  are imported to `FontFile` resources and survive export as long as they live
+  under `res://` (the addon reads the imported resource when the raw source is
+  stripped). No filter needed.
+- **Images / textures** referenced from RCSS/RML load via the resource loader
+  and export normally.
+
+If a document fails to load only in an exported build, check the Output log for
+`[RmlUi] FileInterface::Open failed` — that means the file was not packed
+(document auto-include disabled and no matching export filter).
 
 ## Pitfalls worth knowing
 

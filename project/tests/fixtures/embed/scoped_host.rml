@@ -1,0 +1,17 @@
+<rml>
+<head>
+<style>
+	body { display: block; }
+	#row { display: flex; flex-direction: row; }
+	/* Two instances of the SAME doc-script widget, side by side, with identical
+	   internal ids ("grid", "slot"). */
+	embed-doc { width: 80px; height: 80px; margin-right: 40px; }
+</style>
+</head>
+<body>
+	<div id="row">
+		<embed-doc id="sa" src="scoped_widget.rml"/>
+		<embed-doc id="sb" src="scoped_widget.rml"/>
+	</div>
+</body>
+</rml>

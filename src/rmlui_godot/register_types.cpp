@@ -9,6 +9,8 @@
 #include "RmlManager.hpp"
 #include "RmlContext.hpp"
 #include "RmlElementHandle.hpp"
+#include "RmlDataModel.hpp"
+#include "RmlContextScope.hpp"
 
 
 void initialize_rmlui_godot(ModuleInitializationLevel p_level) {
@@ -17,6 +19,8 @@ void initialize_rmlui_godot(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(RmlGodot::RmlManager);
 		GDREGISTER_CLASS(RmlGodot::RmlContext);
 		GDREGISTER_CLASS(RmlGodot::RmlElementHandle);
+		GDREGISTER_CLASS(RmlGodot::RmlDataModel);
+		GDREGISTER_CLASS(RmlGodot::RmlContextScope);
 
 		auto* rml_manager = memnew(RmlGodot::RmlManager);
 		godot::Engine::get_singleton()->register_singleton("RmlManager", rml_manager);

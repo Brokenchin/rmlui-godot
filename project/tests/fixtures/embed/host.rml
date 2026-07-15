@@ -1,0 +1,19 @@
+<rml>
+<head>
+<style>
+	body { display: block; }
+	/* The coordinator owns the shared layout: a flex row in which the embedded
+	   widget is an ordinary item, so the sibling reflows beside it (not over it). */
+	#host-container { display: flex; flex-direction: row; }
+	#sibling { width: 120px; height: 80px; background-color: #333; }
+	embed-doc { width: 100px; height: 80px; }
+</style>
+</head>
+<body>
+	<div id="host-container">
+		<div id="sibling">sibling</div>
+		<!-- Declarative embed: mounted automatically on document load. -->
+		<embed-doc id="w1" src="widget.rml"/>
+	</div>
+</body>
+</rml>

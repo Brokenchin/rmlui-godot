@@ -7,6 +7,7 @@
 #include "GodotScriptDocument.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
@@ -79,18 +80,53 @@ godot::Variant rml_to_godot_variant(const Rml::Variant& rv) {
 	}
 }
 
-Rml::String godot_variant_to_rml_string(const godot::Variant& gv) {
-	godot::String s = gv.stringify();
-	return Rml::String(s.utf8().get_data());
+// Mirror a Godot value into a dynamic data node. Dictionaries become Struct
+// nodes (named members), Arrays become Array nodes (indexed elements), and
+// everything else becomes a Scalar node holding a converted Rml::Variant. This
+// recurses, so arrays of dictionaries with nested arrays/dictionaries all work.
+std::unique_ptr<RmlGodot::DynNode> godot_to_dyn_node(const godot::Variant& gv) {
+	using RmlGodot::DynNode;
+	auto node = std::make_unique<DynNode>();
+
+	switch (gv.get_type()) {
+		case godot::Variant::DICTIONARY: {
+			node->kind = DynNode::Kind::Struct;
+			godot::Dictionary dict = gv;
+			godot::Array keys = dict.keys();
+			for (int i = 0; i < keys.size(); i++) {
+				godot::String key = keys[i];
+				std::string member(key.utf8().get_data());
+				node->member_order.push_back(member);
+				node->members[member] = godot_to_dyn_node(dict[keys[i]]);
+			}
+			break;
+		}
+		case godot::Variant::ARRAY: {
+			node->kind = DynNode::Kind::Array;
+			godot::Array arr = gv;
+			node->elements.reserve(arr.size());
+			for (int i = 0; i < arr.size(); i++) {
+				node->elements.push_back(godot_to_dyn_node(arr[i]));
+			}
+			break;
+		}
+		default:
+			node->kind = DynNode::Kind::Scalar;
+			node->scalar = godot_to_rml_variant(gv);
+			break;
+	}
+
+	return node;
 }
 
-Rml::Vector<Rml::String> godot_array_to_rml_string_vector(const godot::Array& arr) {
-	Rml::Vector<Rml::String> result;
-	result.reserve(arr.size());
+// Populate an existing Array node from a Godot array, replacing its elements.
+void fill_array_node(RmlGodot::DynNode& root, const godot::Array& arr) {
+	root.kind = RmlGodot::DynNode::Kind::Array;
+	root.elements.clear();
+	root.elements.reserve(arr.size());
 	for (int i = 0; i < arr.size(); i++) {
-		result.push_back(godot_variant_to_rml_string(arr[i]));
+		root.elements.push_back(godot_to_dyn_node(arr[i]));
 	}
-	return result;
 }
 
 } // anonymous namespace
@@ -98,6 +134,10 @@ Rml::Vector<Rml::String> godot_array_to_rml_string_vector(const godot::Array& ar
 namespace RmlGodot {
 
 bool RmlContext::create_data_model(const godot::String& model_name) {
+	return _create_data_model_impl(model_name, false);
+}
+
+bool RmlContext::_create_data_model_impl(const godot::String& model_name, bool allow_missing_variables) {
 	if (_rml_context == nullptr) {
 		godot::UtilityFunctions::push_warning("[RmlUi] Cannot create data model — context not initialized");
 		return false;
@@ -110,7 +150,12 @@ bool RmlContext::create_data_model(const godot::String& model_name) {
 		return false;
 	}
 
-	Rml::DataModelConstructor constructor = _rml_context->CreateDataModel(Rml::String(name));
+	// allow_missing_variables lets bindings be added after the document loads —
+	// required for embeds whose namespaced model is created at mount and fed
+	// afterwards (views referencing not-yet-bound variables render defaults until
+	// the variable is bound and dirtied).
+	Rml::DataModelConstructor constructor =
+		_rml_context->CreateDataModel(Rml::String(name), nullptr, allow_missing_variables);
 	if (!constructor) {
 		godot::UtilityFunctions::push_error(
 			godot::String("[RmlUi] Failed to create data model: ") + model_name);
@@ -122,9 +167,50 @@ bool RmlContext::create_data_model(const godot::String& model_name) {
 	entry.handle = constructor.GetModelHandle();
 	_data_models[name] = std::move(entry);
 
-	godot::UtilityFunctions::print(
-		godot::String("[RmlUi] Data model created: ") + model_name);
+	if (!console_log_muted()) {
+		godot::UtilityFunctions::print(
+			godot::String("[RmlUi] Data model created: ") + model_name);
+	}
 	return true;
+}
+
+bool RmlContext::has_data_model(const godot::String& model_name) const {
+	return _data_models.count(std::string(model_name.utf8().get_data())) > 0;
+}
+
+// --- Upsert helpers backing RmlDataModel (bind-on-first-use, then set) ---
+
+void RmlContext::dm_set_value(const godot::String& model_name,
+	const godot::String& key, const godot::Variant& value) {
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
+	if (model->variables.count(std::string(key.utf8().get_data())))
+		set_data_variable(model_name, key, value);
+	else
+		bind_data_variable(model_name, key, value);
+}
+
+void RmlContext::dm_set_array(const godot::String& model_name,
+	const godot::String& array_name, const godot::Array& array) {
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
+	const std::string aname(array_name.utf8().get_data());
+	const bool bound = model->dyn_arrays && model->dyn_arrays->roots.count(aname);
+	if (bound)
+		set_data_array(model_name, array_name, array);
+	else
+		bind_data_array(model_name, array_name, array);
+}
+
+void RmlContext::dm_push(const godot::String& model_name,
+	const godot::String& array_name, const godot::Variant& value) {
+	DataModelEntry* model = _get_data_model(model_name);
+	if (model == nullptr) return;
+	const std::string aname(array_name.utf8().get_data());
+	const bool bound = model->dyn_arrays && model->dyn_arrays->roots.count(aname);
+	if (!bound)
+		bind_data_array(model_name, array_name, godot::Array());
+	push_data_array_item(model_name, array_name, value);
 }
 
 RmlContext::DataModelEntry* RmlContext::_get_data_model(const godot::String& model_name, bool warn) {
@@ -144,23 +230,26 @@ const RmlContext::DataModelEntry* RmlContext::_get_data_model(const godot::Strin
 	return const_cast<RmlContext*>(this)->_get_data_model(model_name, warn);
 }
 
-Rml::Vector<Rml::String>* RmlContext::_get_data_array(DataModelEntry& model,
+RmlGodot::DynNode* RmlContext::_get_data_array(DataModelEntry& model,
 	const godot::String& array_name, bool warn) {
 
-	auto it = model.arrays.find(std::string(array_name.utf8().get_data()));
-	if (it == model.arrays.end()) {
+	if (model.dyn_arrays == nullptr) {
 		if (warn) {
 			godot::UtilityFunctions::push_warning(
 				godot::String("[RmlUi] Array not bound: ") + array_name);
 		}
 		return nullptr;
 	}
-	return &it->second;
-}
 
-const Rml::Vector<Rml::String>* RmlContext::_get_data_array(const DataModelEntry& model,
-	const godot::String& array_name, bool warn) {
-	return _get_data_array(const_cast<DataModelEntry&>(model), array_name, warn);
+	auto it = model.dyn_arrays->roots.find(std::string(array_name.utf8().get_data()));
+	if (it == model.dyn_arrays->roots.end()) {
+		if (warn) {
+			godot::UtilityFunctions::push_warning(
+				godot::String("[RmlUi] Array not bound: ") + array_name);
+		}
+		return nullptr;
+	}
+	return it->second.get();
 }
 
 bool RmlContext::bind_data_variable(const godot::String& model_name,
@@ -316,6 +405,12 @@ void RmlContext::update_data_model(const godot::String& model_name,
 }
 
 // --- Phase 3: Array data binding ---
+//
+// Arrays are bound through a dynamic node tree (see RmlDynamicData.hpp) rather
+// than a fixed Rml::Vector<Rml::String>. This lets elements be dictionaries —
+// `bind_data_array("bag", "slots", [{icon, rarity, count}, ...])` — so a
+// `data-for="slot : slots"` row can reference `slot.icon`, `slot.count > 1`,
+// etc. Plain scalar arrays still work; each element is just a scalar node.
 
 bool RmlContext::bind_data_array(const godot::String& model_name,
 	const godot::String& array_name, const godot::Array& initial_array) {
@@ -329,24 +424,27 @@ bool RmlContext::bind_data_array(const godot::String& model_name,
 	if (model == nullptr) return false;
 
 	std::string aname(array_name.utf8().get_data());
-	if (model->arrays.count(aname)) {
+
+	if (model->dyn_arrays == nullptr) {
+		model->dyn_arrays = std::make_unique<RmlGodot::DynDataRegistry>();
+	}
+	if (model->dyn_arrays->roots.count(aname)) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] Array already bound: ") + array_name);
 		return false;
 	}
 
-	// RmlUi's data type register is per-context, so this must be tracked
-	// per RmlContext instance — a global flag breaks every context after
-	// the first one (including the editor preview context).
-	if (!_array_type_registered) {
-		model->constructor.RegisterArray<Rml::Vector<Rml::String>>();
-		_array_type_registered = true;
-	}
+	auto root = std::make_unique<RmlGodot::DynNode>();
+	fill_array_node(*root, initial_array);
 
-	model->arrays[aname] = godot_array_to_rml_string_vector(initial_array);
+	RmlGodot::DynNode* root_ptr = root.get();
+	model->dyn_arrays->roots[aname] = std::move(root);
 
-	auto* array_ptr = &model->arrays[aname];
-	model->constructor.Bind(Rml::String(aname), array_ptr);
+	// BindCustomDataVariable keeps the DataVariable (definition + pointer); the
+	// registry owns both for the data model's lifetime, and the root pointer is
+	// stable because we only ever mutate the node in place, never replace it.
+	model->constructor.BindCustomDataVariable(
+		Rml::String(aname), model->dyn_arrays->make_variable(root_ptr));
 
 	return true;
 }
@@ -357,10 +455,10 @@ void RmlContext::set_data_array(const godot::String& model_name,
 	DataModelEntry* model = _get_data_model(model_name);
 	if (model == nullptr) return;
 
-	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
-	if (arr == nullptr) return;
+	RmlGodot::DynNode* root = _get_data_array(*model, array_name);
+	if (root == nullptr) return;
 
-	*arr = godot_array_to_rml_string_vector(array);
+	fill_array_node(*root, array);
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 	_render_dirty = true;
 }
@@ -371,10 +469,10 @@ void RmlContext::push_data_array_item(const godot::String& model_name,
 	DataModelEntry* model = _get_data_model(model_name);
 	if (model == nullptr) return;
 
-	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
-	if (arr == nullptr) return;
+	RmlGodot::DynNode* root = _get_data_array(*model, array_name);
+	if (root == nullptr) return;
 
-	arr->push_back(godot_variant_to_rml_string(value));
+	root->elements.push_back(godot_to_dyn_node(value));
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 	_render_dirty = true;
 }
@@ -385,16 +483,16 @@ void RmlContext::remove_data_array_item(const godot::String& model_name,
 	DataModelEntry* model = _get_data_model(model_name);
 	if (model == nullptr) return;
 
-	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
-	if (arr == nullptr) return;
+	RmlGodot::DynNode* root = _get_data_array(*model, array_name);
+	if (root == nullptr) return;
 
-	if (index < 0 || index >= static_cast<int>(arr->size())) {
+	if (index < 0 || index >= static_cast<int>(root->elements.size())) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] Array index out of bounds: ") + godot::String::num_int64(index));
 		return;
 	}
 
-	arr->erase(arr->begin() + index);
+	root->elements.erase(root->elements.begin() + index);
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 	_render_dirty = true;
 }
@@ -405,16 +503,16 @@ void RmlContext::set_data_array_item(const godot::String& model_name,
 	DataModelEntry* model = _get_data_model(model_name);
 	if (model == nullptr) return;
 
-	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
-	if (arr == nullptr) return;
+	RmlGodot::DynNode* root = _get_data_array(*model, array_name);
+	if (root == nullptr) return;
 
-	if (index < 0 || index >= static_cast<int>(arr->size())) {
+	if (index < 0 || index >= static_cast<int>(root->elements.size())) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi] Array index out of bounds: ") + godot::String::num_int64(index));
 		return;
 	}
 
-	(*arr)[index] = godot_variant_to_rml_string(value);
+	root->elements[index] = godot_to_dyn_node(value);
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 	_render_dirty = true;
 }
@@ -425,10 +523,11 @@ int RmlContext::get_data_array_size(const godot::String& model_name,
 	const DataModelEntry* model = _get_data_model(model_name, false);
 	if (model == nullptr) return 0;
 
-	const Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name, false);
-	if (arr == nullptr) return 0;
+	const RmlGodot::DynNode* root =
+		_get_data_array(const_cast<DataModelEntry&>(*model), array_name, false);
+	if (root == nullptr) return 0;
 
-	return static_cast<int>(arr->size());
+	return static_cast<int>(root->elements.size());
 }
 
 void RmlContext::clear_data_array(const godot::String& model_name,
@@ -437,10 +536,10 @@ void RmlContext::clear_data_array(const godot::String& model_name,
 	DataModelEntry* model = _get_data_model(model_name);
 	if (model == nullptr) return;
 
-	Rml::Vector<Rml::String>* arr = _get_data_array(*model, array_name);
-	if (arr == nullptr) return;
+	RmlGodot::DynNode* root = _get_data_array(*model, array_name);
+	if (root == nullptr) return;
 
-	arr->clear();
+	root->elements.clear();
 	model->handle.DirtyVariable(Rml::String(array_name.utf8().get_data()));
 	_render_dirty = true;
 }

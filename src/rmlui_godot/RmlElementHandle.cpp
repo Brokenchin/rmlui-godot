@@ -6,6 +6,7 @@
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
+#include <RmlUi/Core/ElementUtilities.h>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 namespace RmlGodot {
@@ -210,6 +211,43 @@ void RmlElementHandle::add_event_listener(const godot::String& event_type,
 	std::string type_str(event_type.utf8().get_data());
 	auto* listener = new RmlGodot::GodotEventListener(callable, type_str);
 	_element->AddEventListener(Rml::String(type_str), listener, in_capture_phase);
+}
+
+void RmlElementHandle::click() {
+	if (_element == nullptr) {
+		godot::UtilityFunctions::push_warning("[RmlUi] RmlElementHandle::click — invalid element");
+		return;
+	}
+	_element->Click();
+	_mark_owner_dirty(_element);
+}
+
+godot::Vector2 RmlElementHandle::get_position() const {
+	if (_element == nullptr) return godot::Vector2();
+	Rml::Vector2f p = _element->GetAbsoluteOffset(Rml::BoxArea::Border);
+	return godot::Vector2(p.x, p.y);
+}
+
+godot::Rect2 RmlElementHandle::get_screen_rect() const {
+	if (_element == nullptr) return godot::Rect2();
+	// Transform-aware: the projected bounding box in context/window px — this is
+	// where the element actually PAINTS. get_position() is the untransformed
+	// layout offset, which is nowhere near the visual rect for elements under a
+	// transformed ancestor (e.g. widgets inside a transform-centered embed host).
+	// Exact for translate-only transforms; an AABB for rotated/scaled ones.
+	Rml::Rectanglef r;
+	if (Rml::ElementUtilities::GetBoundingBox(r, _element, Rml::BoxArea::Border)) {
+		return godot::Rect2(r.Left(), r.Top(), r.Width(), r.Height());
+	}
+	const Rml::Vector2f pos = _element->GetAbsoluteOffset(Rml::BoxArea::Border);
+	const Rml::Vector2f size = _element->GetBox().GetSize(Rml::BoxArea::Border);
+	return godot::Rect2(pos.x, pos.y, size.x, size.y);
+}
+
+godot::Vector2 RmlElementHandle::get_size() const {
+	if (_element == nullptr) return godot::Vector2();
+	Rml::Vector2f s = _element->GetBox().GetSize(Rml::BoxArea::Border);
+	return godot::Vector2(s.x, s.y);
 }
 
 } // namespace RmlGodot

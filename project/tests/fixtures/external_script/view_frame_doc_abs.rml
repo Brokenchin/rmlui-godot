@@ -1,0 +1,8 @@
+<rml>
+<head>
+	<script src="res://tests/fixtures/external_script/view_frame_doc.gd"></script>
+</head>
+<body onload="gdscript:_on_load">
+	<div>absolute src</div>
+</body>
+</rml>

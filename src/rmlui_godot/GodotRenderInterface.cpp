@@ -1,20 +1,35 @@
 #include "GodotRenderInterface.hpp"
 #include "RmlManager.hpp"
 
+#include <RmlUi/Core/DecorationTypes.h>
+#include <RmlUi/Core/Dictionary.h>
 #include <RmlUi/Core/Types.h>
 #include <RmlUi/Core/Variant.h>
 
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/resource.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <algorithm>
+#include <cmath>
+
 namespace RmlGodot {
+
+// Maximum color stops uploaded to the gradient shader. Must match MAX_NUM_STOPS
+// in rmlui_gradient.gdshader (and RmlUi's reference backend). Extra stops are
+// dropped, matching the reference renderer.
+static constexpr int kMaxGradientStops = 16;
+
+// Bundled gradient shader, relative to the resolved addon root (issue #11).
+static constexpr const char* kGradientShaderRel = "/shaders/rmlui_gradient.gdshader";
 
 // --- Geometry ---
 
@@ -345,24 +360,168 @@ bool GodotRenderInterface::register_shader(const std::string& name, const godot:
 	material.instantiate();
 	material->set_shader(shader);
 	_registered_shaders[name] = material;
+	// The shader set changed — re-arm the "missing shader" warning so a later
+	// removal of this name reports again instead of staying silently deduped.
+	_warned_missing_shaders.clear();
 	return true;
 }
 
 bool GodotRenderInterface::register_shader_material(const std::string& name, const godot::Ref<godot::ShaderMaterial>& material) {
 	if (!material.is_valid() || !material->get_shader().is_valid()) return false;
 	_registered_shaders[name] = material;
+	_warned_missing_shaders.clear();
 	return true;
 }
 
 bool GodotRenderInterface::unregister_shader(const std::string& name) {
-	return _registered_shaders.erase(name) > 0;
+	const bool erased = _registered_shaders.erase(name) > 0;
+	if (erased) _warned_missing_shaders.clear();
+	return erased;
+}
+
+void GodotRenderInterface::_notify_shader_issue(const std::string& key, const godot::String& msg) {
+	// Warn ONCE per key (issue #29): RmlUi calls CompileShader per decorated
+	// element on every (re)load, and the editor reloads the document on every
+	// keystroke (live preview + diagnostics). An unguarded push_warning here —
+	// expensive in the editor (backtrace + debugger round-trip) — turned a grid of
+	// slots into a per-keystroke editor freeze. Route a cheap structured notice to
+	// tooling (the preview/diagnostics error bar via rml_log) always, and reserve
+	// the costly console warning for runtime, where it's actionable.
+	if (!_warned_missing_shaders.insert(key).second) return;
+	auto* manager = RmlManager::get_singleton();
+	if (manager != nullptr) {
+		manager->notify_log(3 /*Rml::Log::LT_WARNING*/, msg);
+	}
+	auto* engine = godot::Engine::get_singleton();
+	const bool in_editor = engine != nullptr && engine->is_editor_hint();
+	const bool muted = manager != nullptr && manager->is_console_log_muted();
+	if (!in_editor && !muted) {
+		godot::UtilityFunctions::push_warning(msg);
+	}
+}
+
+Rml::CompiledShaderHandle GodotRenderInterface::_compile_gradient_shader(
+	const Rml::String& name, const Rml::Dictionary& parameters) {
+
+	// Map the gradient name to the shader's `func` selector (must match
+	// rmlui_gradient.gdshader): func % 3 picks the geometry math. RmlUi always
+	// passes the base name ("linear-gradient" etc.) and signals the repeating-*
+	// variant via a "repeating" bool parameter (NOT a distinct name) — see
+	// DecoratorGradient.cpp / the GL3 backend — so +3 selects the repeating func.
+	int func = -1;
+	if (name == "linear-gradient") func = 0;
+	else if (name == "radial-gradient") func = 1;
+	else if (name == "conic-gradient") func = 2;
+	else return 0; // Not a gradient — caller handles the unsupported-name notice.
+
+	if (Rml::Get(parameters, "repeating", false))
+		func += 3;
+
+	// Color stops are required; without them there is nothing to draw.
+	auto stops_it = parameters.find("color_stop_list");
+	if (stops_it == parameters.end() || stops_it->second.GetType() != Rml::Variant::COLORSTOPLIST)
+		return 0;
+	const Rml::ColorStopList& stop_list = stops_it->second.GetReference<Rml::ColorStopList>();
+	const int num_stops = std::min<int>(static_cast<int>(stop_list.size()), kMaxGradientStops);
+	if (num_stops <= 0) return 0;
+
+	// Resolve the gradient geometry in element fill-space pixels, exactly as the
+	// reference GL3 backend does, so p/v line up with RmlUi's per-vertex tex
+	// coords (which we forward as the mesh UVs).
+	godot::Vector2 p, v;
+	switch (func % 3) {
+	case 0: { // linear: p = start point, v = start -> end vector
+		const auto p0 = Rml::Get(parameters, "p0", Rml::Vector2f(0.f));
+		const auto p1 = Rml::Get(parameters, "p1", Rml::Vector2f(0.f));
+		p = godot::Vector2(p0.x, p0.y);
+		v = godot::Vector2(p1.x - p0.x, p1.y - p0.y);
+	} break;
+	case 1: { // radial: p = center, v = inverse radius
+		const auto center = Rml::Get(parameters, "center", Rml::Vector2f(0.f));
+		const auto radius = Rml::Get(parameters, "radius", Rml::Vector2f(1.f));
+		p = godot::Vector2(center.x, center.y);
+		v = godot::Vector2(radius.x != 0.f ? 1.f / radius.x : 0.f,
+			radius.y != 0.f ? 1.f / radius.y : 0.f);
+	} break;
+	default: { // conic: p = center, v = angled unit vector
+		const auto center = Rml::Get(parameters, "center", Rml::Vector2f(0.f));
+		const float angle = Rml::Get(parameters, "angle", 0.f);
+		p = godot::Vector2(center.x, center.y);
+		v = godot::Vector2(std::cos(angle), std::sin(angle));
+	} break;
+	}
+
+	// Load the shared gradient shader once. Registered from disk (the addon ships
+	// it), so this works at runtime and in the editor's live preview alike.
+	if (!_gradient_shader.is_valid()) {
+		godot::String gradient_shader_path =
+			RmlManager::get_singleton()->get_addon_root() + godot::String(kGradientShaderRel);
+		auto* loader = godot::ResourceLoader::get_singleton();
+		if (loader != nullptr) {
+			_gradient_shader = loader->load(gradient_shader_path);
+		}
+		if (!_gradient_shader.is_valid()) {
+			_notify_shader_issue("builtin:gradient-shader",
+				godot::String("[RmlUi] Built-in gradient shader could not be loaded: ") +
+					gradient_shader_path);
+			return 0;
+		}
+	}
+
+	godot::PackedColorArray colors;
+	godot::PackedFloat32Array positions;
+	colors.resize(num_stops);
+	positions.resize(num_stops);
+	for (int i = 0; i < num_stops; ++i) {
+		const Rml::ColorStop& stop = stop_list[i];
+		// ColourbPremultiplied bytes -> premultiplied float, matching the rest of
+		// the geometry color path (no extra color-space conversion).
+		colors.set(i, godot::Color(stop.color[0] / 255.f, stop.color[1] / 255.f,
+			stop.color[2] / 255.f, stop.color[3] / 255.f));
+		positions.set(i, stop.position.number);
+	}
+
+	godot::Ref<godot::ShaderMaterial> material;
+	material.instantiate();
+	material->set_shader(_gradient_shader);
+	material->set_shader_parameter("func", func);
+	material->set_shader_parameter("p", p);
+	material->set_shader_parameter("v", v);
+	material->set_shader_parameter("num_stops", num_stops);
+	material->set_shader_parameter("stop_colors", colors);
+	material->set_shader_parameter("stop_positions", positions);
+
+	ShaderData data;
+	data.name = std::string(name.c_str());
+	data.material = material;
+
+	uintptr_t handle = _next_shader_handle++;
+	_shaders[handle] = std::move(data);
+	return handle;
 }
 
 Rml::CompiledShaderHandle GodotRenderInterface::CompileShader(
-	const Rml::String& /*name*/, const Rml::Dictionary& parameters) {
+	const Rml::String& name, const Rml::Dictionary& parameters) {
 
-	// RmlUi's built-in shader decorator always passes name == "shader" and the
-	// user-facing name from `decorator: shader("<value>")` under "value".
+	// RmlUi routes BOTH custom and built-in shader decorators through here:
+	//  - Custom `decorator: shader("<value>")` -> name == "shader", user string
+	//    under "value" (handled below via the registered-ShaderMaterial path).
+	//  - Built-in gradients (linear/radial/conic + repeating-*) -> the gradient
+	//    type as `name`, with gradient params (color stops, geometry) and no
+	//    "value" key. These previously fell through to `return 0`, so gradients
+	//    drew nothing with no diagnostic (issue #43).
+	if (name != "shader") {
+		const Rml::CompiledShaderHandle gradient = _compile_gradient_shader(name, parameters);
+		if (gradient != 0) return gradient;
+		// Unrecognised built-in shader decorator: fall back to plain geometry, but
+		// surface it once per name via the same structured notice used for missing
+		// custom shaders, so future render-interface gaps stay visible not silent.
+		_notify_shader_issue(std::string("builtin:") + name.c_str(),
+			godot::String("[RmlUi] Unsupported built-in shader decorator: ") +
+				godot::String(name.c_str()));
+		return 0;
+	}
+
 	auto value_it = parameters.find("value");
 	if (value_it == parameters.end()) return 0;
 	std::string shader_name(value_it->second.Get<Rml::String>().c_str());
@@ -370,10 +529,13 @@ Rml::CompiledShaderHandle GodotRenderInterface::CompileShader(
 	auto reg_it = _registered_shaders.find(shader_name);
 	if (reg_it == _registered_shaders.end() || !reg_it->second.is_valid()) {
 		// No Godot shader registered for this name — returning 0 makes RmlUi fall
-		// back to ordinary geometry rendering for this decorator.
-		godot::UtilityFunctions::push_warning(
+		// back to ordinary geometry rendering for this decorator. Decorator shaders
+		// are registered from GDScript, which never runs in the editor, so the
+		// editor can't satisfy them anyway — _notify_shader_issue keeps the costly
+		// console warning out of per-keystroke editor reloads (issue #29).
+		_notify_shader_issue(shader_name,
 			godot::String("[RmlUi] No decorator shader registered for: ") +
-			godot::String(shader_name.c_str()));
+				godot::String(shader_name.c_str()));
 		return 0;
 	}
 
@@ -431,7 +593,9 @@ void GodotRenderInterface::release_all_resources() {
 	_draw_commands.clear();
 	_registered_textures.clear();
 	_registered_shaders.clear();
+	_warned_missing_shaders.clear();
 	_white_texture.unref();
+	_gradient_shader.unref();
 	_next_geo_handle = 1;
 	_next_tex_handle = 1;
 	_next_filter_handle = 1;

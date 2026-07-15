@@ -1,0 +1,22 @@
+<rml>
+<head>
+<style>
+	body { font-family: "Noto Sans"; }
+	/* Distinct px values so RCSS isolation is unambiguous via get_property. */
+	.swatch { width: 111px; }
+	#respbox { width: 100px; height: 20px; }
+	#evbox { width: 30px; height: 20px; }
+	/* Parent @media keyed on context width. */
+	@media (min-width: 600px) {
+		#respbox { width: 300px; }
+	}
+</style>
+</head>
+<body>
+	<div id="host-box">
+		<div id="p-swatch" class="swatch">parent</div>
+		<div id="respbox"></div>
+		<embed-doc id="emb" src="embed_hard.rml"/>
+	</div>
+</body>
+</rml>

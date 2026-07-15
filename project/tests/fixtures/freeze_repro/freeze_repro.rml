@@ -1,0 +1,44 @@
+<rml>
+<!--
+  Issue #29 freeze repro. The inline <script> below deliberately HARD-LOOPS on
+  load. Open this scene's RmlContext in the live-preview panel:
+    - "Run inline scripts" OFF (default): document renders, editing the RML
+      stays smooth, _boom() never runs. This is the fix.
+    - "Run inline scripts" ON: the loop runs in the editor process and HANGS it
+      (you must kill Godot). This proves the script genuinely freezes the editor
+      and that the off-by-default gate is what protects you.
+  Not shipped in examples on purpose — it's a destructive test fixture.
+-->
+<head>
+	<title>Freeze Repro</title>
+	<style>
+		body {
+			font-family: "Noto Sans";
+			font-size: 18px;
+			color: #eeeeee;
+			background-color: #2a1d1d;
+			width: 100%;
+			height: 100%;
+			padding: 24px;
+		}
+		h1 { font-size: 24px; color: #ff8a8a; margin-bottom: 8px; }
+		p  { color: #ddc; margin-bottom: 8px; }
+		code { color: #ffd479; }
+	</style>
+	<script>
+	var rml_context
+
+	func _boom(_event):
+		# Infinite loop — if this runs in the editor, it freezes. The gate keeps
+		# it from running unless "Run inline scripts" is ticked.
+		while true:
+			pass
+	</script>
+</head>
+<body onload="gdscript:_boom">
+	<h1>Freeze Repro (issue #29)</h1>
+	<p>Edit this text — it should stay responsive while
+	<code>Run inline scripts</code> is OFF.</p>
+	<p>Tick the checkbox to (intentionally) hang the editor.</p>
+</body>
+</rml>

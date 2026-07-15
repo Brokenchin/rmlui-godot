@@ -1,0 +1,11 @@
+<rml>
+<head>
+<style>
+	body { display: block; }
+	#drop-slot { width: 60px; height: 60px; background-color: #4488cc; }
+</style>
+</head>
+<body>
+	<div id="drop-slot">slot</div>
+</body>
+</rml>

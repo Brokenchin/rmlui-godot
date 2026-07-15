@@ -8,8 +8,10 @@
 #include <cmath>
 
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/font_file.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
+#include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/resource_uid.hpp>
 #include <godot_cpp/classes/text_server.hpp>
 #include <godot_cpp/classes/text_server_manager.hpp>
@@ -32,6 +34,29 @@ static Rml::String to_lower(const Rml::String& s) {
 	return result;
 }
 
+// Read a resolved res:// font file's raw bytes. Tries FileAccess first, then
+// falls back to ResourceLoader. Godot imports .ttf/.otf/.woff into a FontFile
+// resource and strips the raw source from exported builds, so a plain
+// FileAccess::open fails after export — but the imported FontFile still carries
+// the original file bytes via get_data() (bundled export-path fix). Returns an
+// empty array when the file cannot be read either way.
+static godot::PackedByteArray read_font_bytes(const godot::String& path) {
+	godot::Ref<godot::FileAccess> f = godot::FileAccess::open(path, godot::FileAccess::READ);
+	if (f.is_valid()) {
+		godot::PackedByteArray data = f->get_buffer(f->get_length());
+		f->close();
+		return data;
+	}
+
+	auto* loader = godot::ResourceLoader::get_singleton();
+	if (loader != nullptr) {
+		godot::Ref<godot::FontFile> font_file = loader->load(path, "FontFile");
+		if (font_file.is_valid())
+			return font_file->get_data();
+	}
+	return godot::PackedByteArray();
+}
+
 bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_index*/,
 	bool fallback_face, Rml::Style::FontWeight weight) {
 
@@ -51,15 +76,12 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 		std::to_string(static_cast<int>(weight)) + "|" + (fallback_face ? "f" : "-");
 	if (_loaded_file_keys.count(key)) return true;
 
-	godot::Ref<godot::FileAccess> f = godot::FileAccess::open(path, godot::FileAccess::READ);
-	if (!f.is_valid()) {
+	godot::PackedByteArray data = read_font_bytes(path);
+	if (data.is_empty()) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi Font] Cannot open font file: ") + path);
 		return false;
 	}
-
-	godot::PackedByteArray data = f->get_buffer(f->get_length());
-	f->close();
 
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	godot::RID font_rid = ts->create_font();
@@ -102,15 +124,12 @@ bool GodotFontInterface::LoadFontFace(const Rml::String& file_name, int /*face_i
 		std::to_string(static_cast<int>(weight)) + "|" + (fallback_face ? "f" : "-");
 	if (_loaded_file_keys.count(key)) return true;
 
-	godot::Ref<godot::FileAccess> f = godot::FileAccess::open(path, godot::FileAccess::READ);
-	if (!f.is_valid()) {
+	godot::PackedByteArray data = read_font_bytes(path);
+	if (data.is_empty()) {
 		godot::UtilityFunctions::push_warning(
 			godot::String("[RmlUi Font] Cannot open font file: ") + path);
 		return false;
 	}
-
-	godot::PackedByteArray data = f->get_buffer(f->get_length());
-	f->close();
 
 	godot::Ref<godot::TextServer> ts = get_text_server();
 	godot::RID font_rid = ts->create_font();

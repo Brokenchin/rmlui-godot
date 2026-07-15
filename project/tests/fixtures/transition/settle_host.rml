@@ -1,0 +1,21 @@
+<rml>
+<head>
+<style>
+body { width: 100%; height: 100%; background-color: #101018; }
+#panel {
+	display: block; position: absolute; top: 30px; left: 20px;
+	width: 120px; height: 80px; background-color: #cc3344;
+	transition: transform 0.4s linear-in-out;
+}
+#panel.shifted { transform: translateX(180px); }
+#emb {
+	display: block; position: absolute; top: 150px; left: 20px;
+	width: 320px; height: 120px;
+}
+</style>
+</head>
+<body>
+	<div id="panel"/>
+	<embed-doc id="emb" src="settle_widget.rml"/>
+</body>
+</rml>

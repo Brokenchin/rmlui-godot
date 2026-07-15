@@ -316,6 +316,33 @@ static func autoclose_tag_for(line_text: String, col: int) -> String:
 	return tag
 
 
+## True when the just-typed opening tag — sitting immediately before
+## `text_after` — already has a matching closing tag somewhere ahead, counting
+## nested same-name tags. Lets the caller suppress auto-close when '>' is
+## re-typed on an element that is already complete (issue #35): removing the
+## final '>' of `<div ...>` and adding it back must NOT inject a second </div>.
+## The line-local check in autoclose_tag_for() only catches an IMMEDIATELY
+## following </tag>; this catches the close that sits past the element's
+## children.
+static func tag_has_matching_close(text_after: String, tag: String) -> bool:
+	if tag.is_empty():
+		return false
+	# (?i) tag match; the lookahead pins the name boundary so "div" can't match
+	# "<divider>"; the group skips quoted attribute values so a '>' inside a
+	# string can't end the tag early. depth starts at 1 for the just-typed open.
+	var re := RegEx.create_from_string(
+		"(?i)<(/?)" + tag + "(?=[\\s/>])((?:\"[^\"]*\"|'[^']*'|[^>\"'])*)>")
+	var depth := 1
+	for m in re.search_all(text_after):
+		if m.get_string(1) == "/":
+			depth -= 1
+			if depth == 0:
+				return true
+		elif not m.get_string(2).strip_edges().ends_with("/"):
+			depth += 1  # nested same-name open (self-closing ones don't nest)
+	return false
+
+
 const VOID_TAGS := ["br", "hr", "img", "input", "link", "meta", "col"]
 
 

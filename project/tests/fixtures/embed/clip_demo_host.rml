@@ -1,0 +1,17 @@
+<rml>
+<head>
+	<link type="text/rcss" href="res://addons/rmlui-godot/base.rcss" />
+	<style>
+		/* The panel layer (like the game's bag wrapper): positions the bag as an
+		   absolute <embed-doc>. The contrasting backdrop + empty space around the bag
+		   make any unclipped slot rows leaking past the bag's border plainly visible. */
+		body { font-family: "Noto Sans"; width: 100%; height: 100%; background-color: #0e2a2a; }
+		#panel-bag { position: absolute; left: 60px; top: 60px; }
+	</style>
+</head>
+<body>
+	<div id="panel-bag">
+		<embed-doc id="bag" src="clip_demo_panel.rml"/>
+	</div>
+</body>
+</rml>

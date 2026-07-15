@@ -1,0 +1,57 @@
+[gd_scene format=3 uid="uid://b61clipdemo0001"]
+
+[node name="Issue61ClipDemo" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 10.0
+offset_right = 1140.0
+offset_bottom = 40.0
+text = "Issue #61 — overflow clip in an embedded document. Same bag widget, two ways. Off-viewport slots (rows past the blue border) must NOT paint or be hit-testable."
+
+[node name="StandaloneLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 48.0
+offset_right = 560.0
+offset_bottom = 70.0
+text = "STANDALONE (own context) — clips correctly"
+
+[node name="StandaloneBg" type="ColorRect" parent="."]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 72.0
+offset_right = 560.0
+offset_bottom = 640.0
+color = Color(0.055, 0.165, 0.165, 1)
+
+[node name="Standalone" type="RmlContext" parent="."]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 72.0
+offset_right = 560.0
+offset_bottom = 640.0
+document_path = "res://tests/fixtures/embed/clip_demo_panel.rml"
+font_paths = PackedStringArray("res://addons/rmlui-godot/examples/fonts/NotoSans-Regular.ttf", "res://addons/rmlui-godot/examples/fonts/NotoSans-Bold.ttf")
+
+[node name="EmbeddedLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 590.0
+offset_top = 48.0
+offset_right = 1140.0
+offset_bottom = 70.0
+text = "EMBEDDED (<embed-doc>) — must clip identically"
+
+[node name="Embedded" type="RmlContext" parent="."]
+layout_mode = 0
+offset_left = 590.0
+offset_top = 72.0
+offset_right = 1140.0
+offset_bottom = 640.0
+document_path = "res://tests/fixtures/embed/clip_demo_host.rml"
+font_paths = PackedStringArray("res://addons/rmlui-godot/examples/fonts/NotoSans-Regular.ttf", "res://addons/rmlui-godot/examples/fonts/NotoSans-Bold.ttf")

@@ -1,0 +1,35 @@
+<rml>
+<!--
+  Issue #29 second vector: a per-element "No font face defined" warning storm.
+  This document references a font-family that the context never loads, so RmlUi
+  emits a warning for every text element — thousands per reload. Before the fix,
+  selecting/editing this in the editor froze it (the preview reloads on every
+  keystroke and each warning's push_warning is expensive in the editor). After
+  the fix, GodotSystemInterface::LogMessage drops that environment noise in the
+  editor, so editing stays responsive.
+-->
+<head>
+	<title>Font Storm</title>
+	<style>
+		body { font-family: "NoSuchFontInstalled"; font-size: 14px; color: #ddd;
+			background-color: #1a1a22; padding: 8px; }
+		.row { display: flex; flex-direction: row; gap: 8px; }
+		.k { width: 160px; font-weight: bold; }
+		.v { width: 60px; text-align: right; }
+	</style>
+</head>
+<body>
+	<div class="row"><span class="k">Strength</span><span class="v">12</span></div>
+	<div class="row"><span class="k">Intelligence</span><span class="v">8</span></div>
+	<div class="row"><span class="k">Agility</span><span class="v">9</span></div>
+	<div class="row"><span class="k">Endurance</span><span class="v">10</span></div>
+	<div class="row"><span class="k">Luck</span><span class="v">5</span></div>
+	<div class="row"><span class="k">Mastery</span><span class="v">7</span></div>
+	<div class="row"><span class="k">Perception</span><span class="v">6</span></div>
+	<div class="row"><span class="k">Willpower</span><span class="v">4</span></div>
+	<div class="row"><span class="k">Charisma</span><span class="v">3</span></div>
+	<div class="row"><span class="k">Vitality</span><span class="v">11</span></div>
+	<div class="row"><span class="k">Dexterity</span><span class="v">9</span></div>
+	<div class="row"><span class="k">Resolve</span><span class="v">7</span></div>
+</body>
+</rml>

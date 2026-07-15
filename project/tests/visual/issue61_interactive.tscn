@@ -1,0 +1,26 @@
+[gd_scene load_steps=2 format=3 uid="uid://b61interactive01"]
+
+[ext_resource type="Script" path="res://tests/visual/issue61_interactive.gd" id="1"]
+
+[node name="Issue61Interactive" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
+
+[node name="Status" type="Label" parent="."]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 8.0
+offset_right = 1140.0
+offset_bottom = 110.0
+text = "Move the mouse over / below the bag..."
+
+[node name="Bag" type="RmlContext" parent="."]
+layout_mode = 0
+offset_top = 120.0
+offset_right = 1152.0
+offset_bottom = 648.0
+document_path = "res://tests/fixtures/embed/clip_demo_host.rml"
+font_paths = PackedStringArray("res://addons/rmlui-godot/examples/fonts/NotoSans-Regular.ttf", "res://addons/rmlui-godot/examples/fonts/NotoSans-Bold.ttf")

@@ -35,7 +35,7 @@ A GDExtension plugin that integrates [RmlUi](https://github.com/mikke89/RmlUi) i
 ### Data Binding
 - `create_data_model` / `bind_data_variable` / `set_data_variable` / `get_data_variable`
 - Batch setup via `create_data_model_from_dict()` / `update_data_model()`
-- Array binding: `bind_data_array`, `push_data_array_item`, `remove_data_array_item`, `set_data_array_item`, `clear_data_array`
+- Array binding: `bind_data_array`, `push_data_array_item`, `remove_data_array_item`, `set_data_array_item`, `clear_data_array` — scalars **or arrays of dictionaries** (struct rows: `data-for="slot : slots"` → `slot.icon`, `slot.count`)
 - Data events: `bind_data_event()` routes RmlUi data events to GDScript `Callable`
 - Dirty tracking: `dirty_data_variable()` / `dirty_all_variables()`
 
@@ -76,6 +76,12 @@ Bridges RML elements to Godot's native drag system (`_get_drag_data` / `_can_dro
 - Signals: `rml_drag_started`, `rml_drop_received`
 - Ghost is a real transient `RmlContext` used as Godot's `drag_preview`
 - **Cross-system interop:** because it bridges to Godot's native drag, items can be dragged between RmlUI contexts and native Godot Controls seamlessly — drag from a Godot node into an RML panel or vice versa
+
+### Hover Bridge
+Mirrors the drag bridge for tooltips that must escape the source document's clipping (ancestor `overflow` *and* the context viewport). Resolved by element id at event time, so it works for slots streamed in via `set_element_inner_rml`.
+- Signals: `rml_element_hovered(element_id, global_position)` / `rml_element_unhovered(element_id)` — fire on enter/leave for the nearest ancestor carrying an `id`
+- `get_hovered_element_id()` — poll the current hovered id (option B, for following tooltips)
+- Render the tooltip in a separate, screen-sized overlay context so it draws unclipped beside the hovered slot
 
 ### Rendering
 - Premultiplied alpha pipeline — correct blending for fonts, sprites, and textures
@@ -266,6 +272,7 @@ rmlui-godot/
 | Data binding | Scalars, arrays, events, batch dict setup |
 | Custom elements | GDScript callables for create + attribute change |
 | Drag & drop | Bridges to Godot's native drag — GDScript registration, auto-ghost, cross-system interop |
+| Hover bridge | `rml_element_hovered`/`unhovered` signals + `get_hovered_element_id()` for tooltips drawn in an overlay context |
 | DOM manipulation | Get/set properties, classes, attributes, inner RML |
 | Texture registry | Global (RmlManager) + per-context |
 | Hot reload | Per-document and all-documents |

@@ -3,6 +3,10 @@
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/StyleSheetSpecification.h>
+#include <godot_cpp/godot.hpp>
+#include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
+#include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 namespace RmlGodot {
@@ -23,6 +27,9 @@ header, footer, section, nav,
 blockquote, pre, form, fieldset {
 	display: block;
 }
+/* Issue #56: <embed-doc> hosts an embedded sub-document as an ordinary
+   layout box (a flex item / anchored / block child of the parent). */
+embed-doc { display: block; }
 em, i       { font-style: italic; }
 strong, b   { font-weight: bold; }
 h1 { font-size: 2em;    font-weight: bold; margin: 0.67em 0; }
@@ -63,6 +70,25 @@ RmlManager* RmlManager::get_singleton() {
 RmlManager::RmlManager() {
 	_singleton = this;
 	_default_rcss = k_builtin_default_rcss;
+
+	// Issue #37: expose the drag-ghost render layer as a project setting so games
+	// can slot the ghost into their own layer scheme without code, and seed the
+	// runtime default from it. set_drag_ghost_layer() overrides per-run.
+	auto* ps = godot::ProjectSettings::get_singleton();
+	if (ps != nullptr) {
+		const godot::String key = "rmlui/drag/ghost_layer";
+		if (!ps->has_setting(key)) {
+			ps->set_setting(key, _drag_ghost_layer);
+		}
+		ps->set_initial_value(key, _drag_ghost_layer);
+		godot::Dictionary info;
+		info["name"] = key;
+		info["type"] = godot::Variant::INT;
+		info["hint"] = godot::PROPERTY_HINT_RANGE;
+		info["hint_string"] = "-128,128,1";
+		ps->add_property_info(info);
+		set_drag_ghost_layer(static_cast<int>(ps->get_setting(key)));
+	}
 }
 
 RmlManager::~RmlManager() {
@@ -132,6 +158,54 @@ void RmlManager::on_context_created() {
 
 void RmlManager::on_context_destroyed() {
 	_context_count--;
+}
+
+// --- Addon path resolution (issue #11) ---
+
+const godot::String& RmlManager::get_addon_root() {
+	if (!_addon_root.is_empty())
+		return _addon_root;
+
+	// A shipped file every install has under the addon root — used to confirm a
+	// candidate folder actually is our addon (not just any addons/* directory).
+	const godot::String marker = "/shaders/rmlui_canvas_item.gdshader";
+	auto* loader = godot::ResourceLoader::get_singleton();
+
+	// 1. Derive the root from the loaded GDExtension library path. The library
+	//    always installs to <root>/bin/<lib>, so two get_base_dir() calls strip
+	//    "bin/<lib>" back to the addon root. This works under any custom
+	//    RMLUI_GODOT_ADDON_NAME and returns a res:// path in exported builds.
+	if (godot::internal::gdextension_interface_get_library_path != nullptr &&
+		godot::internal::library != nullptr) {
+		godot::String lib_path;
+		godot::internal::gdextension_interface_get_library_path(
+			godot::internal::library, &lib_path);
+		if (!lib_path.is_empty()) {
+			godot::String root = lib_path.get_base_dir().get_base_dir();
+			if (loader != nullptr && loader->exists(root + marker)) {
+				_addon_root = root;
+				return _addon_root;
+			}
+		}
+	}
+
+	// 2. Fall back to scanning res://addons/* for the folder holding our marker.
+	godot::PackedStringArray dirs = godot::DirAccess::get_directories_at("res://addons");
+	for (int i = 0; i < dirs.size(); i++) {
+		godot::String root = godot::String("res://addons/") + dirs[i];
+		if (loader != nullptr && loader->exists(root + marker)) {
+			_addon_root = root;
+			return _addon_root;
+		}
+	}
+
+	// 3. Last resort: the default install location.
+	_addon_root = "res://addons/rmlui-godot";
+	godot::UtilityFunctions::push_warning(
+		godot::String("[RmlManager] Could not resolve the rmlui-godot addon folder; "
+			"falling back to ") + _addon_root +
+		". Bundled shaders may fail to load if installed elsewhere.");
+	return _addon_root;
 }
 
 // --- Global font management ---
@@ -236,6 +310,11 @@ void RmlManager::set_default_rcss_enabled(bool enabled) {
 	_default_rcss_enabled = enabled;
 }
 
+void RmlManager::set_drag_ghost_layer(int layer) {
+	// CanvasLayer's layer range is [-128, 128].
+	_drag_ghost_layer = layer < -128 ? -128 : (layer > 128 ? 128 : layer);
+}
+
 Rml::SharedPtr<Rml::StyleSheetContainer> RmlManager::get_default_sheet() {
 	if (!_default_rcss_enabled || _default_rcss.empty())
 		return nullptr;
@@ -275,6 +354,11 @@ void RmlManager::_initialize_rmlui() {
 	// GodotScriptDocument (inline GDScript support). Must come after
 	// Rml::Initialise(), which registers the defaults.
 	Rml::Factory::RegisterElementInstancer("body", &_document_instancer);
+
+	// Issue #56: <embed-doc> host element for embedded sub-documents. Process-
+	// global, like "body"; the embedded document is mounted as its child by
+	// RmlContext::mount_embed (see RmlEmbedElement / RmlContextEmbed.cpp).
+	Rml::Factory::RegisterElementInstancer("embed-doc", &_embed_instancer);
 
 	// onclick="gdscript:method_name" event attributes.
 	_event_listener_instancer.register_factory("gdscript:",
