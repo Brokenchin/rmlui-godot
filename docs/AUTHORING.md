@@ -316,6 +316,29 @@ Everything ships in the addon (`plugin.cfg` → enable "RmlUI"):
 - **Inspector**: Edit/Create buttons for the document and its linked `.rcss`,
   a live status line, and a Preview shortcut.
 
+## Exporting your project
+
+`.rml` and `.rcss` are plain text files with no Godot importer, so the exporter
+drops them from the PCK by default — RmlUi would then fail to open them at
+runtime with the editor gone. The addon handles this for you:
+
+- **Documents (`.rml`/`.rcss`)** are bundled automatically at export time by the
+  addon's export plugin (they land in the PCK at their original `res://` path,
+  so nothing in your code changes). Toggle this with the **`rmlui/export/
+  auto_include_documents`** project setting (on by default). If you turn it off,
+  add `*.rml, *.rcss` to your export preset's *Resources ▸ Filters to export
+  non-resource files/folders* instead.
+- **Fonts** are loaded through Godot's resource pipeline: `.ttf`/`.otf`/`.woff`
+  are imported to `FontFile` resources and survive export as long as they live
+  under `res://` (the addon reads the imported resource when the raw source is
+  stripped). No filter needed.
+- **Images / textures** referenced from RCSS/RML load via the resource loader
+  and export normally.
+
+If a document fails to load only in an exported build, check the Output log for
+`[RmlUi] FileInterface::Open failed` — that means the file was not packed
+(document auto-include disabled and no matching export filter).
+
 ## Pitfalls worth knowing
 
 - **Models before documents** — `data-model="x"` resolves at load time.
