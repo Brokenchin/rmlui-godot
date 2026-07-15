@@ -9,9 +9,16 @@ var _completion_provider: RcssCompletionProvider
 var _completion_timer: Timer
 var _diagnostics: RmlDiagnostics
 var _link_nav: RmlLinkNavigation
+var _export_plugin: EditorExportPlugin
+
+const _EXPORT_SETTING := "rmlui/export/auto_include_documents"
 
 func _enter_tree():
 	_register_textfile_extensions()
+	_register_export_settings()
+
+	_export_plugin = preload("res://addons/rmlui-godot/editor/rml_export_plugin.gd").new()
+	add_export_plugin(_export_plugin)
 
 	_rcss_highlighter = RcssSyntaxHighlighter.new()
 	_rml_highlighter = RmlSyntaxHighlighter.new()
@@ -53,6 +60,10 @@ func _exit_tree():
 	if _rml_highlighter:
 		script_editor.unregister_syntax_highlighter(_rml_highlighter)
 		_rml_highlighter = null
+
+	if _export_plugin:
+		remove_export_plugin(_export_plugin)
+		_export_plugin = null
 
 	if _inspector_plugin:
 		remove_inspector_plugin(_inspector_plugin)
@@ -184,6 +195,19 @@ func _register_textfile_extensions() -> void:
 	if changed:
 		es.set_setting(setting, exts)
 		EditorInterface.get_resource_filesystem().scan()
+
+## Expose the export toggle in Project Settings. When on (default), the export
+## plugin bundles every .rml/.rcss document so they resolve in exported builds
+## without the user hand-editing the preset's non-resource file filters.
+func _register_export_settings() -> void:
+	if not ProjectSettings.has_setting(_EXPORT_SETTING):
+		ProjectSettings.set_setting(_EXPORT_SETTING, true)
+	ProjectSettings.set_initial_value(_EXPORT_SETTING, true)
+	ProjectSettings.add_property_info({
+		"name": _EXPORT_SETTING,
+		"type": TYPE_BOOL,
+	})
+	ProjectSettings.set_as_basic(_EXPORT_SETTING, true)
 
 func _open_preview_for(ctx: Node) -> void:
 	if not _preview_panel:
