@@ -176,6 +176,19 @@ Rml::TextureHandle GodotRenderInterface::LoadTexture(
 bool GodotRenderInterface::register_texture(const std::string& name, const godot::Ref<godot::Texture2D>& texture) {
 	if (!texture.is_valid()) return false;
 
+	// Idempotence guard: the same key registered with the SAME source texture is
+	// a no-op. Without this, every call pays texture->get_image() (a synchronous
+	// GPU readback, ~30ms) + premultiply + re-upload — UI widgets that re-register
+	// item icons on every inventory update turned each loot collect into a frame
+	// spike. A DIFFERENT source under the same key still re-registers (mock icon
+	// replaced by the real one, hot-reloaded art).
+	const uint64_t source_id = texture->get_rid().get_id();
+	if (const auto it = _registered_texture_sources.find(name);
+		it != _registered_texture_sources.end() && it->second == source_id
+		&& _registered_textures.count(name) > 0) {
+		return true;
+	}
+
 	godot::Ref<godot::Image> img = texture->get_image();
 	if (!img.is_valid()) return false;
 
@@ -187,10 +200,12 @@ bool GodotRenderInterface::register_texture(const std::string& name, const godot
 	if (!img_tex.is_valid()) return false;
 
 	_registered_textures[name] = img_tex;
+	_registered_texture_sources[name] = source_id;
 	return true;
 }
 
 bool GodotRenderInterface::unregister_texture(const std::string& name) {
+	_registered_texture_sources.erase(name);
 	return _registered_textures.erase(name) > 0;
 }
 
@@ -592,6 +607,7 @@ void GodotRenderInterface::release_all_resources() {
 	_shaders.clear();
 	_draw_commands.clear();
 	_registered_textures.clear();
+	_registered_texture_sources.clear();
 	_registered_shaders.clear();
 	_warned_missing_shaders.clear();
 	_white_texture.unref();

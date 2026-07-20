@@ -174,6 +174,11 @@ private:
 	std::vector<DrawCommand> _draw_commands;
 
 	std::unordered_map<std::string, godot::Ref<godot::ImageTexture>> _registered_textures;
+	// Source-texture identity per registered key: register_texture() with the SAME
+	// source is a no-op (the get_image() GPU readback + premultiply + re-upload it
+	// would redo costs ~30ms — measured as a per-loot-collect frame spike when UI
+	// widgets re-register icons on every inventory slot update).
+	std::unordered_map<std::string, uint64_t> _registered_texture_sources;
 	// Base templates keyed by RCSS shader name. Duplicated per element in
 	// CompileShader so author-set uniforms persist while element_dimensions
 	// stays per-instance.
